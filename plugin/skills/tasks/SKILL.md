@@ -1,9 +1,9 @@
 ---
-name: to-agents-task-list
+name: tasks
 description: Use when breaking work into tasks — a feature, a migration, a review's findings, a plan — or when the user asks to make a task list, break something down, split work up, or turn analysis into tasks. Also when work is about to be handed to teammates or subagents.
 ---
 
-# To-Agents Task List
+# Tasks
 
 ## Overview
 
@@ -15,7 +15,7 @@ Breaking work down, planning it, or turning finished analysis into tasks — esp
 
 **Not for:** a single task, or work you'll finish in the next two tool calls.
 
-**Handing these to teammates?** `team8:implement-task-list` covers
+**Handing these to teammates?** `team8:run` covers
 how many teammates, the dispatch contract, and settling the terminal deliverable.
 The `model` and `effort` set here are what each dispatch passes to its agent.
 
@@ -78,9 +78,9 @@ The closing message has three parts, in this order. A message that stops after p
 3. **The ask** — end with one direct question: which way now? The options are exactly these three:
    - **adjust models** — re-size any task's model or effort
    - **adjust tasks** — add, remove, merge, re-scope, or re-wire dependencies
-   - **start the work** — hand the list to `team8:implement-task-list`
+   - **start the work** — hand the list to `team8:run`
 
-   Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `implement-task-list` until the user picks it.
+   Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `run` until the user picks it.
 
 ## Common mistakes
 

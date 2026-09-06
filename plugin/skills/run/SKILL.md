@@ -1,9 +1,9 @@
 ---
-name: implement-task-list
+name: run
 description: Use when a task list exists and the user asks to implement it, work through it, start on it, or run it — or when a session has settled on several pieces of work and the user asks to delegate them, hand them to teammates, or split them up as a team
 ---
 
-# Implement Task List
+# Run
 
 ## Overview
 
@@ -21,7 +21,7 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    dispatching.** The branch shape you derive; only the push is the user's call.
    See below.
 3. **`TaskCreate` one task per item**, before any teammate exists.
-   **REQUIRED SUB-SKILL:** `team8:to-agents-task-list` — what each
+   **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
 4. **Decide how many teammates.** Count tracks, not tasks.
 5. **Dispatch**, using the contract below. Assign the owner with `TaskUpdate`.

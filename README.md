@@ -54,7 +54,7 @@ prompt without switching back to the terminal.
 - **Claude Code with agent teams enabled.** Teams are an experimental feature:
   `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` has to be set (in `~/.claude/settings.json`
   under `env`, or in your shell) or there is nothing for this to show, and
-  `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` is what fills the **tasks** view. `/console-setup`
+  `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` is what fills the **tasks** view. `/setup`
   sets both for you — see below. Being experimental, the on-disk shapes it reads can
   change without notice — the server prints a warning at startup when
   `claude --version` is not the version it was built against.
@@ -69,14 +69,14 @@ Three steps on a new machine, then restart:
 claude plugin marketplace add alan-oliv/team8
 claude plugin install team8@team8
 # then, inside Claude Code:
-/console-setup
+/setup
 ```
 
 The plugin ships with its bundle already built, so there is no `npm install` and no
 build step on your machine. Everything the console observes travels inside it — all
 ten hooks, the launcher, the two slash commands — and needs no configuration.
 
-`/console-setup` is the once-per-machine step for the two things a plugin manifest
+`/setup` is the once-per-machine step for the two things a plugin manifest
 has nowhere to put: the `env` vars that turn on agent teams and the task tools, and
 `subagentStatusLine`. It checks the machine first, shows you the keys, and writes
 only once you say yes. It never touches your `statusLine` and never writes hooks —
@@ -153,7 +153,7 @@ cross-origin requests.
   entries appended to that teammate's inbox, exactly as the lead would write them.
 
 It does **not** touch `settings.json` when installed as a plugin — the hooks it
-needs travel inside the plugin, and `/console-setup` is the only thing that writes
+needs travel inside the plugin, and `/setup` is the only thing that writes
 there, only when you ask it to.
 
 The server exits ten minutes after the last team goes away, and immediately on the
@@ -206,7 +206,7 @@ a plugin to put them:
   teams to show, and `CLAUDE_CODE_ENABLE_TODO_TOOLS`, which fills the **tasks** view
 - **`subagentStatusLine`** — each teammate's current tool, in its header
 
-Run **`/console-setup`** once per machine for those two and nothing else. It ships
+Run **`/setup`** once per machine for those two and nothing else. It ships
 with the plugin: it checks the machine can run the console, reads your
 `settings.json`, shows you what it would add, and writes only once you say yes.
 
@@ -224,11 +224,11 @@ status line, it is left exactly as it is and you give up two readouts: the
 rate-limit gauge, and the lead's cost and context in the header. Everything else —
 transcripts, tasks, mail, permission cards, per-agent current tool — is unaffected.
 
-Want both? Ask `/console-setup` for it explicitly and it will chain the two, POSTing
+Want both? Ask `/setup` for it explicitly and it will chain the two, POSTing
 the payload to the console before handing it to your own command. It will not do
 that on its own.
 
-`/console-setup` also reverses itself — ask it to remove what it added and it drops
+`/setup` also reverses itself — ask it to remove what it added and it drops
 only the keys it installed, and puts both `env` vars back the way it found them. The
 hooks are not its business either way: they come and go with `claude plugin
 install` / `uninstall`.
