@@ -1,9 +1,9 @@
 ---
-description: Restart the agent teams console on the installed build and print its URL
+description: Restart the team8 on the installed build and print its URL
 allowed-tools: ["Bash"]
 ---
 
-# Agent teams console
+# team8
 
 Always replace the running server, then report the URL in one or two lines. Do
 not read source files.
@@ -30,7 +30,7 @@ pgrep -af "dist/server/index.js" || echo "no console processes left"
 
 Match on the PORT, not on the plugin path. A server started from a working copy
 lives at `<repo>/plugin/dist/server/index.js`, which does not contain
-`agent-teams-console` — an earlier version of this command matched the path and
+`team8` — an earlier version of this command matched the path and
 so killed only the installed build, leaving every locally-built server running.
 Four of them accumulated that way, and whichever held the port answered
 `/health` happily, so nothing looked wrong while the console served an old
@@ -63,7 +63,7 @@ Nothing printed is a normal outcome, not a failure. Carry on to step 3.
 
 ```bash
 nohup node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" --port 4823 \
-  >>"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agent-teams-console.log" 2>&1 &
+  >>"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/team8.log" 2>&1 &
 sleep 2
 curl -sf -m 2 http://127.0.0.1:4823/health
 ```
@@ -83,7 +83,7 @@ otherwise read as a broken console:
 
 Use the `team` from the health response, not from step 2, and drop the `?team=`
 part when it is empty. If the health check fails, print the last few lines of
-`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agent-teams-console.log` and stop.
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/team8.log` and stop.
 
 **Say this too when there was no team:** a server with nothing to watch reaps
 itself after its idle grace window, roughly ten minutes, so an unused console

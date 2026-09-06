@@ -22,7 +22,7 @@ import type { Agent, WorkflowRun } from '../../shared/domain';
 import type { RosterPayload, TranscriptPayload, TaskPayload, MailPayload } from '../project';
 
 const FIXTURES = path.resolve(process.cwd(), 'fixtures');
-const SLUG = '-Users-alanoliv-code-agents-team-ui';
+const SLUG = '-Users-alanoliv-code-team8';
 const TEAM = 'session-98b0b4a7';
 const LEAD_SESSION = '98b0b4a7-3206-455b-aaf6-a5a81ad1e283';
 

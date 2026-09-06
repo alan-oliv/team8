@@ -1,4 +1,4 @@
-# Agent Teams Console
+# Team8
 
 A Claude Code plugin. When a session spawns a **team** of teammates, this puts all
 of them side by side in a browser window: every teammate's live transcript, the
@@ -23,7 +23,7 @@ existence and start the server themselves, then print the URL into the session
 once — before the teammate spawns when possible, falling back to just after it:
 
 ```
-Agent teams console → http://127.0.0.1:4823/?team=session-98b0b4a7
+team8 → http://127.0.0.1:4823/?team=session-98b0b4a7
 ```
 
 ## Six views
@@ -66,8 +66,8 @@ prompt without switching back to the terminal.
 Three steps on a new machine, then restart:
 
 ```bash
-claude plugin marketplace add alan-oliv/agent-teams-console
-claude plugin install agent-teams-console@agent-teams-console
+claude plugin marketplace add alan-oliv/team8
+claude plugin install team8@team8
 # then, inside Claude Code:
 /console-setup
 ```
@@ -83,14 +83,14 @@ only once you say yes. It never touches your `statusLine` and never writes hooks
 see [what is left to install](#what-is-left-to-install-two-env-vars) for why.
 
 `marketplace add` also takes a local path (`claude plugin marketplace add
-/path/to/agents-team-ui`) or any git URL — this repository is its own marketplace.
+/path/to/team8`) or any git URL — this repository is its own marketplace.
 Prefer the `owner/repo` form: a local directory is copied verbatim, `node_modules`
 and all, while a clone brings only what is committed.
 
 **Restart your Claude Code session afterwards.** Hooks and `env` are read once at
 session start, so the console will not appear in the session you installed from.
 
-Check it any time with the `/console` slash command (`/agent-teams-console:console`
+Check it any time with the `/console` slash command (`/team8:console`
 if another plugin already owns that name). It reports whether the console is
 running, prints its URL, and starts it if a team is live but the server is down.
 
@@ -124,7 +124,7 @@ cross-origin requests.
 
 **Writes:**
 
-- `agent-teams-console/logs/<team>.jsonl` — its own append-only event log, one
+- `team8/logs/<team>.jsonl` — its own append-only event log, one
   file per team, so a console started for a second team cannot write over the
   first team's history. Pruned at startup, capped per event kind and, for
   transcript history, per agent, and dropped once nothing has touched it for a
@@ -132,9 +132,9 @@ cross-origin requests.
   roster, transcripts, tasks and mail come back on the next sweep, while what
   the hooks push in — the status line, the per-agent substatus, the permission
   and plan cards — exists nowhere else and does not.
-- `agent-teams-console/events.db.migrated-<epoch-ms>` — only if you upgraded
+- `team8/events.db.migrated-<epoch-ms>` — only if you upgraded
   from a version that kept one shared log. The first start after the upgrade
-  folds `agent-teams-console/events.db` into the per-team logs above — that is
+  folds `team8/events.db` into the per-team logs above — that is
   how your open permission cards, status line and per-agent substatus survive
   the upgrade, since nothing under `~/.claude` can rebuild them — and renames
   the original to this name. Nothing reads it again, it is written once, and it
@@ -145,8 +145,8 @@ cross-origin requests.
   again on its own and it will finish. And if you upgraded from a version older
   still, `events.db` was a SQLite database rather than a log — the console
   reports `recovered 0 row(s)` and renames it aside unread.
-- `agent-teams-console.log` — the detached server's stdout and stderr
-- `agent-teams-console/announced/<team>` — a marker so the URL is printed once
+- `team8.log` — the detached server's stdout and stderr
+- `team8/announced/<team>` — a marker so the URL is printed once
   per team, not once per teammate
 - `teams/<team>/inboxes/<agent>.json` — **only** when you act in the UI. Messaging a
   teammate, asking one to wrap up or stop, and requesting a respawn are all just
@@ -248,7 +248,7 @@ plugin installed** — the hooks would fire twice, once from each copy. It merge
 into your existing hooks rather than replacing them, follows the same rule about
 your status line (it takes the key only when nothing else holds it), and
 `npm run uninstall -- --yes` puts everything back. Whatever those `env` vars were
-before is stashed in `~/.claude/agent-teams-console.backup.json` and restored on
+before is stashed in `~/.claude/team8.backup.json` and restored on
 uninstall.
 
 </details>

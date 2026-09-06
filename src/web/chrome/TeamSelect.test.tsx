@@ -659,13 +659,13 @@ it('names the run and calls it ended once its snapshot has landed', async () => 
       ...t,
       members: 1,
       state: 'idle' as const,
-      workflow: { runId: 'wf_def456', name: 'agents-team-ui-plan', live: false },
+      workflow: { runId: 'wf_def456', name: 'team8-plan', live: false },
     })),
   );
   renderSelect();
 
   const [row] = await screen.findAllByRole('option');
-  expect(within(row).getByTestId('team-run').textContent).toBe('agents-team-ui-plan');
+  expect(within(row).getByTestId('team-run').textContent).toBe('team8-plan');
   expect(within(row).getByTestId('team-meta').textContent).toContain('ended');
 });
 

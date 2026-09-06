@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre/PostToolUse(Agent) launcher for the Agent Teams Console.
+# Pre/PostToolUse(Agent) launcher for the Team8.
 #
 # CONTRACT: PreToolUse BLOCKS the tool call, so this must never emit a
 # permissionDecision and must always exit 0 — a broken console must never
@@ -217,10 +217,10 @@ if ! curl -sf -m 1 "$HEALTH" >/dev/null 2>&1; then
     [ "$workflow" = 1 ] && set -- "$@" --session "$session"
     if [ -f "$ROOT/dist/server/index.js" ]; then
       nohup node "$ROOT/dist/server/index.js" "$@" \
-        >>"$CLAUDE_DIR/agent-teams-console.log" 2>&1 &
+        >>"$CLAUDE_DIR/team8.log" 2>&1 &
     else
       nohup npx --prefix "$ROOT/.." tsx "$ROOT/../src/server/index.ts" "$@" \
-        >>"$CLAUDE_DIR/agent-teams-console.log" 2>&1 &
+        >>"$CLAUDE_DIR/team8.log" 2>&1 &
     fi
     i=0
     while [ "$i" -lt 15 ]; do
@@ -239,7 +239,7 @@ fi
 # directory there for a team that may never exist would be a phantom entry
 # in the user's real config. markerdir is ours alone, so it is always safe
 # to create.
-markerdir="$CLAUDE_DIR/agent-teams-console/announced"
+markerdir="$CLAUDE_DIR/team8/announced"
 # Keyed by the session when the team has no name yet, so "once per team" still
 # holds across the PreToolUse/PostToolUse pair of a team's very first spawn.
 marker="$markerdir/${team:-session-$short}"
@@ -250,10 +250,10 @@ mkdir -p "$markerdir" 2>/dev/null
 # Link straight to the team when it is known. When it is not, link to the
 # console itself rather than to `?team=` a name we made up.
 if [ -n "$team" ]; then
-  printf '{"systemMessage":"Agent teams console → http://127.0.0.1:%s/?team=%s"}\n' "$PORT" "$team"
+  printf '{"systemMessage":"team8 → http://127.0.0.1:%s/?team=%s"}\n' "$PORT" "$team"
 elif [ "$workflow" = 1 ]; then
   printf '{"systemMessage":"Workflow console → http://127.0.0.1:%s/"}\n' "$PORT"
 else
-  printf '{"systemMessage":"Agent teams console → http://127.0.0.1:%s/"}\n' "$PORT"
+  printf '{"systemMessage":"team8 → http://127.0.0.1:%s/"}\n' "$PORT"
 fi
 exit 0

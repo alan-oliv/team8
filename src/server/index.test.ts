@@ -72,7 +72,7 @@ describe('parseArgs', () => {
     expect(cli.port).toBe(4500);
     expect(cli.claudeHome).toBe('/tmp/fake-claude');
     expect(cli.settingsPath).toBe('/tmp/fake-claude/settings.json');
-    expect(cli.dbPath).toBe('/tmp/fake-claude/agent-teams-console/events.db');
+    expect(cli.dbPath).toBe('/tmp/fake-claude/team8/events.db');
   });
 
   it('reads --team, so the launcher can tell the server which team it announced', () => {
@@ -142,7 +142,7 @@ describe('discoverTeam', () => {
     const found = (await discoverTeam(teams(), sessions()))!;
     expect(found.teamName).toBe('session-98b0b4a7');
     expect(found.leadSessionId).toBe('98b0b4a7-3206-455b-aaf6-a5a81ad1e283');
-    expect(found.projectSlug).toBe('-Users-alanoliv-code-agents-team-ui');
+    expect(found.projectSlug).toBe('-Users-alanoliv-code-team8');
   });
 
   it('prefers a >=2-member team over a newer lead-only one — a lead-only team is not a team', async () => {
@@ -379,7 +379,7 @@ describe('listTeamSummaries', () => {
     await fs.mkdir(path.join(sessions()), { recursive: true });
     await fs.writeFile(
       path.join(sessions(), `${process.pid}.json`),
-      JSON.stringify({ pid: process.pid, sessionId, cwd, name: 'agents-team-ui' }),
+      JSON.stringify({ pid: process.pid, sessionId, cwd, name: 'team8' }),
     );
     const subagents = path.join(projects, cwd.replace(/[^a-zA-Z0-9]/g, '-'), sessionId, 'subagents');
     await fs.mkdir(subagents, { recursive: true });
@@ -393,7 +393,7 @@ describe('listTeamSummaries', () => {
     expect(withProjects.teams[0].state).toBe('live');
     // And the row is named after the session actually driving it — read from
     // the same place, so a re-keyed team stops showing up nameless.
-    expect(withProjects.teams[0].goal).toBe('agents-team-ui');
+    expect(withProjects.teams[0].goal).toBe('team8');
 
     // Without the sidecar join it is the old, wrong answer.
     const without = await listTeamSummaries(teams(), sessions(), '');
@@ -411,13 +411,13 @@ describe('listTeamSummaries', () => {
     await fs.mkdir(sessions(), { recursive: true });
     await fs.writeFile(
       path.join(sessions(), `${process.pid}.json`),
-      JSON.stringify({ pid: process.pid, sessionId: 'fresh-1', cwd, name: 'agents-team-ui' }),
+      JSON.stringify({ pid: process.pid, sessionId: 'fresh-1', cwd, name: 'team8' }),
     );
 
     const [row] = (await listTeamSummaries(teams(), sessions(), '')).teams;
     expect(row.leadAlive).toBe(true);
     expect(row.state).toBe('live');
-    expect(row.goal).toBe('agents-team-ui');
+    expect(row.goal).toBe('team8');
   });
 
   it('claims only the newest team in a directory, so yesterday\'s is not revived', async () => {
@@ -434,7 +434,7 @@ describe('listTeamSummaries', () => {
     await fs.mkdir(sessions(), { recursive: true });
     await fs.writeFile(
       path.join(sessions(), `${process.pid}.json`),
-      JSON.stringify({ pid: process.pid, sessionId: 'fresh-1', cwd, name: 'agents-team-ui' }),
+      JSON.stringify({ pid: process.pid, sessionId: 'fresh-1', cwd, name: 'team8' }),
     );
 
     const listed = await listTeamSummaries(teams(), sessions(), '');
@@ -481,7 +481,7 @@ describe('listTeamSummaries', () => {
     for (const [pid, sessionId] of [[process.pid, 'fresh-1'], [process.ppid, 'fresh-2']] as const) {
       await fs.writeFile(
         path.join(sessions(), `${pid}.json`),
-        JSON.stringify({ pid, sessionId, cwd, name: 'agents-team-ui' }),
+        JSON.stringify({ pid, sessionId, cwd, name: 'team8' }),
       );
     }
 
@@ -692,10 +692,10 @@ describe('listTeamSummaries', () => {
     const sessionId = 'wf000000-5555-6666-7777-888888888888';
     await leadOnlyAt('session-wfrun002', sessionId, cwd);
     await writeJournal(projects, cwd, sessionId, 'wf_def456');
-    await writeSnapshot(projects, cwd, sessionId, 'wf_def456', 'agents-team-ui-plan');
+    await writeSnapshot(projects, cwd, sessionId, 'wf_def456', 'team8-plan');
 
     const [row] = (await listTeamSummaries(teams(), sessions(), '', projects)).teams;
-    expect(row.workflow).toEqual({ runId: 'wf_def456', name: 'agents-team-ui-plan', live: false });
+    expect(row.workflow).toEqual({ runId: 'wf_def456', name: 'team8-plan', live: false });
   });
 
   // A run killed mid-flight leaves a journal and no snapshot forever. The
@@ -828,8 +828,8 @@ describe('sessionProjectDir', () => {
   }
 
   it('resolves the directory from the cwd the session record carries', async () => {
-    const target = await makeSession('-Users-alanoliv-code-agents-team-ui');
-    expect(await sessionProjectDir(path.join(dir, 'projects'), SESSION, '/Users/alanoliv/code/agents-team-ui'))
+    const target = await makeSession('-Users-alanoliv-code-team8');
+    expect(await sessionProjectDir(path.join(dir, 'projects'), SESSION, '/Users/alanoliv/code/team8'))
       .toBe(target);
   });
 
@@ -844,7 +844,7 @@ describe('sessionProjectDir', () => {
   // transcript beside the slug, never a directory. Requiring the directory made
   // `/api/select-session` 404 for exactly the sessions the route serves.
   it('accepts a session that has only its transcript file, with no directory yet', async () => {
-    const slug = '-Users-alanoliv-code-agents-team-ui';
+    const slug = '-Users-alanoliv-code-team8';
     await fs.mkdir(path.join(dir, 'projects', slug), { recursive: true });
     await fs.writeFile(path.join(dir, 'projects', slug, `${SESSION}.jsonl`), '{}\n');
     expect(await sessionProjectDir(path.join(dir, 'projects'), SESSION)).toBe(
@@ -853,7 +853,7 @@ describe('sessionProjectDir', () => {
   });
 
   it('is null for a session with nothing on disk, and for no projects root at all', async () => {
-    await makeSession('-Users-alanoliv-code-agents-team-ui');
+    await makeSession('-Users-alanoliv-code-team8');
     expect(await sessionProjectDir(path.join(dir, 'projects'), 'not-a-session')).toBeNull();
     expect(await sessionProjectDir(path.join(dir, 'nowhere'), SESSION)).toBeNull();
   });

@@ -8,7 +8,7 @@ export const meta = {
 }
 
 const REPOS = Array.isArray(args) && args.length ? args : [
-  '/Users/alanoliv/code/agents-team-ui',
+  '/Users/alanoliv/code/team8',
   '/Users/alanoliv/code/agents-team-ui-docs',
   '/Users/alanoliv/code/ai-script-builder',
   '/Users/alanoliv/code/grimoire',

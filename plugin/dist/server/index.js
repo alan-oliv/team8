@@ -5180,7 +5180,7 @@ var PINNED_CLAUDE_VERSION = "2.1.231";
 var HOOK_TIMEOUT_SECONDS = 5;
 var PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1e3;
 var LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
-var BACKUP_FILE = "agent-teams-console.backup.json";
+var BACKUP_FILE = "team8.backup.json";
 var AGENT_ENV_VARS = [
   "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
   "CLAUDE_CODE_ENABLE_TODO_TOOLS"
@@ -5419,7 +5419,7 @@ function parseArgs(argv) {
     confirm,
     claudeHome,
     settingsPath: path10.join(claudeHome, "settings.json"),
-    dbPath: path10.join(claudeHome, "agent-teams-console", "events.db"),
+    dbPath: path10.join(claudeHome, "team8", "events.db"),
     team,
     session,
     cwd
@@ -6160,7 +6160,7 @@ async function main(argv) {
     onShutdown: stop
   });
   const port = await listen(server, cli.port);
-  console.log(`agent teams console on http://127.0.0.1:${port}${cli.readOnly ? " (read-only)" : ""}`);
+  console.log(`team8 on http://127.0.0.1:${port}${cli.readOnly ? " (read-only)" : ""}`);
   const followRealTeam = async () => {
     if (switching) return;
     const gen = generation;

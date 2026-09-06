@@ -141,7 +141,7 @@ describe('plugin/bin/console-launch.sh', () => {
       dir,
     );
     expect(JSON.parse(out).systemMessage).toBe(
-      'Agent teams console → http://127.0.0.1:4899/?team=session-98b0b4a7',
+      'team8 → http://127.0.0.1:4899/?team=session-98b0b4a7',
     );
   });
 
@@ -157,7 +157,7 @@ describe('plugin/bin/console-launch.sh', () => {
     // under teams/<team> — see the "never creates a directory under teams/"
     // test below for why.
     await expect(
-      fs.access(path.join(dir, 'agent-teams-console', 'announced', 'session-98b0b4a7')),
+      fs.access(path.join(dir, 'team8', 'announced', 'session-98b0b4a7')),
     ).resolves.toBeUndefined();
   });
 
@@ -177,7 +177,7 @@ describe('plugin/bin/console-launch.sh', () => {
     // the team after the session, which the spawn then does not call it: Claude
     // Code re-keys a team on its first teammate, so the link led to a directory
     // that never existed and the operator got an empty wall.
-    expect(JSON.parse(out).systemMessage).toBe('Agent teams console → http://127.0.0.1:4899/');
+    expect(JSON.parse(out).systemMessage).toBe('team8 → http://127.0.0.1:4899/');
     await expect(fs.access(path.join(dir, 'teams'))).rejects.toThrow();
   });
 
@@ -198,7 +198,7 @@ describe('plugin/bin/console-launch.sh', () => {
       projectCwd,
     );
     expect(JSON.parse(stdout.trim()).systemMessage).toBe(
-      'Agent teams console → http://127.0.0.1:4899/?team=real-parent-team',
+      'team8 → http://127.0.0.1:4899/?team=real-parent-team',
     );
   });
 
@@ -219,7 +219,7 @@ describe('plugin/bin/console-launch.sh', () => {
       projectCwd,
     );
     expect(JSON.parse(stdout.trim()).systemMessage).toBe(
-      'Agent teams console → http://127.0.0.1:4899/?team=root-team',
+      'team8 → http://127.0.0.1:4899/?team=root-team',
     );
   });
 
@@ -328,7 +328,7 @@ describe('plugin/bin/console-launch.sh', () => {
     );
     // Same reason as above: at PreToolUse the team has no name yet, so the link
     // points at the console and it discovers the team as it appears.
-    expect(JSON.parse(out).systemMessage).toBe('Agent teams console → http://127.0.0.1:4899/');
+    expect(JSON.parse(out).systemMessage).toBe('team8 → http://127.0.0.1:4899/');
   });
 
   it('links straight to the team once one really exists', async () => {
@@ -352,7 +352,7 @@ describe('plugin/bin/console-launch.sh', () => {
       dir,
     );
     expect(JSON.parse(out).systemMessage).toBe(
-      'Agent teams console → http://127.0.0.1:4899/?team=session-98b0b4a7',
+      'team8 → http://127.0.0.1:4899/?team=session-98b0b4a7',
     );
   });
 

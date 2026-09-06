@@ -10,7 +10,7 @@
       "agentType": "team-lead",
       "joinedAt": 1787798107581,
       "tmuxPaneId": "leader",
-      "cwd": "/Users/alanoliv/code/agents-team-ui",
+      "cwd": "/Users/alanoliv/code/team8",
       "subscriptions": [],
       "backendType": "in-process"
     },
@@ -25,7 +25,7 @@
       "model": "claude-opus-5",
       "prompt": "You are a throwaway probe for a 2-minute data-capture spike. Do EXACTLY these steps and nothing else. Do not read or write any project files.\n\n1. Run: `sleep 10`\n2. Call TaskList, then TaskUpdate on task id \"1\" setting owner to your own agent name and status to \"in_progress\".\n3. Run: `sleep 15`\n4. Call SendMessage with to=\"team-lead\", summary=\"probe-alpha claimed task 1\", message=\"probe-alpha reporting: I claimed task 1. This is spike traffic.\"\n5. Run: `sleep 20`\n6. Call TaskUpdate on task id \"1\" setting status to \"completed\".\n7. Return the single line: `probe-alpha done`\n\nDo not do any other work. Do not explore the codebase.",
       "planModeRequired": false,
-      "cwd": "/Users/alanoliv/code/agents-team-ui",
+      "cwd": "/Users/alanoliv/code/team8",
       "backendType": "in-process"
     },
     {
@@ -39,7 +39,7 @@
       "model": "claude-opus-5",
       "prompt": "You are a throwaway probe for a 2-minute data-capture spike. Do EXACTLY these steps and nothing else. Do not read or write any project files.\n\n1. Run: `sleep 12`\n2. Call TaskList, then TaskUpdate on task id \"2\" setting owner to your own agent name and status to \"in_progress\".\n3. Run: `sleep 15`\n4. Call SendMessage with to=\"probe-alpha\", summary=\"bravo greets alpha\", message=\"probe-bravo reporting: teammate-to-teammate spike traffic, no relay through the lead.\"\n5. Call SendMessage with to=\"team-lead\", summary=\"probe-bravo claimed task 2\", message=\"probe-bravo reporting: I claimed task 2. This is spike traffic.\"\n6. Run: `sleep 20`\n7. Return the single line: `probe-bravo done`\n\nDo not do any other work. Do not explore the codebase.",
       "planModeRequired": false,
-      "cwd": "/Users/alanoliv/code/agents-team-ui",
+      "cwd": "/Users/alanoliv/code/team8",
       "backendType": "in-process"
     },
     {
@@ -53,7 +53,7 @@
       "model": "haiku",
       "prompt": "You are a throwaway probe for a 2-minute data-capture spike. Do EXACTLY these steps and nothing else. Do not read or write any project files.\n\n1. Run: `sleep 14`\n2. Call SendMessage with to=\"team-lead\", summary=\"probe-charlie alive\", message=\"probe-charlie reporting: running on a different model so the console can prove per-agent model resolution.\"\n3. Run: `sleep 30`\n4. Return the single line: `probe-charlie done`\n\nDo not do any other work. Do not explore the codebase.",
       "planModeRequired": false,
-      "cwd": "/Users/alanoliv/code/agents-team-ui",
+      "cwd": "/Users/alanoliv/code/team8",
       "backendType": "in-process"
     }
   ]

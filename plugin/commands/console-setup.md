@@ -33,15 +33,15 @@ profile.
 ```bash
 claude --version                                      # console pins 2.1.231 internals
 node --version                                        # 22 or newer
-claude plugin list 2>/dev/null | grep -A3 agent-teams-console || echo 'PLUGIN MISSING'
+claude plugin list 2>/dev/null | grep -A3 team8 || echo 'PLUGIN MISSING'
 ```
 
 If the plugin is missing, **stop and install it first** — the hooks live inside it
 and this command does not write them:
 
 ```bash
-claude plugin marketplace add alan-oliv/agent-teams-console
-claude plugin install agent-teams-console@agent-teams-console
+claude plugin marketplace add alan-oliv/team8
+claude plugin install team8@team8
 ```
 
 If `claude --version` is not the pinned one, say so and carry on: the console reads

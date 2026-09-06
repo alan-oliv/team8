@@ -19,7 +19,7 @@ export const HOOK_TIMEOUT_SECONDS = 5;
 export const PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1000;
 export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
 /** Where the user's own env values are stashed while the console owns them. */
-export const BACKUP_FILE = 'agent-teams-console.backup.json';
+export const BACKUP_FILE = 'team8.backup.json';
 
 // Agent teams are what this console exists to show, and the task tools are the
 // shared task list it renders. Neither can be turned on from a plugin manifest,

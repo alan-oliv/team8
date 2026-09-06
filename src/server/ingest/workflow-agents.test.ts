@@ -7,7 +7,7 @@ import type { WorkflowUsagePayload } from '../../shared/workflow-usage';
 import { createWorkflowUsageIngest, workflowAgentClaimOf } from './workflow-agents';
 
 const FIXTURES = path.resolve(process.cwd(), 'fixtures');
-const SLUG = '-Users-alanoliv-code-agents-team-ui';
+const SLUG = '-Users-alanoliv-code-team8';
 const SESSION = '98b0b4a7-3206-455b-aaf6-a5a81ad1e283';
 const RUN = 'wf_d36b25c0-f96';
 

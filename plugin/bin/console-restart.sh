@@ -49,8 +49,8 @@ done
 # spawn sits behind an atomic mkdir. A lock left behind by a killed hook would
 # block every later restart, so one older than a minute is cleared rather than
 # trusted.
-lock="$CLAUDE_DIR/agent-teams-console/restarting"
-mkdir -p "$CLAUDE_DIR/agent-teams-console" 2>/dev/null
+lock="$CLAUDE_DIR/team8/restarting"
+mkdir -p "$CLAUDE_DIR/team8" 2>/dev/null
 [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
 mkdir "$lock" 2>/dev/null || exit 0
 
@@ -61,10 +61,10 @@ mkdir "$lock" 2>/dev/null || exit 0
 # still works without `npm run build`.
 if [ -f "$ROOT/dist/server/index.js" ]; then
   nohup node "$ROOT/dist/server/index.js" --port "$PORT" \
-    >>"$CLAUDE_DIR/agent-teams-console.log" 2>&1 &
+    >>"$CLAUDE_DIR/team8.log" 2>&1 &
 else
   nohup npx --prefix "$ROOT/.." tsx "$ROOT/../src/server/index.ts" --port "$PORT" \
-    >>"$CLAUDE_DIR/agent-teams-console.log" 2>&1 &
+    >>"$CLAUDE_DIR/team8.log" 2>&1 &
 fi
 
 # Hold the lock until it answers so a burst collapses into one spawn, then

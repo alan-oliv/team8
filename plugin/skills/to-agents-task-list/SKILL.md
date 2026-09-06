@@ -15,7 +15,7 @@ Breaking work down, planning it, or turning finished analysis into tasks — esp
 
 **Not for:** a single task, or work you'll finish in the next two tool calls.
 
-**Handing these to teammates?** `agent-teams-console:implement-task-list` covers
+**Handing these to teammates?** `team8:implement-task-list` covers
 how many teammates, the dispatch contract, and settling the terminal deliverable.
 The `model` and `effort` set here are what each dispatch passes to its agent.
 
@@ -78,7 +78,7 @@ The closing message has three parts, in this order. A message that stops after p
 3. **The ask** — end with one direct question: which way now? The options are exactly these three:
    - **adjust models** — re-size any task's model or effort
    - **adjust tasks** — add, remove, merge, re-scope, or re-wire dependencies
-   - **start the work** — hand the list to `agent-teams-console:implement-task-list`
+   - **start the work** — hand the list to `team8:implement-task-list`
 
    Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `implement-task-list` until the user picks it.
 

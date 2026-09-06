@@ -101,7 +101,7 @@ export function parseArgs(argv: string[]): Cli {
     confirm,
     claudeHome,
     settingsPath: path.join(claudeHome, 'settings.json'),
-    dbPath: path.join(claudeHome, 'agent-teams-console', 'events.db'),
+    dbPath: path.join(claudeHome, 'team8', 'events.db'),
     team,
     session,
     cwd,
@@ -820,7 +820,7 @@ export async function listTeamSummaries(
 
   const sessions = await readSessions(sessionsRoot);
   // team -> the REAL session driving it, which is also the only place its name
-  // ("agents-team-ui", whatever `/rename` last wrote) can be read from.
+  // ("team8", whatever `/rename` last wrote) can be read from.
   const liveTeams = projectsRoot
     ? await teamsOfLiveSessions(projectsRoot, sessions)
     : new Map<string, string>();
@@ -1325,7 +1325,7 @@ export async function main(argv: string[]): Promise<number> {
   });
 
   const port = await listen(server, cli.port);
-  console.log(`agent teams console on http://127.0.0.1:${port}${cli.readOnly ? ' (read-only)' : ''}`);
+  console.log(`team8 on http://127.0.0.1:${port}${cli.readOnly ? ' (read-only)' : ''}`);
 
   /**
    * A console can be running before the team it should show even exists: the

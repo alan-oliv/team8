@@ -1,13 +1,13 @@
 {
-  "name": "agent-teams-console",
-  "description": "The agent teams console plugin.",
+  "name": "team8",
+  "description": "The team8 plugin.",
   "owner": {
     "name": "alan-oliv",
     "email": "alanbruno@gmail.com"
   },
   "plugins": [
     {
-      "name": "agent-teams-console",
+      "name": "team8",
       "source": "./plugin",
       "description": "A live browser console for Claude Code agent teams."
     }
