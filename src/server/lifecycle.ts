@@ -33,6 +33,9 @@ export const LAUNCH_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-launch.sh');
 /** Absolute path to the restarter every observation hook falls back to. */
 export const RESTART_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-restart.sh');
 
+/** Absolute path to the SessionStart nudge toward /team8:console, used by hookBlock(). */
+export const HINT_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-hint.sh');
+
 /**
  * The CLI derives the team name from the lead session id. Verified rule:
  * teamName = "session-" + sessionId.slice(0, 8).

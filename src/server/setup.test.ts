@@ -48,7 +48,10 @@ describe('hookBlock', () => {
       expect(entries).toHaveLength(carriesLauncher ? 3 : 1);
       expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
-      expect(entries[0].hooks).toHaveLength(1);
+      // SessionStart carries one extra hook: a pure nudge toward /team8:console
+      // for sessions that never spawn a team or workflow, appended to the same
+      // entry as the observation curl below.
+      expect(entries[0].hooks).toHaveLength(event === 'SessionStart' ? 2 : 1);
       // A command hook, not an http one: Claude Code renders an http hook's
       // connection refusal as a "<event> hook error" on EVERY tool call while
       // the console is down. This posts through curl and exits 0 instead.
@@ -150,9 +153,13 @@ describe("the plugin's own hooks.json", () => {
     // The restarter each observation hook falls back to splits the same way and
     // for the same reason, so its PATH is masked as well — but only the path.
     // The curl call wrapped around it is still compared in full, so the copies
-    // still cannot drift to different ports, timeouts or routes.
+    // still cannot drift to different ports, timeouts or routes. The SessionStart
+    // hint script (absolute path here, ${CLAUDE_PLUGIN_ROOT} there) is the same
+    // kind of legitimate difference, so it is masked the same way.
     const maskRestart = (command: string) =>
-      command.replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>');
+      command
+        .replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>')
+        .replace(/(['"])[^'"]*\/bin\/console-hint\.sh\1/, '<hint>');
     const normalise = (entries: HookEntry[]) =>
       JSON.stringify(
         entries.map((e) =>
