@@ -1,65 +1,133 @@
-# Team8
+<h1 align="center">Team<img src="src/web/images/favicon.svg" height="28" alt="8" /></h1>
 
-A Claude Code plugin. When a session spawns a **team** of teammates, this puts all
-of them side by side in a browser window: every teammate's live transcript, the
-shared task list, the mailboxes they talk through, who is burning context, and
-what is waiting on you.
+<p align="center">A live browser console for Claude Code, one screen for any session:
+solo, running subagents, coordinating a team of teammates, or driving a workflow.</p>
 
 ## The problem
 
-Spawn more than one agent and the visibility that was fine for a single session
-stops scaling: teammates run in separate transcripts with no shared view, tokens
-burn toward a context ceiling with nothing to show it, mailbox traffic between
-agents has nowhere to be read at a glance, and a permission or plan prompt in a
-pane you are not watching just sits there. Coordinating a team by tabbing
-between terminals is worse than running one agent alone. This is the cockpit
-for a team's actual state, in one screen.
+Running more than one Claude Code session at a time means tabbing between
+terminals: one window per teammate, another for the workflow, another for
+whatever you started solo. Coordinating a team that way is worse than running
+one agent alone: nothing tells you who's burning context, who's blocked, or
+what's waiting on you, until you go look. Team8 is the cockpit for a team's
+actual state, in one screen.
 
-<video src="docs/demo.mp4" controls></video>
+<img src="docs/demo.gif" alt="team8 demo" />
 
-You never start it. The plugin's `PreToolUse`/`PostToolUse` hooks on the `Agent`
-and `Workflow` tools watch for the moment a real team, or a workflow, comes into
-existence and start the server themselves, then print the URL into the session
-once — before the teammate spawns when possible, falling back to just after it:
+It starts itself the moment Claude spawns a team or a workflow, nothing to run
+by hand. From there, the switcher in the header lists every other session on the
+machine too, solo ones included, so you can hop to any of them without leaving
+the browser.
 
-```
-team8 → http://127.0.0.1:4823/?team=session-98b0b4a7
-```
+## Native Claude Code, on one screen
 
-## Six views
+None of this is new capability. Agent teams, subagents, workflows and the shared
+task list are all native to Claude Code. Team8 just gives what's already
+happening a shared screen.
 
-These are team mode's. The console has a second mode, chosen by what triggered
-the run rather than by a toggle: a dynamic workflow. A workflow subagent never
-enters `members[]`, so a workflow is not a team and is not drawn as one — that
-mode has no roster, no inboxes, no task list and no composer. Its four views are
-**run** (agents grouped by phase), **agents** (the ephemeral roster), **script**
-(the persisted script with the resume model drawn on it) and **journal** (each
-agent's actual return value, `null` included).
+Every teammate keeps its own conversation and transcript, team8 just puts them
+side by side. Every task carries a model tier (`opus`, `sonnet` or `haiku`) and
+an effort sized to the work by whoever created it, plus real `blockedBy`
+dependencies, so finishing one task unblocks whatever was waiting on it. The
+lead, meaning you, can message any teammate directly, ask it to wrap up or
+stop, or answer a permission prompt, without switching back to a terminal.
 
-| | |
-|---|---|
-| **wall** | one transcript column per teammate, lead pinned on the left |
-| **overview** | one tile per agent with a context-occupancy bar |
-| **comms** | an `everyone` room carrying the whole team's traffic, with per-pair inbox threads below it |
-| **tasks** | the shared task list |
-| **rail** | a keyboard-navigable agent list with one big transcript |
-| **grid** | six panes at once for a wide monitor |
+## Three modes, one screen
 
-Across the bottom, **NEEDS YOU** collects everything blocked on a human. From any
-view you can message a teammate, ask it to wrap up or stop, or answer a permission
-prompt without switching back to the terminal.
+What's running decides the mode. A bare session is subagents mode, two or more
+teammates make it a team, and a `Workflow` call gets its own mode with no
+roster at all.
 
-## Requirements
+### Subagents mode
 
-- **Claude Code with agent teams enabled.** Teams are an experimental feature:
-  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` has to be set (in `~/.claude/settings.json`
-  under `env`, or in your shell) or there is nothing for this to show, and
-  `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` is what fills the **tasks** view. `/setup`
-  sets both for you — see below. Being experimental, the on-disk shapes it reads can
-  change without notice — the server prints a warning at startup when
-  `claude --version` is not the version it was built against.
-- **Node 22+** and `curl`, both of which you already have if Claude Code runs.
-- macOS or Linux.
+Any single Claude Code session, no team required. This is the mode for solo
+work, or a session driving ordinary subagents (`Explore`, parallel search
+agents, and the like).
+
+<table>
+<tr>
+<td rowspan="2" width="360"><img src="docs/subagents.png" width="360" alt="Subagents mode, trace view"></td>
+<td><code>stream</code></td>
+<td>that session's own live transcript</td>
+</tr>
+<tr>
+<td><code>trace</code></td>
+<td>a timeline of every subagent it dispatched: model, elapsed, tokens, cost, nested by call depth (shown once it has spawned at least one)</td>
+</tr>
+</table>
+
+### Teammate mode
+
+An agent team, two or more members.
+
+<table>
+<tr>
+<td rowspan="3" width="360"><img src="docs/teammates.png" width="360" alt="Teammate mode, wall view"></td>
+<td><code>wall</code></td>
+<td>one transcript column per teammate, lead pinned on the left</td>
+</tr>
+<tr>
+<td><code>overview</code></td>
+<td>one tile per agent with a context-occupancy bar</td>
+</tr>
+<tr>
+<td><code>comms</code></td>
+<td>an <code>everyone</code> room carrying the whole team's traffic, with per-pair inbox threads below it</td>
+</tr>
+<tr>
+<td></td>
+<td><code>tasks</code></td>
+<td>the shared task list, model, dependencies, state</td>
+</tr>
+<tr>
+<td></td>
+<td><code>rail</code></td>
+<td>a keyboard-navigable agent list with one big transcript</td>
+</tr>
+<tr>
+<td></td>
+<td><code>grid</code></td>
+<td>six panes at once, for a wide monitor</td>
+</tr>
+<tr>
+<td></td>
+<td><code>usage</code></td>
+<td>spend by model, cache-hit ratio, cost per task and per hour</td>
+</tr>
+</table>
+
+Across the bottom, `NEEDS YOU` collects everything blocked on a human.
+
+### Workflow mode
+
+A `Workflow` tool run. Its agents never join a team roster, so this mode has
+no comms and no composer, just the run.
+
+<table>
+<tr>
+<td rowspan="3" width="360"><img src="docs/workflow.png" width="360" alt="Workflow mode, run view"></td>
+<td><code>run</code></td>
+<td>agents grouped by phase</td>
+</tr>
+<tr>
+<td><code>agents</code></td>
+<td>the ephemeral roster</td>
+</tr>
+<tr>
+<td><code>script</code></td>
+<td>the persisted script, with the resume model drawn on it</td>
+</tr>
+<tr>
+<td></td>
+<td><code>journal</code></td>
+<td>each agent's actual return value, <code>null</code> included</td>
+</tr>
+<tr>
+<td></td>
+<td><code>usage</code></td>
+<td>the run's token occupancy against what it actually billed</td>
+</tr>
+</table>
 
 ## Install
 
@@ -69,239 +137,52 @@ Three steps on a new machine, then restart:
 claude plugin marketplace add alan-oliv/team8
 claude plugin install team8@team8
 # then, inside Claude Code:
-/setup
+/team8:setup
 ```
 
-The plugin ships with its bundle already built, so there is no `npm install` and no
-build step on your machine. Everything the console observes travels inside it — all
-ten hooks, the launcher, the two slash commands — and needs no configuration.
+`/team8:setup` is namespaced to the plugin on purpose, the bare `/setup` works
+too until some other plugin also ships one. Same reasoning as `/team8:console`
+below.
 
-`/setup` is the once-per-machine step for the two things a plugin manifest
-has nowhere to put: the `env` vars that turn on agent teams and the task tools, and
-`subagentStatusLine`. It checks the machine first, shows you the keys, and writes
-only once you say yes. It never touches your `statusLine` and never writes hooks —
-see [what is left to install](#what-is-left-to-install-two-env-vars) for why.
+Needs Node 22+ and `curl`, which you already have if Claude Code runs, on
+macOS or Linux.
 
-`marketplace add` also takes a local path (`claude plugin marketplace add
-/path/to/team8`) or any git URL — this repository is its own marketplace.
-Prefer the `owner/repo` form: a local directory is copied verbatim, `node_modules`
-and all, while a clone brings only what is committed.
+`/team8:setup` writes the two things a plugin manifest has nowhere to put: an
+`env` var that turns on agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`)
+and one that turns on the task list (`CLAUDE_CODE_ENABLE_TODO_TOOLS`), one list
+shared by the whole team, each entry claimed and closed by whichever teammate
+picks it up. It merges into your existing `settings.json` without touching
+anything already there, and shows you exactly what it's about to write before
+it writes anything.
 
-**Restart your Claude Code session afterwards.** Hooks and `env` are read once at
-session start, so the console will not appear in the session you installed from.
+Restart Claude Code afterwards: `env` is read once at session start.
 
-Check it any time with the `/console` slash command (`/team8:console`
-if another plugin already owns that name). It reports whether the console is
-running, prints its URL, and starts it if a team is live but the server is down.
+Check it any time with `/team8:console` (`/console` also works, same as
+`/team8:setup` above): it reports whether the console is running, prints its
+URL, and starts it if a team is live but the server is down.
 
-## It only wakes for a real team, or a workflow
+## Skills
 
-The launcher runs on **every** `Agent` or `Workflow` tool call, so it is written
-to be cheap and to do nothing almost every time. For an `Agent` call it reads
-`~/.claude/teams/<team>/config.json` and gives up unless that file lists **two
-or more members**. A `Workflow` call has no such gate — a run forms no team, so
-every one wakes the console and points it at the session that ran it instead.
+Two skills fire on their own, when the work calls for them.
 
-Ordinary subagents, `Explore`, workflow fan-outs and parallel search agents never
-appear in `members[]` — verified during the capture spike, where six workflow
-subagents were live and `members[]` still held only the lead. So they cost one
-short-lived shell process and nothing else: no server, no window, no message.
+`team8:tasks` sets the contract a task needs before it's handed off: a
+description that stands alone, real `blockedBy` dependencies, and a
+`model`/`effort` sized to the work.
 
-Only teammates spawned onto a team, or a workflow's own top-level call, count.
+`team8:run` turns settled work into tasks and teammates: how many teammates,
+the dispatch contract, and the branch shape the dependency graph implies.
 
-## What it reads and writes
+A third is a plain toggle. Claude doesn't reach for it on its own, you call it
+by name: `/team8:enable-team true` or `/team8:enable-team false` flips the
+same two `env` vars `/team8:setup` writes.
 
-Everything is local. Nothing leaves `127.0.0.1`, and the server refuses
-cross-origin requests.
+Don't want Claude reaching for one of these on its own? Turn it off per skill,
+no plugin changes needed, in `~/.claude/settings.json` (or the project's
+`.claude/settings.json`):
 
-**Reads** (all under `~/.claude`, or `$CLAUDE_CONFIG_DIR` if you set it):
-
-- `teams/<team>/config.json` — the roster
-- `teams/<team>/inboxes/*.json` — the mailboxes
-- `projects/**/*.jsonl` and their `*.meta.json` sidecars — teammate transcripts
-- `tasks/<team>/*.json` — the shared task list
-- `sessions/<lead>.json` — the git branch shown in the header
-
-**Writes:**
-
-- `team8/logs/<team>.jsonl` — its own append-only event log, one
-  file per team, so a console started for a second team cannot write over the
-  first team's history. Pruned at startup, capped per event kind and, for
-  transcript history, per agent, and dropped once nothing has touched it for a
-  week. Safe to delete, but only mostly rebuilt from the files above: the
-  roster, transcripts, tasks and mail come back on the next sweep, while what
-  the hooks push in — the status line, the per-agent substatus, the permission
-  and plan cards — exists nowhere else and does not.
-- `team8/events.db.migrated-<epoch-ms>` — only if you upgraded
-  from a version that kept one shared log. The first start after the upgrade
-  folds `team8/events.db` into the per-team logs above — that is
-  how your open permission cards, status line and per-agent substatus survive
-  the upgrade, since nothing under `~/.claude` can rebuild them — and renames
-  the original to this name. Nothing reads it again, it is written once, and it
-  is never cleaned up, so delete it whenever you like: once the console has come
-  back with your cards and status line intact, it holds nothing you cannot
-  already see. Two caveats. If the console reports `events.db is left in place`,
-  another console was writing one of the team logs at that moment; start it
-  again on its own and it will finish. And if you upgraded from a version older
-  still, `events.db` was a SQLite database rather than a log — the console
-  reports `recovered 0 row(s)` and renames it aside unread.
-- `team8.log` — the detached server's stdout and stderr
-- `team8/announced/<team>` — a marker so the URL is printed once
-  per team, not once per teammate
-- `teams/<team>/inboxes/<agent>.json` — **only** when you act in the UI. Messaging a
-  teammate, asking one to wrap up or stop, and requesting a respawn are all just
-  entries appended to that teammate's inbox, exactly as the lead would write them.
-
-It does **not** touch `settings.json` when installed as a plugin — the hooks it
-needs travel inside the plugin, and `/setup` is the only thing that writes
-there, only when you ask it to.
-
-The server exits ten minutes after the last team goes away, and immediately on the
-lead's `SessionEnd`. Start it with `--read-only` to disable every control route.
-
-### A workflow run has no controls, and cannot have any
-
-The design names two, `skip agent` and `stop run`, and neither ships. Not
-because a server route is missing — because there is nothing for a route to
-call.
-
-A dynamic workflow runs inside the Claude Code session process. Both verbs are
-an `AbortController.abort()` and a status write against an in-memory task
-registry, and the only callers are that session's own terminal UI: `x` on a
-running run in the task list, skip and retry in its detail panel. Nothing on
-disk drives them. `journal.jsonl` and the run snapshot this console reads are
-outputs, and the journal is read back only at the start of a
-`Workflow({ resumeFromRunId })` replay.
-
-The one live channel another process can open is the per-session unix socket
-advertised in `sessions/<pid>.json`. It accepts three things: a prompt for the
-session's queue, a rename, and delivery receipts. There is no workflow verb —
-and the prompt is the wrong shape anyway, because a queued prompt is read at a
-turn boundary and the run is happening inside the tool call that turn is
-waiting on. `stop the run` would arrive after the run it was meant to stop. A
-signal to the session's pid would end the whole session and every teammate in
-it, which is a different verb with a different blast radius.
-
-So the console watches a workflow and never touches it. This is the refusal the
-design makes for `Send now` on the in-flight badge: a control whose only effect
-is its own highlight teaches a capability that does not exist, and it does it at
-the moment the operator most needs to trust the screen. Checked against Claude
-Code 2.1.231 — if a run-control call ever ships, this is the paragraph to
-delete.
-
-## What is left to install: two env vars
-
-The plugin carries its own hooks. All ten observation events — `PreToolUse`,
-`PostToolUse`, `PermissionRequest`, `UserPromptSubmit`, `Notification`, `Stop`,
-`SubagentStop`, `SessionStart`, `SessionEnd`, `PreCompact` — are registered in the
-plugin's `plugin/hooks/hooks.json` and fire from there, so **permission cards, plan
-approvals and tool activity work on a bare install with no `settings.json` edit at
-all.** Timeouts are in seconds, and the hooks cost one refused connection each
-while the console is not running.
-
-Two things have no plugin-manifest equivalent, because Claude Code has nowhere for
-a plugin to put them:
-
-- **`env`** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, without which there are no
-  teams to show, and `CLAUDE_CODE_ENABLE_TODO_TOOLS`, which fills the **tasks** view
-- **`subagentStatusLine`** — each teammate's current tool, in its header
-
-Run **`/setup`** once per machine for those two and nothing else. It ships
-with the plugin: it checks the machine can run the console, reads your
-`settings.json`, shows you what it would add, and writes only once you say yes.
-
-`settings.json` is the right home for them precisely because it is per-machine: a
-shell export only reaches sessions started from that shell, not ones an editor or
-launcher spawns.
-
-### Your status line is yours
-
-The console's own `statusLine` command ends in `printf ''` — it draws nothing,
-because its job is only to POST the payload. Written over an existing status line
-(`ccstatusline`, `starship`, anything custom) it would leave you with a blank bar,
-so **the install never takes that key unless it is empty.** If you already have a
-status line, it is left exactly as it is and you give up two readouts: the
-rate-limit gauge, and the lead's cost and context in the header. Everything else —
-transcripts, tasks, mail, permission cards, per-agent current tool — is unaffected.
-
-Want both? Ask `/setup` for it explicitly and it will chain the two, POSTing
-the payload to the console before handing it to your own command. It will not do
-that on its own.
-
-`/setup` also reverses itself — ask it to remove what it added and it drops
-only the keys it installed, and puts both `env` vars back the way it found them. The
-hooks are not its business either way: they come and go with `claude plugin
-install` / `uninstall`.
-
-<details>
-<summary>Without the plugin, from a clone</summary>
-
-```bash
-npm install
-npm run setup            # prints the block it would write
-npm run setup -- --yes   # writes it to ~/.claude/settings.json
+```json
+{ "skillOverrides": { "team8:tasks": "off" } }
 ```
 
-This is the no-plugin path, so it writes the ten hooks into `settings.json`
-as well as the env vars and `subagentStatusLine`. **Do not run it if you have the
-plugin installed** — the hooks would fire twice, once from each copy. It merges
-into your existing hooks rather than replacing them, follows the same rule about
-your status line (it takes the key only when nothing else holds it), and
-`npm run uninstall -- --yes` puts everything back. Whatever those `env` vars were
-before is stashed in `~/.claude/team8.backup.json` and restored on
-uninstall.
-
-</details>
-
-## The design, and everything that isn't source
-
-The design bundle, the original plan and spec, and the manual acceptance script
-live in a sibling repository, `agents-team-ui-docs`, which is not
-version-controlled. None of it is the product: the design folder in particular
-is a re-pulled mirror of a Claude Design project, so versioning it here recorded
-someone else's edit history alongside this one.
-
-If you are implementing against the design, read
-`../agents-team-ui-docs/design/CHANGELOG.md` first — it is newest-first and says
-what changed and why, which is what you want when the console already exists.
-
-## Developing
-
-```bash
-npm install
-npm run dev        # vite on 5173 proxying the server on 4823
-npm test           # vitest
-npm run typecheck
-```
-
-### Everything that ships lives in `plugin/`
-
-```
-plugin/                      the entire installed artifact, 1.3M
-├─ .claude-plugin/plugin.json
-├─ bin/  commands/  hooks/
-└─ dist/                     committed on purpose, see below
-```
-
-Nothing else in this repository is installed. That boundary is load-bearing:
-`claude plugin install` runs `npm install` when it finds a `package.json` at the
-plugin root, dev dependencies and all — which is how an earlier layout put 141M
-on disk for a console that needs 1.3M. Keeping `package.json` and `src/` at the
-repo root, outside `plugin/`, is what stops that.
-
-**`plugin/dist/` is committed** for the same reason: a plugin is just files, and
-nothing builds on the user's machine. Rebuild before publishing:
-
-```bash
-npm run build
-git add plugin/dist
-```
-
-`npm run build` is wired to the `prepare` script, so a plain `npm install` in this
-repo refreshes it for you. The build is deterministic: if nothing in `src/`
-changed, `git status` stays clean.
-
-The server has **no runtime dependencies** either. Everything it needs is bundled
-by esbuild into `plugin/dist/server/index.js`, which is why `plugin/` runs from a
-bare copy with no `node_modules` in sight — verified by running it from a directory
-containing nothing else.
+`off` hides it entirely, `user-invocable-only` keeps it reachable by name
+(`/team8:tasks`) but out of Claude's own judgement.
