@@ -1,5 +1,5 @@
 {
-  "description": "Everything the console observes, plus the launcher that starts it. The observation hooks POST each event to the console on its default port through a curl one-liner that always exits 0, so a console that isn't running costs nothing but a discarded connection refusal instead of a hook-error notice on every tool call. A POST that finds nothing listening hands off to console-restart.sh, which brings the console back when a team is still live and stays silent either way. The launcher exits immediately unless a real team exists, except on the Workflow tool \u2014 a workflow forms no team, so that matcher points the console at the session that ran it instead. Timeouts are in seconds.",
+  "description": "Everything the console observes, plus the launcher that starts it. The observation hooks POST each event to the console on its default port through a curl one-liner that always exits 0, so a console that isn't running costs nothing but a discarded connection refusal instead of a hook-error notice on every tool call. A POST that finds nothing listening hands off to console-restart.sh, which brings the console back when a team is still live and stays silent either way. The launcher exits immediately unless a real team exists, except on the Workflow tool \u2014 a workflow forms no team, so that matcher points the console at the session that ran it instead. SessionStart also runs console-hint.sh, a pure systemMessage nudge toward /team8:console \u2014 it never starts the server itself, so a session that never spawns a team or workflow still learns the console exists without one running idle. Timeouts are in seconds.",
   "hooks": {
     "PreToolUse": [
       {
@@ -127,6 +127,11 @@
           {
             "type": "command",
             "command": "curl -sS -m 5 -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4823/hook 2>/dev/null || OCTO_PORT=4823 \"${CLAUDE_PLUGIN_ROOT}/bin/console-restart.sh\"; exit 0",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/console-hint.sh\"",
             "timeout": 5
           }
         ]
