@@ -168,7 +168,7 @@ export function StatusBar({
 
   return (
     <Bar
-      wordmark="logo"
+      wordmark="team8"
       picker={
         <>
           <TeamSelect

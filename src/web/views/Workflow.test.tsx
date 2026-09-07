@@ -84,7 +84,7 @@ describe('Workflow', () => {
   // badge in the picker is what says a workflow is not a team.
   it('badges itself workflow — a workflow is not a team', () => {
     renderWorkflow();
-    expect(screen.getByTestId('bar-wordmark').textContent).toBe('logo');
+    expect(screen.getByTestId('bar-wordmark').textContent).toBe('team8');
     expect(screen.getByTestId('team-mode').textContent).toBe('workflow');
   });
 

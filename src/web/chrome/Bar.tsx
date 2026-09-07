@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { SettingsStore } from '../state/useSettings';
 import { ConfigMenu } from './ConfigMenu';
+import { Logo } from './Logo';
 
 // The bar is one 40px line. A child that can shrink or wrap doubles its height,
 // which is the one way this layout breaks — so nothing in it is allowed to.
@@ -138,6 +139,9 @@ export function Bar<T extends string>({
         id="team-wordmark"
         data-testid="bar-wordmark"
         style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
           color: 'var(--color-accent)',
           letterSpacing: '.14em',
           fontWeight: 700,
@@ -145,6 +149,7 @@ export function Bar<T extends string>({
           ...METRIC,
         }}
       >
+        <Logo />
         {wordmark}
       </span>
       {picker}
