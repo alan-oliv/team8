@@ -357,7 +357,7 @@ const AGENT_TALLY: Array<[WorkflowAgentState, string]> = [
   ['fail', 'failed'],
 ];
 
-export function WorkflowRun({ run, onOpenJournal }: { run: Run; onOpenJournal?: () => void }) {
+export function WorkflowRun({ run, onOpenOutput }: { run: Run; onOpenOutput?: () => void }) {
   const [layout, setLayout] = useState<'phases' | 'grid'>('phases');
   const [expandedPhases, setExpandedPhases] = useState<ReadonlySet<number>>(new Set());
   const { columns, rows } = workflowGrid(run);
@@ -439,14 +439,14 @@ export function WorkflowRun({ run, onOpenJournal }: { run: Run; onOpenJournal?: 
                     >
                       copy return
                     </button>
-                    {onOpenJournal && (
+                    {onOpenOutput && (
                       <button
                         type="button"
-                        data-testid="wf-open-journal"
-                        onClick={onOpenJournal}
+                        data-testid="wf-open-output"
+                        onClick={onOpenOutput}
                         style={{ ...TAB, color: 'var(--color-neutral-500)', border: '1px solid var(--color-neutral-800)', borderRadius: '4px' }}
                       >
-                        open in journal
+                        open output
                       </button>
                     )}
                   </span>
@@ -454,11 +454,27 @@ export function WorkflowRun({ run, onOpenJournal }: { run: Run; onOpenJournal?: 
                 {/* 9-decisions.md row 3: the claims/sources/contradictions summary
                     line the artboard draws above this prose is left out on
                     purpose — nothing parses that structure out of `result`. */}
-                <div style={{ color: 'var(--color-neutral-300)', fontSize: '11px', lineHeight: 1.5, marginTop: '8px' }}>
+                {/* Clamped, not dumped whole: this box sits above the phase list,
+                    and a multi-thousand-word return (a script that hands back a
+                    structured object stringifies to exactly that) would push the
+                    run itself off-screen. The footer line below says where the
+                    unclamped text lives. */}
+                <div
+                  style={{
+                    color: 'var(--color-neutral-300)',
+                    fontSize: '11px',
+                    lineHeight: 1.5,
+                    marginTop: '8px',
+                    display: '-webkit-box',
+                    WebkitBoxOrient: 'vertical',
+                    WebkitLineClamp: 6,
+                    overflow: 'hidden',
+                  }}
+                >
                   {run.result}
                 </div>
                 <div style={{ color: 'var(--color-neutral-700)', fontSize: '10px', marginTop: '8px' }}>
-                  {`full return — ${wordCount} word${wordCount === 1 ? '' : 's'} — in the journal as the run's final entry`}
+                  {`full return — ${wordCount} word${wordCount === 1 ? '' : 's'} — in the output tab`}
                 </div>
               </div>
             )}

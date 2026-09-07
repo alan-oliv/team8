@@ -496,15 +496,15 @@ describe('WorkflowRun', () => {
       expect(writeText).toHaveBeenCalledWith('a two word brief');
     });
 
-    it('routes to the journal tab when a handler is given, and hides the button otherwise', () => {
-      const onOpenJournal = vi.fn();
-      render(<WorkflowRun run={RETURNED} onOpenJournal={onOpenJournal} />);
-      fireEvent.click(screen.getByTestId('wf-open-journal'));
-      expect(onOpenJournal).toHaveBeenCalled();
+    it('routes to the output tab when a handler is given, and hides the button otherwise', () => {
+      const onOpenOutput = vi.fn();
+      render(<WorkflowRun run={RETURNED} onOpenOutput={onOpenOutput} />);
+      fireEvent.click(screen.getByTestId('wf-open-output'));
+      expect(onOpenOutput).toHaveBeenCalled();
 
       cleanup();
       render(<WorkflowRun run={RETURNED} />);
-      expect(screen.queryByTestId('wf-open-journal')).toBeNull();
+      expect(screen.queryByTestId('wf-open-output')).toBeNull();
     });
 
     it('says nothing about a run with no result to show', () => {

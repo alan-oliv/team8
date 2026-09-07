@@ -3863,7 +3863,7 @@ function parseWorkflowRun(raw) {
     ...opt("totalTokens", num(snapshot.totalTokens)),
     ...opt("totalToolCalls", num(snapshot.totalToolCalls)),
     ...opt("defaultModel", str2(snapshot.defaultModel)),
-    ...opt("result", str2(snapshot.result)),
+    ...opt("result", resultText2(snapshot.result)),
     ...opt("error", str2(snapshot.error))
   };
 }
