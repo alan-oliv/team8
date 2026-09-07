@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { LAUNCH_SCRIPT, RESTART_SCRIPT } from './lifecycle';
+import { LAUNCH_SCRIPT, RESTART_SCRIPT, HINT_SCRIPT } from './lifecycle';
 import { atomicWrite } from './control/mailbox';
 import { DEFAULT_PERMISSION_TIMEOUT_MS } from './ingest/hooks';
 import { readJsonSafe } from './watch/jsonfile';
@@ -145,6 +145,15 @@ export function hookBlock(port: number): HookBlock {
   const workflowLauncher: HookEntry = { ...launcher, matcher: 'Workflow' };
   hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher];
   hooks.PostToolUse = [...(hooks.PostToolUse ?? []), { ...launcher }, { ...workflowLauncher }];
+
+  // A pure nudge toward /team8:console for sessions that never spawn a team
+  // or workflow. Appended to the same entry as the observation curl, matching
+  // hooks/hooks.json, and never starts the server itself.
+  hooks.SessionStart[0].hooks.push({
+    type: 'command',
+    command: `'${HINT_SCRIPT}'`,
+    timeout: LAUNCH_HOOK_TIMEOUT_SECONDS,
+  });
 
   return {
     hooks,

@@ -1651,6 +1651,7 @@ function resolvePluginDir() {
 var PLUGIN_DIR = resolvePluginDir();
 var LAUNCH_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-launch.sh");
 var RESTART_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-restart.sh");
+var HINT_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-hint.sh");
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -5232,6 +5233,11 @@ function hookBlock(port) {
   const workflowLauncher = { ...launcher, matcher: "Workflow" };
   hooks.PreToolUse = [...hooks.PreToolUse ?? [], launcher, workflowLauncher];
   hooks.PostToolUse = [...hooks.PostToolUse ?? [], { ...launcher }, { ...workflowLauncher }];
+  hooks.SessionStart[0].hooks.push({
+    type: "command",
+    command: `'${HINT_SCRIPT}'`,
+    timeout: LAUNCH_HOOK_TIMEOUT_SECONDS
+  });
   return {
     hooks,
     statusLine: { type: "command", command: post(port, "statusline"), refreshInterval: 5 },
