@@ -605,7 +605,7 @@ function Spans({ spans }: { spans: Inline[] }) {
  * the constructs that actually appear — see shared/markdown.ts for why the
  * subset is deliberate.
  */
-function Prose({ text }: { text: string }) {
+export function Prose({ text }: { text: string }) {
   return (
     <>
       {mdBlocks(text).map((b, i) =>

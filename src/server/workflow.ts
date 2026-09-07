@@ -18,9 +18,10 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 /**
  * An agent launched with a schema returns an OBJECT, so the journal's `result`
- * is as often a bag as a string and reading only strings dropped every
- * structured return. A literal `null` stays undefined — absent is what the
- * journal view's "returned null" path keys on.
+ * — and a workflow script's own top-level return — is as often a bag as a
+ * string, and reading only strings (`str()`) dropped every structured return.
+ * A literal `null` stays undefined — absent is what the journal view's
+ * "returned null" path keys on.
  */
 function resultText(v: unknown): string | undefined {
   if (typeof v === 'string') return v;
@@ -188,7 +189,7 @@ export function parseWorkflowRun(raw: unknown): WorkflowRun | null {
     ...opt('totalTokens', num(snapshot.totalTokens)),
     ...opt('totalToolCalls', num(snapshot.totalToolCalls)),
     ...opt('defaultModel', str(snapshot.defaultModel)),
-    ...opt('result', str(snapshot.result)),
+    ...opt('result', resultText(snapshot.result)),
     ...opt('error', str(snapshot.error)),
   };
 }

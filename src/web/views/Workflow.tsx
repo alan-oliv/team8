@@ -9,11 +9,12 @@ import { flattenSubagents } from '../../shared/subagents';
 import { Usage } from './Usage';
 import { WorkflowAgents } from './WorkflowAgents';
 import { WorkflowJournal } from './WorkflowJournal';
+import { WorkflowOutput } from './WorkflowOutput';
 import { WorkflowRun } from './WorkflowRun';
 import { WorkflowScript } from './WorkflowScript';
 import { runTotalsText } from './workflow-grid';
 
-export const WORKFLOW_VIEW_IDS = ['run', 'agents', 'script', 'journal', 'usage'] as const;
+export const WORKFLOW_VIEW_IDS = ['run', 'output', 'agents', 'script', 'journal', 'usage'] as const;
 export type WorkflowViewId = (typeof WORKFLOW_VIEW_IDS)[number];
 
 /**
@@ -171,7 +172,8 @@ export function Workflow({
             list and the live note mid-flight, the phases once they land, and
             the sidebar either way — which the spec never restricted to a
             finished run. */}
-        {view === 'run' && <WorkflowRun run={run} onOpenJournal={() => setView('journal')} />}
+        {view === 'run' && <WorkflowRun run={run} onOpenOutput={() => setView('output')} />}
+        {view === 'output' && <WorkflowOutput run={run} now={now} />}
         {view === 'agents' && <WorkflowAgents agents={run.agents} />}
         {view === 'script' && <WorkflowScript run={run} />}
         {view === 'journal' && <WorkflowJournal agents={run.agents} />}

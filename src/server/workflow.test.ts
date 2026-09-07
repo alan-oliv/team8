@@ -53,6 +53,26 @@ describe('parseWorkflowRun', () => {
     expect(parseWorkflowRun(null)).toBeNull();
   });
 
+  describe('the run\'s own result', () => {
+    const withResult = (result: unknown) =>
+      parseWorkflowRun({ runId: 'wf_x', workflowName: 'n', result })?.result;
+
+    it('carries a string return as-is', () => {
+      expect(withResult('a two word brief')).toBe('a two word brief');
+    });
+
+    // A script that returns an object rather than a string used to vanish
+    // entirely — `str()` only ever kept a plain string — so the run looked
+    // like it returned nothing when it plainly had.
+    it('serializes a structured return rather than dropping it', () => {
+      expect(withResult({ report: 'url', flags: ['a'] })).toBe('{"report":"url","flags":["a"]}');
+    });
+
+    it('leaves the result absent when the run returned null', () => {
+      expect(withResult(null)).toBeUndefined();
+    });
+  });
+
   describe('agent state', () => {
     const withAgent = (rec: Record<string, unknown>) =>
       parseWorkflowRun({
