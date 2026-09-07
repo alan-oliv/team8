@@ -127,30 +127,43 @@ export function Bar<T extends string>({
         alignItems: 'center',
         flexWrap: 'nowrap',
         gap: 10,
-        padding: '9px 14px',
+        padding: '14px',
         borderBottom: '1px solid var(--color-neutral-900)',
         background: 'var(--color-bg)',
         fontSize: 12.5,
       }}
     >
       {/* The id is half of the picker trigger's accessible name — TeamSelect
-          names itself `team-wordmark team-trigger-name`. */}
+          names itself `team-wordmark team-trigger-name`. The word itself stays
+          for that name, just not on screen: the mark alone reads as the brand
+          once it is on every teammate's portrait and the favicon too. */}
       <span
         id="team-wordmark"
         data-testid="bar-wordmark"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 5,
+          marginRight: 6,
           color: 'var(--color-accent)',
-          letterSpacing: '.14em',
-          fontWeight: 700,
-          fontSize: 11,
           ...METRIC,
         }}
       >
-        <Logo />
-        {wordmark}
+        <Logo size={20} />
+        <span
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            margin: -1,
+            padding: 0,
+            overflow: 'hidden',
+            clip: 'rect(0, 0, 0, 0)',
+            whiteSpace: 'nowrap',
+            border: 0,
+          }}
+        >
+          {wordmark}
+        </span>
       </span>
       {picker}
 

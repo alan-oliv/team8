@@ -6,7 +6,7 @@ export function Logo({ size = 14 }: { size?: number }) {
     <div
       data-testid="logo-mark"
       aria-hidden="true"
-      style={{ width: size, height: size, flex: 'none' }}
+      style={{ width: size, height: size, flex: 'none', marginTop: -2 }}
       dangerouslySetInnerHTML={{ __html: LOGO_SVG }}
     />
   );
