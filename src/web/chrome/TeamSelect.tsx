@@ -75,6 +75,19 @@ function agentCount(team: TeamSummary): string {
   return `${team.members} agent${team.members === 1 ? '' : 's'}`;
 }
 
+/**
+ * The row's title when the operator never named the session. A team's own
+ * `name` is already a short directory id (`session-<8>`); a `sessionOnly`
+ * row's `name` is the FULL session uuid (domain.ts), so that is the one case
+ * needing the same shortening `WorkflowRun`'s `shortId` applies elsewhere —
+ * otherwise the row is the one place in the picker that spells out all 36
+ * characters.
+ */
+function displayName(team: TeamSummary): string {
+  if (team.goal) return team.goal;
+  return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
+}
+
 function matchesQuery(team: TeamSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -637,7 +650,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {team.goal ?? team.name}
+                      {displayName(team)}
                     </span>
                     <span style={{ flex: 1 }} />
                     {rowMark && (
@@ -684,7 +697,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                     <button
                       type="button"
                       data-testid="row-hide"
-                      aria-label={`hide ${team.goal ?? team.name}`}
+                      aria-label={`hide ${displayName(team)}`}
                       title="hide from this picker · nothing is stopped"
                       onClick={(e) => {
                         e.stopPropagation();
