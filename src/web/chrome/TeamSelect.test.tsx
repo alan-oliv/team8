@@ -134,6 +134,33 @@ it('leads with the session name and demotes the id to the second line', async ()
   expect(within(rows[1]).queryByTestId('team-id')).toBeNull();
 });
 
+// A `sessionOnly` row's `name` is the full session uuid (unlike a team's,
+// which is already a short directory id) — an unnamed one must still shorten
+// it, not spell out all 36 characters in the one row that never got a `goal`.
+it('shortens an unnamed session-only row instead of showing its full uuid', async () => {
+  const teams = [
+    ...LIST.teams,
+    {
+      ...LIST.teams[1],
+      name: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      goal: undefined,
+      sessionOnly: true,
+      subagents: 2,
+    },
+  ];
+  fetchMock = vi.fn((path: string) =>
+    path === '/api/teams'
+      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  expect(within(rows[2]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
+});
+
 it('carries the agent count and state on the second line', async () => {
   renderSelect();
   const rows = await screen.findAllByRole('option');

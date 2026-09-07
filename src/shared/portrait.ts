@@ -195,7 +195,7 @@ export function portraitFor(agent: { name: string; agentType: string; isLead: bo
 }
 
 /** One `<path>` per colour in `order`, a unit square per matching cell. */
-function gridSvg(grid: string[], width: number, order: string[], colorOf: (ch: string) => string): string {
+export function gridSvg(grid: string[], width: number, order: string[], colorOf: (ch: string) => string): string {
   const paths: string[] = [];
   for (const ch of order) {
     const fill = colorOf(ch);
