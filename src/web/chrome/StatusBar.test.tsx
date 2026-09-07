@@ -80,13 +80,14 @@ it('fires the view change when a tab is clicked', () => {
   expect(onViewChange).toHaveBeenLastCalledWith('tasks');
 });
 
-it('renders the wordmark and the team name', () => {
+it('renders the mark and the team name, the wordmark itself heard not seen', () => {
   renderBar();
-  const wordmark = screen.getByText('team8');
-  expect(wordmark.style.color).toBe('var(--color-accent)');
-  expect(wordmark.style.letterSpacing).toBe('.14em');
-  expect(wordmark.style.fontWeight).toBe('700');
-  expect(wordmark.style.fontSize).toBe('11px');
+  // The word survives for the picker trigger's accessible name (it is half of
+  // `aria-labelledby="team-wordmark team-trigger-name"`), but on screen the
+  // mark alone stands for the brand.
+  expect(screen.getByText('team8')).toBeTruthy();
+  expect(screen.getByTestId('bar-wordmark').style.color).toBe('var(--color-accent)');
+  expect(screen.getByTestId('logo-mark')).toBeTruthy();
   expect(screen.getByText('session-98b0b4a7')).toBeTruthy();
   // The wordmark is the same word in every shell now, so the badge beside it is
   // what says which of the four this is (canvas 4a).
