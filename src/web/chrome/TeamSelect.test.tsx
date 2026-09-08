@@ -41,11 +41,13 @@ function routed(post: () => Promise<Response>) {
 beforeEach(() => {
   fetchMock = routed(() => Promise.resolve(new Response('{}', { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
+  localStorage.clear();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  localStorage.clear();
 });
 
 function renderSelect(props: Partial<Parameters<typeof TeamSelect>[0]> = {}, watch: Partial<WatchState> = {}) {
@@ -869,6 +871,27 @@ it('refetches the list scoped to the folder that was picked, and closes the fold
   // folder is how you get to a session inside it.
   expect(screen.queryByTestId('folder-menu')).toBeNull();
   expect(screen.getByTestId('team-list')).toBeTruthy();
+});
+
+// The wall view and a workflow view each mount their own TeamSelect, sharing
+// no React state between them — without persisting the pick, navigating
+// between the two reset the operator back to every folder.
+it('remembers the picked folder across a remount, the way navigating between views does', async () => {
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  expect(fetchMock).toHaveBeenLastCalledWith(
+    `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
+  );
+
+  cleanup();
+  fetchMock.mockClear();
+  renderSelect();
+  await screen.findAllByRole('option');
+  expect(fetchMock).toHaveBeenCalledWith(
+    `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
+  );
 });
 
 // The scope is the folder the SERVER answered with, never the one that was

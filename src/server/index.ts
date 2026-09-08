@@ -828,6 +828,10 @@ export async function listTeamSummaries(
   const teams: TeamSummary[] = [];
   // Team directory -> the cwd its lead sits in, kept for the cwd pass below.
   const leadCwds = new Map<string, string>();
+  // Team directory -> the session actually driving it (leadSession below),
+  // for the folder scope: config.leadSessionId is stale once a team is
+  // re-keyed and would attribute the team to the folder it merely started in.
+  const leadSessions = new Map<string, string>();
   // One git invocation per DIRECTORY, not per team: two sessions open on the
   // same repo report the same tree, and the listing runs on the request thread.
   const diffstats = new Map<string, TeamSummary['diffstat']>();
@@ -856,6 +860,7 @@ export async function listTeamSummaries(
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     const lead = config.members.find((m) => m.agentId === config.leadAgentId) ?? config.members[0];
     leadCwds.set(name, lead?.cwd ?? '');
+    leadSessions.set(name, leadSession);
     // The session's own cwd first: it is the directory whose slug names the
     // project dir the run writes into, and a re-keyed team's members[] can name
     // a different one.
@@ -895,7 +900,7 @@ export async function listTeamSummaries(
 
   // Runs first: a session it hands a team to is represented by that team's row
   // and must not also appear below as a bare session.
-  const adopted = adoptByCwd(teams, leadCwds, sessions, now);
+  const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
 
   const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : undefined;
   if (scoped) {
@@ -903,9 +908,14 @@ export async function listTeamSummaries(
     // this one. The session ON SCREEN is the exception, always: dropping the row
     // you are looking at would leave the picker contradicting the body, and
     // would take away the only way back to it.
+    //
+    // Scoped by the session actually driving the team, not the row's own
+    // leadSessionId: that field is config.leadSessionId, which a re-keyed team
+    // leaves pointing at whatever session first started it.
     const here = new Set(scoped);
     for (let i = teams.length - 1; i >= 0; i--) {
-      if (!here.has(teams[i].leadSessionId) && !teams[i].current) teams.splice(i, 1);
+      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
+      if (!here.has(driver) && !teams[i].current) teams.splice(i, 1);
     }
   }
 
@@ -953,6 +963,7 @@ export async function listTeamSummaries(
 function adoptByCwd(
   teams: TeamSummary[],
   leadCwds: Map<string, string>,
+  leadSessions: Map<string, string>,
   sessions: SessionFacts,
   now: number,
 ): Set<string> {
@@ -990,6 +1001,7 @@ function adoptByCwd(
     if (!best) continue;
     claimed.add(best.name);
     adopted.add(sessionId);
+    leadSessions.set(best.name, sessionId);
     best.leadAlive = true;
     best.live = true;
     best.state = 'live';
