@@ -287,6 +287,53 @@ describe('Comms — delivery state', () => {
   });
 });
 
+// A send against an agent that is not draining leaves a one-shot `queued` ack in
+// the composer and then nothing: the message sits in the inbox file with no
+// trace anywhere the operator can look. This is that trace.
+describe('Comms — the waiting queue', () => {
+  it('lists what is still in an inbox, addressed to whom, and for how long', () => {
+    renderComms();
+    const rows = screen.getAllByTestId('waiting-row');
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByTestId('waiting-to').textContent).toBe('perf');
+    expect(within(rows[0]).getByTestId('waiting-age').textContent).toBe('34s');
+    expect(within(rows[0]).getByTestId('waiting-body').textContent).toBe(
+      'security · Marking finding 1 resolved.',
+    );
+  });
+
+  // Longest wait first: a send fired ten minutes ago and still sitting is the
+  // one the operator came here to find, not the one from a moment ago.
+  it('puts the oldest wait at the top and names the operator as a sender', () => {
+    renderComms({ mail: [...MAIL, { ...OPERATOR_TO_LEAD, read: false }] });
+    const rows = screen.getAllByTestId('waiting-row');
+    expect(rows.map((r) => within(r).getByTestId('waiting-to').textContent)).toEqual([
+      'team-lead', 'perf',
+    ]);
+    expect(within(rows[0]).getByTestId('waiting-age').textContent).toBe('9m');
+    expect(within(rows[0]).getByTestId('waiting-body').textContent).toBe(
+      'you · ship what you have',
+    );
+  });
+
+  it('counts what is waiting in the panel head', () => {
+    renderComms({ mail: [...MAIL, { ...OPERATOR_TO_LEAD, read: false }] });
+    expect(screen.getByTestId('waiting-head').textContent).toBe('WAITING · 2');
+  });
+
+  it('takes the panel away once every message has been drained', () => {
+    renderComms({ mail: MAIL.filter((m) => m.read) });
+    expect(screen.queryByTestId('waiting')).toBeNull();
+  });
+
+  it('ticks the wait with the clock', () => {
+    const props = renderComms();
+    cleanup();
+    render(<Comms {...props} now={NOW + 60_000} />);
+    expect(screen.getByTestId('waiting-age').textContent).toBe('1m');
+  });
+});
+
 // One bubble pair, both rooms (CONSOLE-DECISIONS ruling 7a): `accent-900` with
 // an inset `accent-500` is the selected-row tint everywhere else in the console,
 // so a bubble drawn on it reads as a selection.
