@@ -752,6 +752,55 @@ describe('listTeamSummaries', () => {
   it('returns an empty listing when there is no teams directory at all', async () => {
     expect(await listTeamSummaries(teams(), sessions(), '')).toEqual({ current: '', teams: [] });
   });
+
+  // Same fact the sidecar-join test above establishes for naming: once a team
+  // is re-keyed, config.leadSessionId belongs to no live session and cannot
+  // answer where the team IS. Scoping by it instead of the session the sidecar
+  // proves is actually driving misattributes the team to the folder it merely
+  // started in.
+  it('scopes a re-keyed team by its live session’s folder, not the stale leadSessionId', async () => {
+    const projects = path.join(dir, 'projects');
+    const original = '/Users/x/code/grimoire';
+    const liveCwd = '/Users/x/code/arco';
+    const staleSessionId = 'aaaaaaaa-0000-0000-0000-000000000000';
+    const liveSessionId = 'bbbbbbbb-1111-1111-1111-111111111111';
+
+    await writeConfig(
+      'session-rekeyed',
+      team('session-rekeyed', { createdAt: 10, leadSessionId: staleSessionId, members: 3 }),
+    );
+    // The team's ORIGINAL session left a transcript under grimoire's project
+    // dir — real evidence grimoire's folder scope reads off disk.
+    const staleSlug = path.join(projects, original.replace(/[^a-zA-Z0-9]/g, '-'));
+    await fs.mkdir(staleSlug, { recursive: true });
+    await fs.writeFile(path.join(staleSlug, `${staleSessionId}.jsonl`), '');
+
+    // A different live session, running in arco, is what actually drives the
+    // team now — its sidecar names it, which is the join teamsOfLiveSessions
+    // follows.
+    await fs.mkdir(sessions(), { recursive: true });
+    await fs.writeFile(
+      path.join(sessions(), `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId: liveSessionId, cwd: liveCwd, name: 'team8' }),
+    );
+    const subagents = path.join(
+      projects,
+      liveCwd.replace(/[^a-zA-Z0-9]/g, '-'),
+      liveSessionId,
+      'subagents',
+    );
+    await fs.mkdir(subagents, { recursive: true });
+    await fs.writeFile(
+      path.join(subagents, 'agent-aworker-1111.meta.json'),
+      JSON.stringify({ name: 'worker', taskKind: 'in_process_teammate', teamName: 'session-rekeyed' }),
+    );
+
+    const scopedToOriginal = await listTeamSummaries(teams(), sessions(), '', projects, original);
+    expect(scopedToOriginal.teams.map((t) => t.name)).not.toContain('session-rekeyed');
+
+    const scopedToLive = await listTeamSummaries(teams(), sessions(), '', projects, liveCwd);
+    expect(scopedToLive.teams.map((t) => t.name)).toContain('session-rekeyed');
+  });
 });
 
 describe('fencedSink', () => {

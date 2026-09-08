@@ -156,12 +156,7 @@ function metaLabel(diff: Diff, agent: string = diff.agent): string {
   return parts.join(' · ');
 }
 
-/**
- * The patch a diff-bearing transcript row opens, over the whole console.
- * Chrome only: header, toolbar, footer, and an empty scroll container sized
- * to hold the hunk rows — a later teammate renders those and picks their
- * tint colours.
- */
+/** The patch a diff-bearing transcript row opens, over the whole console. */
 export function DiffModal({ diff, onClose }: { diff: Diff | null; onClose(): void }) {
   const [closeHover, setCloseHover] = useState(false);
   const { asChar } = useCast();
@@ -303,7 +298,7 @@ export function DiffModal({ diff, onClose }: { diff: Diff | null; onClose(): voi
             padding: '8px 16px',
             borderBottom: '1px solid var(--color-neutral-900)',
             display: 'flex',
-            gap: '8px',
+            gap: '10px',
             alignItems: 'center',
             flex: 'none',
           }}
@@ -332,23 +327,33 @@ export function DiffModal({ diff, onClose }: { diff: Diff | null; onClose(): voi
           >
             line numbers are snippet-relative
           </span>
+          {/* `--warn` is picked for contrast against `--warn-tint`, so an
+              unfilled chip draws the amber on the card's own ground instead —
+              the borrowed-ground mistake the palette rule calls out. */}
           {diff.truncated && (
             <span
               data-testid="diff-truncation"
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
                 color: 'var(--warn)',
+                background: 'var(--warn-tint)',
                 border: '1px solid var(--warn-edge)',
                 borderRadius: 'var(--radius-sm)',
-                padding: '0 6px',
+                padding: '1px 8px',
                 fontSize: '10px',
                 flex: 'none',
                 whiteSpace: 'nowrap',
               }}
             >
-              {`${shownChangedLines(diff)} of ${diff.added + diff.removed} changed lines shown`}
+              <span>⚠</span>
+              <span>{`${shownChangedLines(diff)} of ${diff.added + diff.removed} changed lines shown`}</span>
             </span>
           )}
-          <span style={{ flex: 1 }} />
+          {/* Nothing else in the row can shrink, so without a floor the count
+              butts straight against `copy patch` once the row fills. */}
+          <span style={{ flex: 1, minWidth: '8px' }} />
           {/* No "open in editor" beside it: the server exposes select,
               shutdown, agent message/interrupt/stop/respawn, plans, permits
               and history, and none of them can reach an editor. A control that
@@ -419,20 +424,23 @@ export function DiffModal({ diff, onClose }: { diff: Diff | null; onClose(): voi
           <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>esc close</span>
           <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>j/k next change</span>
           <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>wall keys suspended while open</span>
-          {/* The chip above says the patch is short; this says what that costs
-              you, at the one moment it matters — the button that copies it. */}
-          {diff.truncated && (
+          <span style={{ flex: 1, minWidth: '8px' }} />
+          {/* One slot past the spacer, and the warning takes it whenever there
+              is one: the chip above says the patch is short, this says what
+              that costs you, and here it sits under the button that copies it.
+              The reassurance is what the slot says when nothing is wrong. */}
+          {diff.truncated ? (
             <span
               data-testid="diff-truncated-note"
               style={{ color: 'var(--warn)', flex: 'none', whiteSpace: 'nowrap' }}
             >
               the copied patch is incomplete — it will not apply
             </span>
+          ) : (
+            <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              the transcript keeps its one line — the patch lives here
+            </span>
           )}
-          <span style={{ flex: 1 }} />
-          <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-            the transcript keeps its one line — the patch lives here
-          </span>
         </div>
       </div>
     </div>

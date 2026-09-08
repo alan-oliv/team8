@@ -157,6 +157,16 @@ describe('Wall', () => {
     expect(within(columns[1]).getByTestId('wall-read-only').textContent).toBe('read-only');
   });
 
+  // A roster of one has nothing to drain the lead's inbox, so the box would take
+  // a message nobody ever reads.
+  it('gives a solo roster a note where the composer would be', () => {
+    render(
+      <Wall agents={[agents[0]]} focused={agents[0].name} onFocus={vi.fn()} now={FIXTURE_NOW} />,
+    );
+    expect(screen.queryByTestId('composer-input')).toBeNull();
+    expect(screen.getByTestId('composer-solo')).toBeTruthy();
+  });
+
   // At rest it is a prompt and a hint. No @ means the lead, which is the common
   // case, so there is nothing to pick and nothing on screen to pick it with.
   it('shows no chip and no picker until an @ is typed', () => {

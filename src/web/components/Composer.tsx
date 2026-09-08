@@ -61,6 +61,7 @@ export function Composer({
   variant,
   readOnly = false,
   teamLive = true,
+  solo = false,
 }: {
   agent: Agent;
   /**
@@ -86,6 +87,13 @@ export function Composer({
    * unread, which looked exactly like the console being broken.
    */
   teamLive?: boolean;
+  /**
+   * A roster with no teammate at all. `teamLive` false says "queued until a
+   * teammate is live", which a solo session can never make good on: the loop
+   * that drains the lead's inbox only runs with a teammate in it, so a message
+   * typed here would sit in the file unread for the life of the session.
+   */
+  solo?: boolean;
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -214,6 +222,26 @@ export function Composer({
       return;
     }
     void send();
+  }
+
+  if (solo) {
+    return (
+      <div
+        data-testid="composer-solo"
+        style={{
+          borderTop: '1px solid var(--color-neutral-900)',
+          background: 'var(--color-bg)',
+          padding: v.padding,
+          color: 'var(--color-neutral-600)',
+          fontSize: '10.5px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        solo session · a message needs a live teammate to deliver it
+      </div>
+    );
   }
 
   return (

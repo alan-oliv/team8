@@ -377,6 +377,12 @@ export function Comms({
   }
 
   const unread = room?.unread ?? threads.reduce((n, t) => n + t.unread, 0);
+  // Oldest first: the send that has been sitting longest is the one the operator
+  // came looking for. A drained message leaves the panel on its own.
+  const waiting = useMemo(
+    () => mail.filter((m) => !m.read).sort((a, b) => a.ts - b.ts),
+    [mail],
+  );
 
   return (
     <div data-testid="comms" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -396,6 +402,66 @@ export function Comms({
           <span style={{ flex: 1 }} />
           <span>{`${unread} unread`}</span>
         </div>
+
+        {/* Sent, not yet drained. The composer's `queued` ack is one-shot, so
+            without this a run of sends against a stopped reader leaves nothing
+            on screen to say what is still owed to whom. */}
+        {waiting.length > 0 && (
+          <div
+            data-testid="waiting"
+            style={{
+              borderBottom: '1px solid var(--color-neutral-900)',
+              display: 'flex',
+              flexDirection: 'column',
+              // A long queue takes a third of the pane at most: the threads
+              // below it are how the operator reads any of these messages.
+              maxHeight: '33%',
+              minHeight: 0,
+            }}
+          >
+            <div data-testid="waiting-head" style={{ ...PANE_HEAD, border: 'none', paddingBottom: '4px' }}>
+              {`WAITING · ${waiting.length}`}
+            </div>
+            <div className="tscroll" style={{ minHeight: 0, padding: '0 8px 8px' }}>
+              {waiting.map((m) => (
+                <div
+                  key={m.msgId}
+                  data-testid="waiting-row"
+                  style={{ padding: '5px 6px', display: 'flex', flexDirection: 'column', gap: '2px' }}
+                >
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
+                    <span
+                      data-testid="waiting-to"
+                      style={{ color: 'var(--color-text)', fontSize: '11px' }}
+                    >
+                      {cast.asChar(m.to).display}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    {/* The wait, in the unread register the receipts already use. */}
+                    <span
+                      data-testid="waiting-age"
+                      style={{ flex: 'none', color: 'var(--warn)', fontSize: '10px' }}
+                    >
+                      {briefAge(now - m.ts)}
+                    </span>
+                  </div>
+                  <span
+                    data-testid="waiting-body"
+                    style={{
+                      color: 'var(--color-neutral-600)',
+                      fontSize: '10.5px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {`${m.from === CONSOLE_SENDER ? 'you' : cast.asChar(m.from).display} · ${m.summary ?? m.text}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div
           className="tscroll"
@@ -592,6 +658,8 @@ function ThreadPane({
     .filter((a): a is Agent => a !== undefined);
   // See Composer: the lead's inbox is drained by the team loop, not by the lead.
   const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed');
+  // No teammate ever, departed or otherwise: the composer becomes a note.
+  const solo = !agents.some((a) => !a.isLead);
   // The whole roster goes to the composer, which drops the departed itself:
   // a team with no reader left gets a DISABLED composer, not a vanished one —
   // taking it away reads as the console having lost the thread, where disabled
@@ -746,6 +814,7 @@ function ThreadPane({
               variant="everyone"
               readOnly={readOnly}
               teamLive={teamLive}
+              solo={solo}
             />
           )
         : first && (
@@ -755,6 +824,7 @@ function ThreadPane({
               variant="thread"
               readOnly={readOnly}
               teamLive={teamLive}
+              solo={solo}
             />
           )}
     </div>

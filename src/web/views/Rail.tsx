@@ -108,10 +108,11 @@ const Row = memo(function Row({
 // feed and a composer behind it, so a frame in which its agent did not move must not
 // reconcile any of it.
 const Attached = memo(function Attached(
-  { agent, readOnly, teamLive, subagents }: {
+  { agent, readOnly, teamLive, solo, subagents }: {
     agent: Agent;
     readOnly: boolean;
     teamLive: boolean;
+    solo: boolean;
     /** This agent's own Task/Agent dispatches, in spawn order. */
     subagents?: Subagent[];
   },
@@ -210,7 +211,7 @@ const Attached = memo(function Attached(
           a direct inbox write, and a message to any agent enters the run
           through the lead. */}
       {agent.isLead ? (
-        <Composer agent={agent} variant="rail" readOnly={readOnly} teamLive={teamLive} />
+        <Composer agent={agent} variant="rail" readOnly={readOnly} teamLive={teamLive} solo={solo} />
       ) : (
         <div
           data-testid="rail-read-only"
@@ -260,6 +261,8 @@ export function Rail({
   const attached = ordered.find((a) => a.name === focused) ?? ordered[0];
   // See Composer: the lead's inbox is drained by the team loop, not by the lead.
   const teamLive = ordered.some((a) => !a.isLead && a.status !== 'departed');
+  // No teammate ever, departed or otherwise: the composer becomes a note.
+  const solo = !ordered.some((a) => !a.isLead);
   const cursorAgent = ordered[Math.min(cursor, ordered.length - 1)];
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -350,6 +353,7 @@ export function Rail({
         agent={attached}
         readOnly={readOnly}
         teamLive={teamLive}
+        solo={solo}
         subagents={subagents?.[attached.name]}
       />
     </div>

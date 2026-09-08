@@ -20,6 +20,29 @@ const PANEL_WIDTH = '520px';
 const FOLDER_MENU_WIDTH = '288px';
 const FOLDER_MENU_LEFT = '100px';
 
+// The folder scope is a preference of this machine, not of one mount: the
+// wall view and a workflow view each render their own TeamSelect, sharing no
+// React state, so without persisting it here every navigation between them
+// reset the operator back to every folder on the next open.
+const FOLDER_KEY = 'console.folder';
+
+function readStoredFolder(): string {
+  try {
+    return typeof window === 'undefined' ? '' : (window.localStorage.getItem(FOLDER_KEY) ?? '');
+  } catch {
+    return '';
+  }
+}
+
+function storeFolder(folder: string): void {
+  try {
+    window.localStorage.setItem(FOLDER_KEY, folder);
+  } catch {
+    // A full or disabled store costs the operator the preference on the next
+    // open, and nothing else.
+  }
+}
+
 /**
  * The three session kinds the canvas knows, with the colours it gives them —
  * its own `KIND` table, transcribed. `subagents` is deliberately the quiet one:
@@ -127,7 +150,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // "wherever the console was started"), `scope` is what the server answered
   // with. Reading the chip off the reply rather than the request keeps them
   // from chasing each other — setting one from the other would refetch.
-  const [folder, setFolder] = useState('');
+  const [folder, setFolder] = useState(readStoredFolder);
   const [scope, setScope] = useState('');
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [foldersOpen, setFoldersOpen] = useState(false);
@@ -520,6 +543,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                         // the session dropdown stays open, since choosing a
                         // folder is how you get to the session in it.
                         setFolder(f.path);
+                        storeFolder(f.path);
                         setFoldersOpen(false);
                         setCursor(0);
                       }}

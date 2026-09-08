@@ -159,6 +159,18 @@ describe('DiffModal', () => {
       render(<DiffModal diff={DIFF} onClose={() => {}} />);
       assertUnshrinkable('diff-footer');
     });
+
+    // Every other child refuses to shrink, so a full row would butt the left
+    // text straight against the right control. The spacer keeps 8px between
+    // them at the width where it stops being able to give anything else.
+    it('keeps the toolbar and footer spacers from collapsing to nothing', () => {
+      render(<DiffModal diff={DIFF} onClose={() => {}} />);
+      for (const id of ['diff-toolbar', 'diff-footer']) {
+        const row = screen.getByTestId(id);
+        const spacer = [...row.children].find((c) => (c as HTMLElement).style.flex === '1 1 0%');
+        expect((spacer as HTMLElement).style.minWidth).toBe('8px');
+      }
+    });
   });
 
   describe('toolbar', () => {
@@ -239,9 +251,20 @@ describe('DiffModal', () => {
     it('counts the shown lines against the whole patch, in the warn colour', () => {
       render(<DiffModal diff={TRUNCATED} onClose={() => {}} />);
       const chip = screen.getByTestId('diff-truncation');
-      expect(chip.textContent).toBe('2 of 350 changed lines shown');
+      expect(chip.lastElementChild?.textContent).toBe('2 of 350 changed lines shown');
       expect(chip.style.color).toBe('var(--warn)');
       expect(chip.style.border).toBe('1px solid var(--warn-edge)');
+    });
+
+    // `--warn` is tuned for contrast against `--warn-tint`, not against the
+    // card's `--color-bg`. Drawing the amber straight on the card is the
+    // mismatch the handoff's palette rule warns about, and it also left the
+    // chip reading as a bare outline rather than the filled attention badge.
+    it('fills the chip with the tint the warn colour is tuned against', () => {
+      render(<DiffModal diff={TRUNCATED} onClose={() => {}} />);
+      const chip = screen.getByTestId('diff-truncation');
+      expect(chip.style.background).toBe('var(--warn-tint)');
+      expect(chip.firstElementChild?.textContent).toBe('⚠');
     });
 
     // The header stat counts the patch, not the rows, so it can legitimately
@@ -256,6 +279,16 @@ describe('DiffModal', () => {
       const note = screen.getByTestId('diff-truncated-note');
       expect(note.textContent).toBe('the copied patch is incomplete — it will not apply');
       expect(note.style.color).toBe('var(--warn)');
+    });
+
+    // The footer has one slot past the spacer, and the warning is what the
+    // design puts in it. Right-aligned it also lands under `copy patch`, which
+    // is the control it is about — on the left it sat under the hunk count.
+    it('gives the warning the footer slot the reassurance usually holds', () => {
+      render(<DiffModal diff={TRUNCATED} onClose={() => {}} />);
+      const footer = screen.getByTestId('diff-footer');
+      expect(footer.lastElementChild).toBe(screen.getByTestId('diff-truncated-note'));
+      expect(footer.textContent).not.toContain('the transcript keeps its one line');
     });
 
     it('still holds the toolbar and footer to one line when truncated', () => {
