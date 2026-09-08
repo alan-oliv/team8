@@ -1,6 +1,6 @@
 {
   "name": "team8",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "A live browser console for Claude Code agent teams — every teammate's transcript, tasks, mail and status in one window. Starts itself the first time a team is spawned.",
   "author": {
     "name": "alan-oliv",
