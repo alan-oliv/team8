@@ -592,6 +592,8 @@ function ThreadPane({
     .filter((a): a is Agent => a !== undefined);
   // See Composer: the lead's inbox is drained by the team loop, not by the lead.
   const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed');
+  // No teammate ever, departed or otherwise: the composer becomes a note.
+  const solo = !agents.some((a) => !a.isLead);
   // The whole roster goes to the composer, which drops the departed itself:
   // a team with no reader left gets a DISABLED composer, not a vanished one —
   // taking it away reads as the console having lost the thread, where disabled
@@ -746,6 +748,7 @@ function ThreadPane({
               variant="everyone"
               readOnly={readOnly}
               teamLive={teamLive}
+              solo={solo}
             />
           )
         : first && (
@@ -755,6 +758,7 @@ function ThreadPane({
               variant="thread"
               readOnly={readOnly}
               teamLive={teamLive}
+              solo={solo}
             />
           )}
     </div>

@@ -370,6 +370,9 @@ const Column = memo(function Column({
           variant="wall"
           readOnly={readOnly}
           teamLive={teamLive}
+          // Only the lead's column is routed, so a roster of one here is a lead
+          // with nobody to drain its inbox — see Composer's `solo`.
+          solo={soloStream}
         />
       ) : (
         <div

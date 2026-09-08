@@ -147,6 +147,26 @@ describe('Composer delivery honesty', () => {
   });
 });
 
+describe('Composer on a solo session', () => {
+  const lead = { ...alpha, name: 'team-lead', isLead: true, status: 'working' as const };
+
+  // "queued until a teammate is live" is a promise a solo session cannot keep:
+  // the loop that drains the lead's inbox needs a teammate that is never coming.
+  it('replaces the box with a note rather than queueing against a teammate that will never exist', () => {
+    render(<Composer agent={lead} variant="wall" solo />);
+    expect(screen.queryByTestId('composer-input')).toBeNull();
+    expect(screen.getByTestId('composer-solo').textContent).toBe(
+      'solo session · a message needs a live teammate to deliver it',
+    );
+  });
+
+  it('keeps the box on a team, however quiet', () => {
+    render(<Composer agent={lead} variant="wall" teamLive={false} />);
+    expect(screen.getByTestId('composer-input')).toBeTruthy();
+    expect(screen.queryByTestId('composer-solo')).toBeNull();
+  });
+});
+
 describe('Composer send acknowledgement', () => {
   const live = { ...alpha, status: 'working' as const };
   const lead = { ...alpha, name: 'team-lead', isLead: true, status: 'working' as const };
