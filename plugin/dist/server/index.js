@@ -5832,6 +5832,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
   const now = Date.now();
   const teams = [];
   const leadCwds = /* @__PURE__ */ new Map();
+  const leadSessions = /* @__PURE__ */ new Map();
   const diffstats = /* @__PURE__ */ new Map();
   for (const name of entries) {
     const teamDir = path10.join(teamsRoot2, name);
@@ -5852,6 +5853,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     const lead = config.members.find((m) => m.agentId === config.leadAgentId) ?? config.members[0];
     leadCwds.set(name, lead?.cwd ?? "");
+    leadSessions.set(name, leadSession);
     const workflow = projectsRoot ? await workflowOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession, now) : void 0;
     const subagents = projectsRoot ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession) : 0;
     const leadCwd = lead?.cwd ?? "";
@@ -5881,12 +5883,13 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
       ...diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}
     });
   }
-  const adopted = adoptByCwd(teams, leadCwds, sessions, now);
+  const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
   const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : void 0;
   if (scoped) {
     const here = new Set(scoped);
     for (let i = teams.length - 1; i >= 0; i--) {
-      if (!here.has(teams[i].leadSessionId) && !teams[i].current) teams.splice(i, 1);
+      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
+      if (!here.has(driver) && !teams[i].current) teams.splice(i, 1);
     }
   }
   if (projectsRoot) {
@@ -5904,7 +5907,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
   const folders = projectsRoot && cwd ? await listFolders(projectsRoot) : void 0;
   return { current, teams, ...folders ? { folder: cwd, folders } : {} };
 }
-function adoptByCwd(teams, leadCwds, sessions, now) {
+function adoptByCwd(teams, leadCwds, leadSessions, sessions, now) {
   const adopted = /* @__PURE__ */ new Set();
   const byCwd = /* @__PURE__ */ new Map();
   const ambiguous = /* @__PURE__ */ new Set();
@@ -5933,6 +5936,7 @@ function adoptByCwd(teams, leadCwds, sessions, now) {
     if (!best) continue;
     claimed.add(best.name);
     adopted.add(sessionId);
+    leadSessions.set(best.name, sessionId);
     best.leadAlive = true;
     best.live = true;
     best.state = "live";
