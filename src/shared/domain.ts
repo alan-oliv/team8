@@ -270,6 +270,28 @@ export interface NeedsYouItem {
 
 export interface RateLimits { fiveHourPct: number; sevenDayPct: number; resetsAt?: string }
 
+export type BriefHead = 'NOW' | 'WAITING' | 'NEXT';
+
+export interface BriefParagraph { head: BriefHead; text: string }
+
+/**
+ * The one thing on the overview the console writes rather than observes, so it
+ * carries its own provenance: which model wrote it, what it read, and when.
+ * The panel is required to render all three beside the text.
+ */
+export interface Brief {
+  model: string;
+  generatedAt: number;
+  inputs: { transcripts: number; tasks: number; windowMin: number };
+  paragraphs: BriefParagraph[];
+  usage: { in: number; out: number; costUsd: number };
+  pending: boolean;
+  /** The state this reading was written against — see `briefIsStale`. */
+  signature: string;
+  /** Set when the run failed. The panel says so rather than passing off a stale reading. */
+  error?: string;
+}
+
 export interface TeamState {
   teamName: string;
   /**
@@ -307,6 +329,11 @@ export interface TeamState {
    * whose record has aged out of the log is no longer in the tree.
    */
   subagents?: SubagentTree;
+  /**
+   * The overview's generated reading. Absent until something has asked for one
+   * — no session pays for a brief nobody has opened the overview to read.
+   */
+  brief?: Brief;
 }
 
 /**

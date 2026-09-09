@@ -1615,7 +1615,7 @@ var require_proper_lockfile = __commonJS({
 // src/server/index.ts
 import os2 from "node:os";
 import path10 from "node:path";
-import { execFile as execFile3 } from "node:child_process";
+import { execFile as execFile4 } from "node:child_process";
 import { promises as fs8 } from "node:fs";
 import { promisify as promisify3 } from "node:util";
 
@@ -4756,6 +4756,197 @@ async function sendToInbox(teamName, toAgent, body) {
   return { msgId };
 }
 
+// src/server/brief.ts
+import { execFile as execFile2 } from "node:child_process";
+
+// src/shared/brief.ts
+var BRIEF_WINDOW_MIN = 5;
+var BRIEF_HEADS = ["NOW", "WAITING", "NEXT"];
+var BRIEF_PROMPT_CAP = 24e3;
+var INSTRUCTIONS = `You are writing the standing brief for an operator watching a team of Claude Code agents.
+
+Write exactly three paragraphs, each on its own line, in this form and nothing else:
+
+NOW: what is being worked on right now and what has been found.
+WAITING: what waits on the operator, who is idle, who failed.
+NEXT: what unblocks what, and whose move it is.
+
+Rules: two or three sentences per paragraph. If the material below is empty or says nothing happened, write that plainly in one short sentence per paragraph \u2014 never ask for more material, never address the reader, never speculate about what might be happening. You are writing for a screen, not answering a request. Plain past/present tense, no headings beyond the three labels, no bullet lists, no preamble, no closing remark. Name agents and task ids as they appear below. State only what the material supports \u2014 this is a reading of the transcripts, not a guess about intent.`;
+function taskBlock(tasks) {
+  if (tasks.length === 0) return "TASK LIST\n(empty)";
+  const lines = tasks.map((t) => {
+    const owner = t.owner ? `owner ${t.owner}` : "unclaimed";
+    const open = (t.openBlockedBy ?? t.blockedBy).filter(Boolean);
+    const blocked = open.length > 0 ? ` \xB7 blocked by ${open.join(", ")}` : "";
+    return `- ${t.id} [${t.state}] ${owner}${blocked} \u2014 ${t.subject}`;
+  });
+  return `TASK LIST
+${lines.join("\n")}`;
+}
+function agentBlock(agent, since) {
+  const head = `## ${agent.name} \u2014 ${agent.agentType || "teammate"} \xB7 ${agent.model} \xB7 ${agent.status}`;
+  const recent = agent.transcript.filter((l) => l.ts >= since);
+  const body = recent.length === 0 ? "(nothing in the window)" : recent.map((l) => `${l.marker} ${l.text}`).join("\n");
+  return `${head}
+${body}`;
+}
+function briefPrompt(agents, tasks, now, windowMin = BRIEF_WINDOW_MIN) {
+  const since = now - windowMin * 6e4;
+  const fixed = `${INSTRUCTIONS}
+
+${taskBlock(tasks)}
+
+TRANSCRIPTS \u2014 the last ${windowMin} minutes
+`;
+  const budget = Math.max(0, BRIEF_PROMPT_CAP - fixed.length);
+  const blocks = [];
+  let used = 0;
+  for (const agent of agents) {
+    const block = agentBlock(agent, since);
+    const trimmed = block.length > budget - used ? `${block.slice(0, Math.max(0, budget - used))}\u2026` : block;
+    if (trimmed.length === 0) break;
+    blocks.push(trimmed);
+    used += trimmed.length + 2;
+    if (used >= budget) break;
+  }
+  return `${fixed}${blocks.join("\n\n")}`;
+}
+function markOf(text, head) {
+  const re = new RegExp(`(?:^|\\n)[ \\t]*[*_#>]{0,4}[ \\t]*${head}[*_]{0,2}[ \\t]*[:\\-\\u2014]?[ \\t]*`, "i");
+  const m = re.exec(text);
+  return m ? { start: m.index, body: m.index + m[0].length } : null;
+}
+function parseBrief(raw) {
+  const text = raw.trim();
+  const marks = BRIEF_HEADS.map((head) => ({ head, mark: markOf(text, head) }));
+  if (marks.every((m) => m.mark === null)) {
+    return BRIEF_HEADS.map((head) => ({ head, text: head === "NOW" ? text : "" }));
+  }
+  return marks.map(({ head, mark }, i) => {
+    if (!mark) return { head, text: "" };
+    const next = marks.slice(i + 1).find((m) => m.mark !== null && m.mark.start > mark.start);
+    const body = text.slice(mark.body, next?.mark?.start);
+    return { head, text: body.trim().replace(/\s+/g, " ") };
+  });
+}
+function taskSignature(tasks) {
+  return tasks.map((t) => `${t.id}:${t.state}:${t.owner ?? ""}`).sort().join("|");
+}
+function briefSignature(agents, tasks) {
+  const roster = agents.map((a) => `${a.name}:${a.status}:${a.transcript.filter((l) => l.marker === "!").length}`).sort().join("|");
+  return `${taskSignature(tasks)}#${roster}`;
+}
+function briefHasMaterial(agents, tasks, now, windowMin = BRIEF_WINDOW_MIN) {
+  if (tasks.length > 0) return true;
+  const since = now - windowMin * 6e4;
+  return agents.some((a) => a.transcript.some((l) => l.ts >= since));
+}
+
+// src/server/brief.ts
+var BRIEF_MODEL = "haiku";
+var TIMEOUT_MS = 9e4;
+var MIN_GAP_MS = 6e4;
+async function runClaude(prompt) {
+  const stdout = await new Promise((resolve, reject) => {
+    const child = execFile2(
+      "claude",
+      ["-p", prompt, "--model", BRIEF_MODEL, "--tools", "", "--output-format", "json"],
+      {
+        timeout: TIMEOUT_MS,
+        maxBuffer: 4 * 1024 * 1024,
+        // Measured: extended thinking spends ~445 tokens and 4.4s of API time
+        // deliberating over three paragraphs, for no gain in the text. Off, the
+        // call drops from 6.8s to 2.4s and from $0.015 to $0.005 warm.
+        env: { ...process.env, MAX_THINKING_TOKENS: "0" }
+      },
+      (err, out) => err ? reject(err) : resolve(out)
+    );
+    child.stdin?.end();
+  });
+  const raw = JSON.parse(stdout);
+  const text = typeof raw.result === "string" ? raw.result : "";
+  if (raw.is_error === true || text === "") throw new Error("claude -p returned no text");
+  const num3 = (v) => typeof v === "number" && Number.isFinite(v) ? v : 0;
+  return {
+    text,
+    model: Object.keys(raw.modelUsage ?? {})[0] ?? BRIEF_MODEL,
+    // Every class of input token, not the bare `input_tokens`: the CLI's own
+    // system prompt arrives as cache traffic, so a run that read 44k reports 10
+    // on that field alone — a wrong readout rather than a terse one.
+    in: num3(raw.usage?.input_tokens) + num3(raw.usage?.cache_creation_input_tokens) + num3(raw.usage?.cache_read_input_tokens),
+    out: num3(raw.usage?.output_tokens),
+    costUsd: num3(raw.total_cost_usd)
+  };
+}
+function createBriefs(deps) {
+  const run2 = deps.run ?? runClaude;
+  const now = deps.now ?? Date.now;
+  const minGapMs = deps.minGapMs ?? MIN_GAP_MS;
+  let brief;
+  let inFlight = null;
+  let lastRunAt = 0;
+  const generate = (input) => {
+    if (inFlight) return inFlight;
+    const signature = briefSignature(input.agents, input.tasks);
+    const started = now();
+    lastRunAt = started;
+    brief = {
+      model: brief?.model ?? BRIEF_MODEL,
+      generatedAt: brief?.generatedAt ?? started,
+      inputs: { transcripts: input.agents.length, tasks: input.tasks.length, windowMin: BRIEF_WINDOW_MIN },
+      paragraphs: brief?.paragraphs ?? [],
+      usage: brief?.usage ?? { in: 0, out: 0, costUsd: 0 },
+      pending: true,
+      signature: brief?.signature ?? signature
+    };
+    deps.publish();
+    inFlight = (async () => {
+      try {
+        const out = await run2(briefPrompt(input.agents, input.tasks, started));
+        brief = {
+          model: out.model,
+          generatedAt: now(),
+          inputs: { transcripts: input.agents.length, tasks: input.tasks.length, windowMin: BRIEF_WINDOW_MIN },
+          paragraphs: parseBrief(out.text),
+          usage: { in: out.in, out: out.out, costUsd: out.costUsd },
+          pending: false,
+          signature
+        };
+      } catch (err) {
+        logError("brief", err);
+        brief = {
+          ...brief,
+          pending: false,
+          // The signature rides along in the spread, so it stays the one the
+          // paragraphs on screen were written against — a failed run read
+          // nothing and must not claim the task list it was asked about.
+          error: err.message
+        };
+      } finally {
+        inFlight = null;
+        deps.publish();
+      }
+      return brief;
+    })();
+    return inFlight;
+  };
+  return {
+    current: () => brief,
+    generate,
+    observe(input, watched) {
+      if (!watched) return;
+      if (!brief) {
+        if (briefHasMaterial(input.agents, input.tasks, now())) void generate(input);
+        return;
+      }
+      if (brief.pending) return;
+      if (brief.signature === briefSignature(input.agents, input.tasks)) return;
+      if (now() - lastRunAt < minGapMs) return;
+      void generate(input);
+    }
+  };
+}
+
 // src/server/stream.ts
 var COALESCE_MS = 250;
 var HEARTBEAT_MS = 15e3;
@@ -4891,6 +5082,7 @@ var PERMIT_ROUTE = /^\/api\/permits\/([^/]+)\/(allow|deny)$/;
 var WORKFLOW_SCRIPT_ROUTE = /^\/api\/workflow\/([^/]+)\/script$/;
 var TEAM_SELECT_ROUTE = /^\/api\/teams\/([^/]+)\/select$/;
 var SESSION_SELECT_ROUTE = /^\/api\/select-session\/([^/]+)$/;
+var SESSION_BRIEF_ROUTE = /^\/api\/sessions\/([^/]+)\/brief$/;
 var SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 function decodeSegment(raw) {
   let decoded;
@@ -5052,6 +5244,21 @@ function createHttpServer(deps) {
           json(res, 409, READ_ONLY_BODY);
           return;
         }
+        const briefMatch = SESSION_BRIEF_ROUTE.exec(route);
+        if (briefMatch && deps.generateBrief) {
+          const id = decodeSegment(briefMatch[1]);
+          if (id === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          const out = await deps.generateBrief(id);
+          if (!out) {
+            json(res, 404, { error: "not found", message: `no session ${id} on this console` });
+            return;
+          }
+          json(res, 200, out);
+          return;
+        }
         if (route === "/api/shutdown") {
           json(res, 200, {});
           setTimeout(() => deps.onShutdown?.(), 50).unref?.();
@@ -5174,9 +5381,9 @@ function listen(server, port) {
 // src/server/setup.ts
 import { promises as fs7 } from "node:fs";
 import path9 from "node:path";
-import { execFile as execFile2 } from "node:child_process";
+import { execFile as execFile3 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
-var run = promisify2(execFile2);
+var run = promisify2(execFile3);
 var PINNED_CLAUDE_VERSION = "2.1.231";
 var HOOK_TIMEOUT_SECONDS = 5;
 var PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1e3;
@@ -5389,7 +5596,7 @@ async function runSetup(opts) {
 }
 
 // src/server/index.ts
-var execFileAsync2 = promisify3(execFile3);
+var execFileAsync2 = promisify3(execFile4);
 var DEFAULT_PORT = 4823;
 var IDLE_GRACE_MS = 10 * 60 * 1e3;
 var FOLLOW_INTERVAL_MS = 3e3;
@@ -5985,10 +6192,12 @@ async function main(argv) {
   let leadSessionId = discovered?.leadSessionId ?? cli.session;
   const store = openStore(cli.dbPath, teamName ?? "");
   const permits = createPermits();
+  const briefs = createBriefs({ publish: () => hub.publish() });
   const publish = () => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
     const workflows = foldWorkflows(events);
+    briefs.observe({ agents: team.agents, tasks: team.tasks }, hub.clients > 0);
     return {
       ...team,
       // Hook-supplied values win; the disk-derived ones are the floor, so the
@@ -5996,7 +6205,8 @@ async function main(argv) {
       sessionName: team.sessionName ?? leadFacts.sessionName,
       branch: team.branch ?? leadFacts.branch,
       mode: modeOf(team.agents.length, workflows),
-      workflows
+      workflows,
+      brief: briefs.current()
     };
   };
   const hub = createStream(publish);
@@ -6167,6 +6377,11 @@ async function main(argv) {
     },
     selectTeam,
     selectSession,
+    generateBrief: async (sessionId) => {
+      const state = publish();
+      if (sessionId !== state.leadSessionId && sessionId !== state.teamName) return null;
+      return briefs.generate({ agents: state.agents, tasks: state.tasks });
+    },
     onShutdown: stop
   });
   const port = await listen(server, cli.port);

@@ -9,6 +9,7 @@ import { startFileIngest } from './ingest/files';
 import { createHookHandlers } from './ingest/hooks';
 import { createPermits } from './control/permits';
 import { setTeamsRoot } from './control/mailbox';
+import { createBriefs } from './brief';
 import { createStream } from './stream';
 import { foldWorkflows, modeOf } from './workflow';
 import { createHttpServer, listen, type SelectTeamOutcome } from './http';
@@ -1082,10 +1083,16 @@ export async function main(argv: string[]): Promise<number> {
    * workflows, so mode and runs are layered on here rather than threaded
    * through it — one replay, one place where the two modes meet.
    */
+  const briefs = createBriefs({ publish: () => hub.publish() });
+
   const publish = (): TeamState => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
     const workflows = foldWorkflows(events);
+    // The re-run rule lives here because this is the only place the folded task
+    // list exists. It is a signature comparison per frame and a no-op until
+    // somebody has asked for a brief at all.
+    briefs.observe({ agents: team.agents, tasks: team.tasks }, hub.clients > 0);
     return {
       ...team,
       // Hook-supplied values win; the disk-derived ones are the floor, so the
@@ -1094,6 +1101,7 @@ export async function main(argv: string[]): Promise<number> {
       branch: team.branch ?? leadFacts.branch,
       mode: modeOf(team.agents.length, workflows),
       workflows,
+      brief: briefs.current(),
     };
   };
 
@@ -1333,6 +1341,11 @@ export async function main(argv: string[]): Promise<number> {
     },
     selectTeam,
     selectSession,
+    generateBrief: async (sessionId: string) => {
+      const state = publish();
+      if (sessionId !== state.leadSessionId && sessionId !== state.teamName) return null;
+      return briefs.generate({ agents: state.agents, tasks: state.tasks });
+    },
     onShutdown: stop,
   });
 

@@ -134,7 +134,7 @@ it('wires each view into the body and never unmounts the chrome switching betwee
 
   fireEvent.click(screen.getByRole('tab', { name: 'overview' }));
   expect(screen.getByTestId('overview')).toBeTruthy();
-  expect(screen.getAllByTestId('overview-tile')).toHaveLength(4);
+  expect(screen.getAllByTestId('overview-row')).toHaveLength(4);
   expect(screen.queryByTestId('wall')).toBeNull();
   expectChromeMounted();
   expect(screen.getByRole('tablist')).toBe(tablist);
@@ -926,7 +926,7 @@ it('drops the trace pill when a solo session has no subagents', async () => {
   act(() => MockEventSource.last().emit('snapshot', bareState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview']);
 });
 
 // …and a `trace` left in the URL from a session that HAD one falls back to the
@@ -940,14 +940,16 @@ it('falls back to the stream when a URL asks for trace on a bare session', async
   expect(screen.queryByTestId('trace-view')).toBeNull();
 });
 
-// The canvas builds this switcher as `saViews: [['stream'], ['trace']]` — two
-// pills, not the seven a team gets. Supersedes decision 24's four.
-it('offers a sub-agents session two pills, with the wall labelled stream', async () => {
+// The canvas builds this switcher as `saViews: [['stream'], ['trace']]`, and
+// `overview` is the one addition to it — Screen 8 made the view a written brief
+// rather than the wall condensed, which reads on one agent as well as five.
+// Still three pills, not the seven a team gets.
+it('offers a sub-agents session three pills, with the wall labelled stream', async () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', soloState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'trace']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace']);
 });
 
 it('mounts the trace view over the session’s own tree when its pill is picked', async () => {
@@ -991,14 +993,14 @@ it('selects the session from a /s/:sessionId URL and takes its mode from the ros
   expect(screen.getByRole('tab', { name: 'wall' }).getAttribute('aria-selected')).toBe('true');
 });
 
-it('opens a lone /s/:sessionId session on its trace, with the two-pill switcher', async () => {
+it('opens a lone /s/:sessionId session on its trace, with the solo switcher', async () => {
   window.history.replaceState(null, '', '/s/abc12345');
   stubTeamsFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', soloState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'trace']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace']);
   expect(screen.getByRole('tab', { name: 'trace' }).getAttribute('aria-selected')).toBe('true');
   expect(await screen.findByTestId('trace-view')).toBeTruthy();
 });

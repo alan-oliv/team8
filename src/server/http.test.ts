@@ -60,6 +60,8 @@ let lineTexts: Record<string, string>;
 /** What `/api/workflow/:runId/script` can resolve. A miss is a run with no source on disk. */
 let workflowScripts: Record<string, { source: 'as-executed' | 'snapshot'; path: string; script: string }>;
 let scriptCalls: string[];
+/** Session ids `/api/sessions/:id/brief` was asked for. */
+let briefCalls: string[];
 
 
 async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Server; url: string }> {
@@ -89,6 +91,7 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
   lineTexts = {};
   workflowScripts = {};
   scriptCalls = [];
+  briefCalls = [];
   hub = createStream(() => state, 50);
   const server = createHttpServer({
     permits,
@@ -113,6 +116,22 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
     selectSession: (sessionId: string) => {
       sessionCalls.push(sessionId);
       return Promise.resolve(sessionOutcome(sessionId));
+    },
+    generateBrief: (sessionId: string) => {
+      briefCalls.push(sessionId);
+      return Promise.resolve(
+        sessionId === state.leadSessionId
+          ? {
+            model: 'claude-haiku-4-5',
+            generatedAt: 1787798107581,
+            inputs: { transcripts: 0, tasks: 0, windowMin: 5 },
+            paragraphs: [{ head: 'NOW' as const, text: 'quiet.' }],
+            usage: { in: 10, out: 5, costUsd: 0.0001 },
+            pending: false,
+            signature: '',
+          }
+          : null,
+      );
     },
     onShutdown: () => {
       shutdowns++;
@@ -798,5 +817,47 @@ describe('GET /api/workflow/:runId/script', () => {
     workflowScripts['wf_3c49ecab-c51'] = { source: 'snapshot', path: '/s/w/x.json', script: 'x' };
     const res = await fetch(`${url}/api/workflow/wf_3c49ecab-c51/script`);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/sessions/:id/brief', () => {
+  let server: Server;
+  let url: string;
+
+  beforeEach(async () => {
+    ({ server, url } = await boot(false));
+  });
+  afterEach(() => shutdown(server));
+
+  it('returns the brief the overview panel draws', async () => {
+    const res = await post(`${url}/api/sessions/${state.leadSessionId}/brief`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ model: 'claude-haiku-4-5', pending: false });
+    expect(briefCalls).toEqual([state.leadSessionId]);
+  });
+
+  // One session is on screen and its state is all this console holds; a brief
+  // for another would be written from nothing.
+  it('404s a session this console is not showing', async () => {
+    const res = await post(`${url}/api/sessions/some-other-session/brief`);
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects an id that is not a bare segment without asking the generator', async () => {
+    for (const hostile of ['..%2F..%2Fetc%2Fpasswd', 'x%00y']) {
+      const res = await post(`${url}/api/sessions/${hostile}/brief`);
+      expect(res.status).toBe(400);
+    }
+    expect(briefCalls).toEqual([]);
+  });
+
+  // The brief is the one call the console makes that spends money, so it sits
+  // below the read-only gate with the other control writes.
+  it('is refused with --read-only', async () => {
+    await shutdown(server);
+    ({ server, url } = await boot(true));
+    const res = await post(`${url}/api/sessions/${state.leadSessionId}/brief`);
+    expect(res.status).toBe(409);
+    expect(briefCalls).toEqual([]);
   });
 });

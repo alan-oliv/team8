@@ -36,7 +36,13 @@ export const THREAD_STATE: Record<ThreadState, { glyph: string; color: string }>
   settled: { glyph: '·', color: 'var(--color-neutral-700)' },
 };
 
-function topicOf(newest: MailMessage): string {
+/**
+ * What a message reads as in one line. A protocol frame's body is a JSON
+ * envelope the runtime wrote, so it is named rather than printed — the overview
+ * row and the thread list would otherwise show `{"type":"idle_notification"…}`
+ * where the operator expects a sentence.
+ */
+export function messageTopic(newest: MailMessage): string {
   if (newest.summary) return newest.summary;
   if (newest.protocol) return newest.protocol.type.replace(/_/g, ' ');
   return newest.text;
@@ -76,7 +82,7 @@ export function threadsOf(mail: MailMessage[]): Thread[] {
       a,
       b,
       pair: `${a} ⇄ ${b}`,
-      topic: topicOf(newest),
+      topic: messageTopic(newest),
       messages,
       unread: messages.filter((m) => !m.read).length,
       lastTs: newest.ts,

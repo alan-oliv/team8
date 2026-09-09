@@ -21,9 +21,16 @@ export const VIEW_IDS: readonly ViewId[] = ['wall', 'overview', 'comms', 'tasks'
  * the prose. The cost is real and was 24's whole argument: 9 of the 10 non-empty
  * task lists on that machine belonged to sessions rather than teams, and they
  * are no longer reachable from a solo session's switcher.
+ *
+ * `overview` is the one addition to `saViews`, and it is not a re-litigation of
+ * that: when the canvas drew the solo switcher, overview WAS the wall condensed,
+ * and condensing one column produces the column. Screen 8 replaced it with a
+ * written brief, WHERE IT STANDS and a row — none of which need a second agent
+ * to mean something. A solo session gets the same reading of its own transcript
+ * that a team gets of five.
  */
 export function soloViews(hasSubagents: boolean): readonly ViewId[] {
-  return hasSubagents ? ['wall', 'trace'] : ['wall'];
+  return hasSubagents ? ['wall', 'overview', 'trace'] : ['wall', 'overview'];
 }
 
 /** Every id a URL may carry, whatever mode the session turns out to be in. */
