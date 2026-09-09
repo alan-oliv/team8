@@ -402,10 +402,20 @@ export function App() {
         {view === 'overview' && (
           <Overview
             agents={state.agents}
+            tasks={state.tasks}
+            mail={state.mail}
+            needsYou={state.needsYou}
+            brief={state.brief}
+            sessionId={state.leadSessionId}
+            startedAt={state.startedAt}
             focused={store.agent}
-            onFocus={store.setAgent}
+            onOpenWall={(name) => {
+              store.setAgent(name);
+              store.setView('wall');
+            }}
             now={now}
-            subagents={state.subagents}
+            readOnly={state.readOnly}
+            solo={solo}
           />
         )}
         {view === 'comms' && (

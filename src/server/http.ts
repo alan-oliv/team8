@@ -6,7 +6,7 @@ import type { Permits } from './control/permits';
 import type { HookHandlers } from './ingest/hooks';
 import type { StreamHub } from './stream';
 import { sendToInbox } from './control/mailbox';
-import type { TeamState, TeamsResponse , TranscriptLine } from '../shared/domain';
+import type { Brief, TeamState, TeamsResponse , TranscriptLine } from '../shared/domain';
 import { PLUGIN_DIR } from './lifecycle';
 
 // Who the operator is when they speak through the console. Not a team member,
@@ -132,6 +132,12 @@ export interface HttpDeps {
   selectTeam?: (name: string) => Promise<SelectTeamOutcome>;
   /** Same, at a lone session that never formed a team. */
   selectSession?: (sessionId: string) => Promise<SelectTeamOutcome>;
+  /**
+   * The overview's brief, rewritten on demand. Null when the id names a session
+   * this console is not the one showing — there is one session on screen, and a
+   * brief for another would be answered from state nobody here holds.
+   */
+  generateBrief?: (sessionId: string) => Promise<Brief | null>;
   /** Spec §5.4's shutdown action, shared with the SessionEnd hook handler. */
   onShutdown?: () => void;
   /** Directory holding the built web bundle (default: {@link DEFAULT_WEB_DIST}). */
@@ -144,6 +150,7 @@ const PERMIT_ROUTE = /^\/api\/permits\/([^/]+)\/(allow|deny)$/;
 const WORKFLOW_SCRIPT_ROUTE = /^\/api\/workflow\/([^/]+)\/script$/;
 const TEAM_SELECT_ROUTE = /^\/api\/teams\/([^/]+)\/select$/;
 const SESSION_SELECT_ROUTE = /^\/api\/select-session\/([^/]+)$/;
+const SESSION_BRIEF_ROUTE = /^\/api\/sessions\/([^/]+)\/brief$/;
 
 /**
  * The route patterns exclude a literal `/`, but every id below is
@@ -372,6 +379,22 @@ export function createHttpServer(deps: HttpDeps): Server {
         // Every /api/ route is a control write, so the read-only gate is one check.
         if (deps.readOnly) {
           json(res, 409, READ_ONLY_BODY);
+          return;
+        }
+
+        const briefMatch = SESSION_BRIEF_ROUTE.exec(route);
+        if (briefMatch && deps.generateBrief) {
+          const id = decodeSegment(briefMatch[1]);
+          if (id === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          const out = await deps.generateBrief(id);
+          if (!out) {
+            json(res, 404, { error: 'not found', message: `no session ${id} on this console` });
+            return;
+          }
+          json(res, 200, out);
           return;
         }
 

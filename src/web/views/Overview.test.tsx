@@ -1,183 +1,224 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { FIXTURE_NOW, fixtureAgents, padAgents } from '../agents.fixture';
-import { Overview } from './Overview';
+import { FIXTURE_NOW, fixtureAgents } from '../agents.fixture';
 import { buildCast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
+import type { Brief, MailMessage, NeedsYouItem, Task } from '../../shared/domain';
+import { briefSignature } from '../../shared/brief';
+import { Overview } from './Overview';
 
 afterEach(cleanup);
 
-// Counts per-column renders: every column renders exactly one TranscriptFeed, and the
-// real one is still rendered so the DOM assertions above are unaffected.
-const feed = vi.hoisted(() => ({ renders: 0 }));
-vi.mock('../components/TranscriptFeed', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../components/TranscriptFeed')>();
-  return {
-    ...actual,
-    TranscriptFeed(props: Parameters<typeof actual.TranscriptFeed>[0]) {
-      feed.renders += 1;
-      return <actual.TranscriptFeed {...props} />;
-    },
-  };
-});
+const agents = fixtureAgents();
 
+const tasks: Task[] = [
+  { id: 'T-1', subject: 'land the schema', description: '', state: 'in_progress', owner: 'probe-alpha', activeForm: 'Landing the schema', blocks: ['T-2'], blockedBy: [] },
+  { id: 'T-2', subject: 'wire the loader', description: '', state: 'pending', blocks: [], blockedBy: ['T-1'], openBlockedBy: ['T-1'] },
+  { id: 'T-3', subject: 'write the docs', description: '', state: 'completed', owner: 'probe-charlie', blocks: [], blockedBy: [] },
+];
 
-const four = fixtureAgents();
-const six = padAgents(four, 6);
+const mail: MailMessage[] = [
+  { msgId: 'm1', from: 'probe-alpha', to: 'team-lead', text: 'long body', summary: 'claimed task 1', ts: FIXTURE_NOW - 30_000, tsIsDelivery: false, read: true },
+];
+
+const brief: Brief = {
+  model: 'claude-haiku-4-5',
+  generatedAt: FIXTURE_NOW - 120_000,
+  inputs: { transcripts: 4, tasks: 3, windowMin: 5 },
+  paragraphs: [
+    { head: 'NOW', text: 'probe-alpha is landing the schema.' },
+    { head: 'WAITING', text: 'nobody is waiting on you.' },
+    { head: 'NEXT', text: 'T-1 unblocks T-2.' },
+  ],
+  usage: { in: 9_400, out: 210, costUsd: 0.0031 },
+  pending: false,
+  signature: 'sig',
+};
+
+function draw(over: Partial<Parameters<typeof Overview>[0]> = {}) {
+  return render(
+    <CastContext value={buildCast(agents, 'none')}>
+      <Overview
+        agents={agents}
+        tasks={tasks}
+        mail={mail}
+        needsYou={[]}
+        brief={brief}
+        sessionId="session-98b0b4a7"
+        startedAt={FIXTURE_NOW - 3_600_000}
+        focused={null}
+        onOpenWall={vi.fn()}
+        now={FIXTURE_NOW}
+        readOnly={false}
+        {...over}
+      />
+    </CastContext>,
+  );
+}
 
 describe('Overview', () => {
-  it('fits six tiles without horizontal scroll', () => {
-    render(<Overview agents={six} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const tiles = screen.getAllByTestId('overview-tile');
-    expect(tiles).toHaveLength(6);
-    for (const tile of tiles) {
-      expect(tile.style.width).toBe('');
-      expect(tile.style.minWidth).toBe('0px');
-    }
+  it('is a scrolling column, not the wall condensed', () => {
+    draw();
     const root = screen.getByTestId('overview');
-    expect(root.style.overflowX).toBe('');
-    expect(root.style.display).toBe('flex');
+    expect(root.style.flexDirection).toBe('column');
+    expect(root.style.overflowY).toBe('auto');
+    expect(screen.getByTestId('brief')).toBeTruthy();
+    expect(screen.getByTestId('where-it-stands').style.width).toBe('300px');
   });
 
-  it('renders the header, type and status row for probe-alpha', () => {
-    render(<Overview agents={four} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const alpha = within(screen.getAllByTestId('overview-tile')[1]);
-    expect(alpha.getByTestId('overview-name').textContent).toBe('probe-alpha');
-    expect(alpha.getByTestId('overview-type').textContent).toBe('general-purpose');
-    expect(alpha.getByTestId('overview-model').textContent).toBe('claude-opus-5');
-    expect(alpha.getByTestId('overview-model').style.fontSize).toBe('10.5px');
-    expect(alpha.getByTestId('overview-model').style.color).toBe('var(--color-neutral-600)');
-    expect(alpha.getByTestId('overview-pct').textContent).toBe('3%');
-    expect(alpha.getByTestId('overview-status').style.fontSize).toBe('');
-    expect(alpha.getByTestId('overview-status-row').style.justifyContent).toBe('space-between');
-    expect(alpha.getByTestId('overview-status-row').style.fontSize).toBe('10px');
-  });
-
-  it('draws a 4px progress bar filled to the context percentage', () => {
-    render(<Overview agents={four} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const tiles = screen.getAllByTestId('overview-tile');
-    const alphaTrack = within(tiles[1]).getByTestId('overview-track');
-    expect(alphaTrack.style.height).toBe('4px');
-    expect(within(tiles[1]).getByTestId('overview-fill').style.width).toBe('3%');
-    // probe-charlie is on haiku, so the same token count reads much fuller
-    expect(within(tiles[3]).getByTestId('overview-fill').style.width).toBe('12%');
-  });
-
-  it('puts elapsed left and cost right in the footer', () => {
-    render(<Overview agents={four} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const alpha = within(screen.getAllByTestId('overview-tile')[1]);
-    const footer = alpha.getByTestId('overview-footer');
-    expect(footer.style.padding).toBe('6px 10px');
-    // No 9.5px text at neutral-700 (2.69-2.80:1); that register is
-    // neutral-600 at 10px everywhere in the console.
-    expect(footer.style.fontSize).toBe('10px');
-    expect(footer.style.color).toBe('var(--color-neutral-600)');
-    expect(alpha.getByTestId('overview-elapsed').textContent).toBe('0m 42s');
-    expect(alpha.getByTestId('overview-cost').textContent).toBe('≈$0.46');
-  });
-
-  it('sets the focused agent when a tile is clicked', () => {
-    const onFocus = vi.fn();
-    render(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    fireEvent.click(screen.getAllByTestId('overview-tile')[3]);
-    expect(onFocus).toHaveBeenCalledWith('probe-charlie');
-  });
-
-  it('tints a tile on hover', () => {
-    render(<Overview agents={four} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const tile = screen.getAllByTestId('overview-tile')[0];
-    expect(tile.style.background).toBe('var(--term)');
-    fireEvent.mouseEnter(tile);
-    expect(tile.style.background).toBe('var(--color-bg)');
-  });
-
-  it('dims a departed agent tile to opacity .55', () => {
-    const withDeparted = four.map((a) =>
-      a.name === 'probe-charlie' ? { ...a, status: 'departed' as const } : a,
-    );
-    render(<Overview agents={withDeparted} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const tiles = screen.getAllByTestId('overview-tile');
-    const charlie = tiles.find((t) => within(t).getByTestId('overview-name').textContent === 'probe-charlie')!;
-    expect(charlie.style.opacity).toBe('0.55');
-    const alpha = tiles.find((t) => within(t).getByTestId('overview-name').textContent === 'probe-alpha')!;
-    expect(alpha.style.opacity).toBe('1');
-  });
-
-  it('dims an idle agent tile too — an idle teammate has already returned', () => {
-    const withDeparted = four.map((a) =>
-      a.name === 'probe-charlie' ? { ...a, status: 'idle' as const } : a,
-    );
-    render(<Overview agents={withDeparted} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const tiles = screen.getAllByTestId('overview-tile');
-    const charlie = tiles.find((t) => within(t).getByTestId('overview-name').textContent === 'probe-charlie')!;
-    expect(charlie.style.opacity).toBe('0.55');
-    const alpha = tiles.find((t) => within(t).getByTestId('overview-name').textContent === 'probe-alpha')!;
-    expect(alpha.style.opacity).toBe('1');
-  });
-
-  it('pins the lead leftmost and puts departed agents last, same as the wall', () => {
-    const [lead, alpha, bravo, charlie] = four;
-    const withDepartedMidRoster = [
-      { ...alpha, status: 'departed' as const },
-      bravo,
-      lead,
-      charlie,
-    ];
-    render(<Overview agents={withDepartedMidRoster} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
-    const names = screen
-      .getAllByTestId('overview-tile')
-      .map((t) => within(t).getByTestId('overview-name').textContent);
-    expect(names).toEqual(['team-lead', 'probe-bravo', 'probe-charlie', 'probe-alpha']);
+  it('renders one row per member', () => {
+    draw();
+    expect(screen.getAllByTestId('overview-row')).toHaveLength(agents.length);
   });
 });
 
-describe('Overview tile memoisation', () => {
-  it('does not re-render a tile whose agent object did not change', () => {
-    const onFocus = vi.fn();
-    feed.renders = 0;
-    const { rerender } = render(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    expect(feed.renders).toBe(4);
-
-    feed.renders = 0;
-    rerender(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    expect(feed.renders).toBe(0);
+describe('the brief panel', () => {
+  it('names the model, its inputs and its age beside the text', () => {
+    draw();
+    expect(screen.getByTestId('brief-meta').textContent)
+      .toBe('claude-haiku-4-5 · last 5 min of 4 transcripts + 3 tasks · 2m ago');
+    expect(screen.getByTestId('brief-cost').textContent)
+      .toBe('9.4k in · 210 out · ≈$0.00 per run · rewrites itself when the team moves');
   });
 
-  it('does not re-render a tile when only the clock advances', () => {
-    const onFocus = vi.fn();
-    const { rerender } = render(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    const elapsed = () => within(screen.getAllByTestId('overview-tile')[1]).getByTestId('overview-elapsed').textContent;
-    expect(elapsed()).toBe('0m 42s');
-
-    feed.renders = 0;
-    rerender(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW + 1000} />);
-    expect(feed.renders).toBe(0);
-    expect(elapsed()).toBe('0m 43s');
+  it('draws the three paragraphs under their own kickers', () => {
+    draw();
+    const panel = within(screen.getByTestId('brief'));
+    for (const head of ['NOW', 'WAITING', 'NEXT']) expect(panel.getByText(head)).toBeTruthy();
+    expect(panel.getByText('T-1 unblocks T-2.')).toBeTruthy();
   });
 
-  it('re-renders only the tile whose agent changed', () => {
-    const onFocus = vi.fn();
-    const { rerender } = render(<Overview agents={four} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    const changed = four.map((a) => (a.name === 'probe-bravo' ? { ...a, status: 'idle' as const } : a));
+  it('says the brief has never run rather than drawing empty paragraphs', () => {
+    draw({ brief: undefined });
+    expect(screen.getByTestId('brief-meta').textContent).toBe('not written yet — nothing has asked for one');
+    expect(screen.getByText(/click the header line to write the first one/)).toBeTruthy();
+  });
 
-    feed.renders = 0;
-    rerender(<Overview agents={changed} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />);
-    expect(feed.renders).toBe(1);
+  // The six-minute freeze: the brief said every agent was idle while the rows
+  // showed one auditing. Nothing on screen admitted the gap.
+  it('says it is behind when the team has moved under it', () => {
+    draw({ brief: { ...brief, signature: 'written-against-something-else' } });
+    expect(screen.getByTestId('brief-stale').textContent).toBe('behind the rows · rewriting');
+  });
+
+  it('says nothing when the reading still matches the rows', () => {
+    const current = { ...brief, signature: briefSignature(agents, tasks) };
+    draw({ brief: current });
+    expect(screen.queryByTestId('brief-stale')).toBeNull();
+  });
+
+  it('shows the failure instead of passing off a stale reading as current', () => {
+    draw({ brief: { ...brief, error: 'claude: command not found' } });
+    expect(screen.getByTestId('brief-error').textContent).toContain('claude: command not found');
+  });
+
+  describe('regenerate', () => {
+    beforeEach(() => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    // There is no regenerate control: the brief re-reads itself. The meta line
+    // is the escape hatch for a run that failed, nothing more.
+    it('has no regenerate button', () => {
+      draw();
+      expect(screen.queryByTestId('brief-regenerate')).toBeNull();
+      expect(screen.queryByText('↻ regenerate')).toBeNull();
+    });
+
+    it('re-runs from the meta line, which names the route it calls', () => {
+      draw();
+      const line = screen.getByTestId('brief-meta');
+      expect(line.getAttribute('title')).toContain('POST /api/sessions/:id/brief');
+      fireEvent.click(line);
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/sessions/session-98b0b4a7/brief',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('says writing… and refuses a second click while one is in flight', () => {
+      draw({ brief: { ...brief, pending: true } });
+      expect(screen.getByTestId('brief-pending').textContent).toBe('writing…');
+      fireEvent.click(screen.getByTestId('brief-meta'));
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('is inert on a read-only console, which cannot spend', () => {
+      draw({ readOnly: true });
+      fireEvent.click(screen.getByTestId('brief-meta'));
+      expect(fetch).not.toHaveBeenCalled();
+    });
   });
 });
 
-// One cast feeds every view: the same agent is the same character here as on
-// the wall, and the tile still routes by the real name.
-it('draws the character on a themed tile, and focuses the real name', () => {
-  const onFocus = vi.fn();
-  const agents = fixtureAgents();
-  render(
-    <CastContext.Provider value={buildCast(agents, 'inception')}>
-      <Overview agents={agents} focused={null} onFocus={onFocus} now={FIXTURE_NOW} />
-    </CastContext.Provider>,
-  );
-  expect(screen.getAllByTestId('overview-name')[0].textContent).toBe('Cobb');
-  fireEvent.click(screen.getAllByTestId('overview-tile')[0]);
-  expect(onFocus).toHaveBeenCalledWith('team-lead');
+describe('where it stands', () => {
+  it('counts the tasks and segments the bar', () => {
+    draw();
+    expect(screen.getByTestId('task-count').textContent).toBe('1/3');
+    const widths = Array.from(screen.getByTestId('task-bar').children).map((c) => (c as HTMLElement).style.width);
+    expect(parseFloat(widths[0])).toBeCloseTo(100 / 3);
+    expect(parseFloat(widths[1])).toBeCloseTo(100 / 3);
+  });
+
+  it('lists the five states', () => {
+    draw();
+    expect(screen.getAllByTestId('stands-row')).toHaveLength(5);
+  });
+
+  it('derives NEXT UNBLOCK from the task list', () => {
+    draw();
+    expect(screen.getByTestId('next-unblock').textContent)
+      .toBe('T-2 is unclaimed but still blocked by T-1.');
+  });
+});
+
+describe('an agent row', () => {
+  const rowFor = (name: string) =>
+    within(screen.getAllByTestId('overview-row').find(
+      (r) => within(r).getByTestId('overview-name').textContent === name,
+    ) as HTMLElement);
+
+  it('shows the claimed task, its subject and the runtime activeForm', () => {
+    draw();
+    const alpha = rowFor('probe-alpha');
+    expect(alpha.getByTestId('row-task-id').textContent).toBe('T-1');
+    expect(alpha.getByText('land the schema')).toBeTruthy();
+    expect(alpha.getByTestId('row-active-form').textContent).toBe('Landing the schema');
+  });
+
+  it('says what an unclaimed agent last closed', () => {
+    draw();
+    expect(rowFor('probe-charlie').getByTestId('row-idle-note').textContent)
+      .toBe('Nothing claimed — idle since T-3 closed');
+  });
+
+  it('shows the current tool and the context meter', () => {
+    draw();
+    const alpha = rowFor('probe-alpha');
+    expect(alpha.getByTestId('row-now').textContent).toBe('Bash(sleep 20)');
+    expect(alpha.getByTestId('row-context').textContent).toBe('34.5k/1M');
+    expect(alpha.getByTestId('row-meter').style.width).toBe('96px');
+  });
+
+  it('marks a message to the lead with its recipient', () => {
+    draw();
+    expect(rowFor('probe-alpha').getByTestId('row-last-kind').textContent).toBe('→ team-lead');
+    expect(rowFor('probe-alpha').getByText('claimed task 1')).toBeTruthy();
+  });
+
+  it('opens the agent in the wall when the row is clicked', () => {
+    const onOpenWall = vi.fn();
+    draw({ onOpenWall });
+    fireEvent.click(screen.getAllByTestId('overview-row')[1]);
+    expect(onOpenWall).toHaveBeenCalledWith('probe-alpha');
+  });
+
+  it('tints the focused row', () => {
+    draw({ focused: 'probe-alpha' });
+    const row = screen.getAllByTestId('overview-row')[1];
+    expect(row.getAttribute('aria-current')).toBe('true');
+    expect(row.style.background).toBe('var(--color-accent-900)');
+  });
 });

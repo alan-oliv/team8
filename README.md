@@ -68,7 +68,7 @@ An agent team, two or more members.
 </tr>
 <tr>
 <td><code>overview</code></td>
-<td>one tile per agent with a context-occupancy bar</td>
+<td>a generated brief, where the work stands, and one row per agent: the task it claimed, what it's doing now, what it last reported</td>
 </tr>
 <tr>
 <td><code>comms</code></td>
