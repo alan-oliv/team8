@@ -18,8 +18,7 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
 
 1. **Name the work.** List the items from session context. Show the list.
 2. **Settle the branch shape and the terminal deliverable — once, before
-   dispatching.** The branch shape you derive; only the push is the user's call.
-   See below.
+   dispatching.** Both are yours to decide, not the user's to be asked. See below.
 3. **`TaskCreate` one task per item**, before any teammate exists.
    **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
@@ -61,25 +60,44 @@ against `main` if none exists for the branch yet and report its URL, otherwise y
 push lands in the existing one — just report that. Without that sentence, either
 everyone tries to open a PR or nobody does.
 
-## Step 2b: Settle the Terminal Deliverable
+## Step 2b: Decide the Terminal Deliverable — Don't Ask Either
 
 Opening a PR is outward-facing, so an agent will correctly refuse it by default and
-end at "committed on your branch." That default is right, and it is also the single
-most common way this workflow ends up half-finished.
+end at "committed on your branch." That default is right for a lone agent, and it is
+also the single most common way this workflow ends up half-finished.
 
-This half you do ask, because pushing is outward-facing and the branch shape is not.
-Ask once, before dispatching, in one line:
+Running `team8:run` is the standing authorisation. **Default: the batch ends in an
+open PR.** State it as a decision in the same line as the branch shape, then
+dispatch:
 
-> That's <N> tasks across <M> teammates on one shared branch. First one green opens
-> a PR against `main` and the rest push into it — ok, or would you rather they stop
-> at commits and you open it?
+> 5 tasks, 4 teammates, one shared branch `handoff-v4`. First one green opens the
+> PR against `main`; the rest push into it.
 
-Fill in your own counts from step 4, and your own branch shape from step 2a; the
-numbers above are placeholders, not a default shape.
+How many PRs is yours to decide too, and the origin of the work decides it:
 
-Whatever comes back is the answer **for the whole batch**, and every dispatch prompt
-must state it explicitly. Do not ask per teammate, and do not leave it unstated and
-let each teammate decide — that is how three branches land and two sit unpushed.
+| Where the work came from | PRs |
+|---|---|
+| One batch tackled together — a plan, a handoff drop, a review's findings | One PR for the batch |
+| Separate tickets, separate identifications, separate asks | A PR each — but only if step 2a left you a single track; concurrency forecloses per-task branches |
+
+Whatever you decide is the answer **for the whole batch**, and every dispatch prompt
+must state it explicitly. Do not decide per teammate, and do not leave it unstated
+and let each teammate choose — that is how three branches land and two sit unpushed.
+
+**Ask the user only what changes what gets built.** A question whose every answer
+leads to the same dispatch is a round trip you spent for nothing. Worth asking: two
+readings of the work that produce different code; a destructive step outside the
+task list; a missing value you cannot derive. Not worth asking: whether to push,
+how to branch, how many PRs, whether to start.
+
+### Red Flags — you are about to waste the user's turn
+
+- "…ok, or would you rather they stop at commits and you open it?"
+- "Which way now — adjust, or start the work?" *after* the user already said run it
+- Any question you could answer by reading the task graph or the git state
+- Presenting a recommended option and then asking whether to take it
+
+**All of these mean: take the recommended option and dispatch.**
 
 ## Step 4: How Many Teammates
 
@@ -129,7 +147,7 @@ ones that get dropped.
    `superpowers:verification-before-completion`."
 4. **Scope.** Files you own, files that are off limits, who else is live where.
 5. **Verification.** The exact commands, and paste the output.
-6. **The terminal deliverable.** The answers from steps 2a and 2b, stated in full.
+6. **The terminal deliverable.** The decisions from steps 2a and 2b, stated in full.
    Name the branch and say it is already checked out — never "branch off `main`",
    which invites the `git checkout -b` that moves everyone. For the PR case:
    "Commit on `<branch>`, staging your paths by name, then push. If no PR against
@@ -144,7 +162,8 @@ ones that get dropped.
 
 | Mistake | Fix |
 |---|---|
-| "Pushing is the user's call, so I'll stop at a commit" | You asked in step 2b. Carry that answer into part 6 |
+| "Pushing is the user's call, so I'll stop at a commit" | Running `run` authorised it. Step 2b decided it. Carry that into part 6 |
+| Asking whether to open the PR, or how to branch | Both are step 2a/2b decisions. Ask only what changes what gets built |
 | Asking the user to choose a branching strategy | Step 2a derives it from the blockers. Only you have the graph |
 | Per-task branches or PRs while tracks run in parallel | One checkout, one HEAD. Concurrency already foreclosed it |
 | Keeping the small task for yourself | Delegate it. A busy lead can't review or unblock |
