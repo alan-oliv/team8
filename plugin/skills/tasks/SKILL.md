@@ -69,7 +69,7 @@ Names are tiers — cheapest capable, mid, top. Substitute current names as mode
 
 The closing message has four parts, in this order. A message that stops after part 3 leaves the contract unsigned — part 4 is what turns the list into a decision.
 
-1. **The mode** — the first line, on its own, derived from the graph per Mode below: `mode: teammates — 3 tracks (domain, web, tests) run at once`. A closing without this line has not decided anything, and `run` will have to.
+1. **The mode** — the first line, on its own, derived from the graph per Mode below, and for teammates it says how many run at once: `mode: teammates — 4 tracks in 3 waves, peak 2 at once`. Then the waves, one line each, before the table. A closing without this has not decided anything, and `run` will have to.
 
 2. **The table** — dependency, model and estimate columns, so the user can override before anything runs, and a total row:
 
@@ -100,8 +100,8 @@ first.
 | The graph says | Mode | Why |
 |---|---|---|
 | One task, or two you would finish in the next few tool calls | **solo** | Spawning costs more than the work. The lead does it, TDD, one commit |
-| One track — every task serial, or all in one file cluster — and at least one task is judgment or needs the lead's answers mid-way | **subagents** | Nothing runs in parallel and nobody needs a mailbox. A fresh subagent per task, the lead reviews each diff, keeps control and its own context |
-| Two or more tracks that can run at the same time | **teammates** | Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. That is what a team is |
+| A peak of 1 — one track, or several that never share a wave — and at least one task is judgment or needs the lead's answers mid-way | **subagents** | Nothing runs in parallel and nobody needs a mailbox. A fresh subagent per task, the lead reviews each diff, keeps control and its own context |
+| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. That is what a team is |
 | Five or more tasks of the same shape — same mechanical edit across files, a review per PR, a fan-out with a verify step — with no judgment call between them | **workflow** | Deterministic fan-out and pipeline beat a lead improvising the same dispatch nine times. Needs the user's opt-in in their own words; recommend it, do not assume it |
 
 Ties break upward: solo before subagents, subagents before teammates, unless
@@ -109,7 +109,25 @@ the graph has two tracks that genuinely run at once. Teammates before
 workflow whenever a task needs judgment between steps. A batch that mixes
 shapes takes the mode of its hardest part.
 
-Write it as the first line of the closing: `mode: teammates — 3 tracks (domain, web, tests) run at once`.
+**Tracks are not parallelism.** A track is who owns which files; a wave is
+who is running at the same time. Wave 1 is every track whose first task has
+no blocker. Wave N+1 is every track whose first task is unblocked once wave N
+closes. The peak is the largest wave, and it is the number of teammates the
+user is paying for at once. Four tracks that run 1, then 2, then 1 is a peak
+of 2, and the closing says so.
+
+Write the mode as the first line of the closing, then the waves:
+
+```
+mode: teammates — 4 tracks in 3 waves, peak 2 at once
+wave 1: A (tasks 1, 2)
+wave 2: B (3) ∥ C (4, 5, 6) — after task 1
+wave 3: D (7) — after 4, 5, 6
+```
+
+A peak of 1 is not teammates. Every track running after the previous one is
+one serial line of work, and the mode is subagents whatever the file
+ownership looks like.
 
 ## Estimating: complexity × model × effort, at list price
 
@@ -159,6 +177,7 @@ in the same direction, change the factor instead.
 | One model for the whole list | Model is per-task. A list of nine usually spans two or three tiers. |
 | Mode left implicit, or left to `run` | It is part 1 of the closing. Read it off the tracks and say it with its reason. |
 | Teammates by habit for a one-track list | One track is subagents. Count the tracks before naming the mode. |
+| "4 tracks" read as 4 teammates | Tracks own files; waves run. Say the peak, and list the waves. |
 | Chaining every task 1→2→3→4 | Per blocker, ask: what output does the blocked task read? No answer, no blocker. |
 | Sizing by diff size | Size by decisions. Bulk is cheap; a small ambiguous change is not. |
 | Descriptions pointing at the conversation | The executing agent can't see it. Inline the values. |
