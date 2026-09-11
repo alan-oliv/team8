@@ -31,7 +31,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    there is not a teammate, whatever the spawn result said — respawn it. Do this
    immediately; a wrong roster is cheap to fix in the first minute and expensive
    once six agents have edited files.
-7. **Stay free.** Review diffs, answer questions, relay results.
+7. **Stay free.** Answer questions, relay results, and run the track review
+   below as each track lands. Never fix a finding yourself.
+8. **Close the run log.** When the PR is up, fill the Run section of
+   `docs/team8/runs/<batch>.md` (opened by `team8:plan`; create it from that
+   skill's template if this batch skipped `plan`) and commit it on the branch.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -133,6 +137,34 @@ file ownership**, and the dispatch prompt is where you create it:
   mid-edit. Re-run once, then report it — never fix another teammate's file.
 - A commit can fail on an index lock. Wait, retry.
 
+## Track Review
+
+An executor that self-verifies and pushes has had nobody read its diff. Each
+track gets one fresh reviewer when it lands, the same shape as the plan
+reviewer, and the executor stays alive until its track is clear.
+
+1. **When a teammate reports its last task completed and pushed**, write its
+   diff to a file — the branch's changes to the files it owns, from the base
+   you recorded before dispatching:
+   `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
+   Never hand a reviewer the diff inline.
+2. **Dispatch a reviewer subagent**, read-only, model sized like the track's
+   biggest task (sonnet for standard, opus for judgment), with: the diff path,
+   the task descriptions (`TaskGet` each, paste them), the plan sections those
+   tasks name, and the global constraints. Two verdicts, both required: does
+   the diff do what the tasks say, nothing more and nothing less; and is it
+   well built — tests that assert something, no duplication of a block that
+   exists, no scope beyond the tasks. Findings labelled Blocking or Minor,
+   each with file, line and the fix. Do not tell it what not to flag.
+3. **Blocking findings go to the executor** by `SendMessage`, verbatim. It
+   fixes, re-runs the covering tests, pushes, and reports. Then a scoped
+   re-review: the diff since the last review, the findings list, verdict per
+   finding ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only.
+   Three rounds per track. After three, rule on each open finding yourself and
+   record the ruling in the run log. Minor findings go straight to the run log.
+4. **Clear the track.** Tell the executor its track is clear and it can stop.
+   Note the rounds in the run log.
+
 ## The Dispatch Contract
 
 Every dispatch prompt has these seven parts, in this order. Parts 1, 3 and 6 are the
@@ -157,7 +189,27 @@ ones that get dropped.
    For the commit case: "Commit on `<branch>`. Do not push."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
 7. **Close out.** "`TaskUpdate` your task to `completed`, then report: what you did,
-   the verification output, and anything you deliberately left alone."
+   the verification output, and anything you deliberately left alone. Then stay
+   available: the lead sends review findings for your track. Fix them, re-run
+   the covering tests, push, report again. Stop only when the lead says the
+   track is clear."
+
+## The Run Log at Close
+
+The Run section of `docs/team8/runs/<batch>.md` takes one line per executor
+(name, model, effort, track), the review rounds per track and their residuals,
+the PR URL, and what it actually cost. The console has the cost; its stream's
+first frame is the full state:
+
+```bash
+curl -sN -m 3 http://127.0.0.1:4823/stream | sed -n '/^data: /{s/^data: //p;q;}' \
+  | jq '{total: .totalCostUsd, agents: [.agents[] | {name, model, costUsd}]}'
+```
+
+Write the total and the per-agent figures with `≈$`, put the plan's estimate
+beside them in one line, and end with what went wrong and what to change next
+time, one line each, or "nothing". Commit the log on the branch; it belongs in
+the PR next to the plan it describes.
 
 ## Common Mistakes
 
@@ -173,6 +225,9 @@ ones that get dropped.
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | `isolation: "worktree"` to keep parallel writers apart | It silently spawns a subagent, not a teammate. Isolate by file ownership |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
+| Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for the track review. Nobody else can fix its findings |
+| Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
+| Run log filled from memory a day later | The console's numbers are for this session. Fill it at close |
 
 ## Red Flags
 

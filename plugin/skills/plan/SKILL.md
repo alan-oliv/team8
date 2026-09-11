@@ -19,6 +19,10 @@ that executes across context-free teammates is the largest document in the flow.
 It is written by a teammate, reviewed by a different teammate, and reaches the
 lead as a task table and a file path.
 
+**Every batch leaves a run log** at `docs/team8/runs/YYYY-MM-DD-<topic>.md`:
+who ran, on what model, how many rounds, what it was estimated at, what it
+cost. It is how a past session gets debugged. See The run log below.
+
 **Not for:** one task, or a few tasks with no design decision in them.
 `team8:tasks` covers that.
 
@@ -60,12 +64,12 @@ artifact, never the approval.
 Announce the phase, then create a task for each item and complete them in
 order.
 
-1. **Explore project context** — check files, docs, recent commits
+1. **Explore project context** — three explorer subagents in one message, then read their three pages
 2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Write design doc** — save to `docs/team8/specs/YYYY-MM-DD-<topic>-design.md`, cut the batch branch, commit it there
-6. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+5. **Write design doc** — save to `docs/team8/specs/YYYY-MM-DD-<topic>-design.md`, cut the batch branch, open the run log, commit both there
+6. **Spec self-review, then a spec reviewer** — inline check for placeholders, contradictions, ambiguity, scope, then one fresh subagent runs the same check (see below)
 7. **User reviews written spec** — ask user to review the spec file before proceeding
 8. **Transition to Phase 2** — dispatch planner and reviewer
 
@@ -109,7 +113,7 @@ brings it back here.
 
 **Understanding the idea:**
 
-- Check out the current project state first (files, docs, recent commits)
+- Check out the current project state first — not by reading it yourself. Dispatch three read-only `Explore` subagents in one message, each told what the idea is and told to return one page: (1) the code the idea touches, the patterns it follows, and the files that would change; (2) the tests beside that code and how they run; (3) recent commits, open docs and specs for that area, and anything half-finished there. Read the three pages. Your questions get sharper and your context stays small for the whole session. Explorers are subagents, not teammates: nobody needs to talk to them.
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
@@ -152,6 +156,7 @@ brings it back here.
 - Write the validated design (spec) to `docs/team8/specs/YYYY-MM-DD-<topic>-design.md`
   - (User preferences for spec location override this default)
 - Cut the batch branch now — `git checkout -b <topic>` — and commit the design document on it. The plan lands on the same branch in Phase 3, and `team8:run` finds it checked out
+- Open the run log at `docs/team8/runs/YYYY-MM-DD-<topic>.md` from the template in The run log, fill the Shape section, and commit it with the spec
 
 **Spec Self-Review:**
 After writing the spec document, look at it with fresh eyes:
@@ -162,6 +167,17 @@ After writing the spec document, look at it with fresh eyes:
 4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
 
 Fix any issues inline. No need to re-review — just fix and move on.
+
+**Spec Reviewer:**
+Then one fresh subagent, read-only, on the mid tier, with the spec path and
+this rubric: placeholders and incomplete sections; contradictions between
+sections; a requirement ambiguous enough that someone would build the wrong
+thing; scope that spans independent subsystems; features nobody asked for.
+Only findings that would cause a real problem during planning; each one with
+the line it is about and the fix. Apply the ones you agree with, note the
+ones you don't in the run log, and only then ask the user to read the file.
+The planner builds on every ambiguity the spec still has; this is the cheap
+place to remove them.
 
 **User Review Gate:**
 After the spec review loop passes, ask the user to review the written spec before proceeding:
@@ -208,8 +224,10 @@ it from this skill's directory before composing the prompts.
 > (checkpoint 1). Keep writing the task steps while reviewer reads; fold its
 > skeleton findings in as they arrive. When the plan is complete, run its
 > self-review, create the tasks, and message reviewer again with the task
-> count (checkpoint 2). Do not implement anything. Do not spawn subagents. Do
-> not commit. Files you own: the plan file only. The branch `<branch>` is
+> count (checkpoint 2). Track writers, when the skeleton has three or more
+> tracks, are the one exception to "no subagents": see Checkpoints in
+> writing-plans.md. Do not implement anything. Do not commit. Files you own:
+> the plan file and its `.track-*.md` scratch files. The branch `<branch>` is
 > already checked out; do not run `git checkout -b`.
 
 ### The reviewer's dispatch
@@ -277,8 +295,10 @@ approved plan is not an approved run.
 
 1. **Ask both teammates to stop.** The plan file is the memory. Executors are
    fresh teammates that `team8:run` dispatches.
-2. **Commit the plan** on the batch branch cut in Phase 1, so every executor
-   can read it.
+2. **Fill the Plan section of the run log** — agents, checkpoint findings,
+   rounds, residuals, task and track counts, the estimate total — and
+   **commit the plan and the log** on the batch branch cut in Phase 1, so
+   every executor can read them.
 3. **Close with the `team8:tasks` ending**: the plan path, the table (task,
    blocked by, model, estimate) with its total, the notes (tracks, what starts
    now, sizing you were unsure about, any residual ruling), and the one ask —
@@ -289,6 +309,42 @@ approved plan is not an approved run.
    file. Show the table again and ask again.
 5. On **start the work**, invoke `team8:run`. The tasks and the branch exist;
    `run` skips its own task creation and branch cut.
+
+## The run log
+
+One file per batch, `docs/team8/runs/YYYY-MM-DD-<topic>.md`, on the batch
+branch, so it lands with the PR and a past batch can be read back next to
+its spec, its plan and its diff. Phase 1 opens it, Phase 3 fills the Plan
+section, `team8:run` fills the Run section at close. Numbers are the ones
+you have at the time; a line you cannot fill yet stays as its placeholder
+until the phase that can.
+
+```markdown
+# Run log — <topic>
+
+spec: docs/team8/specs/<file>.md
+plan: docs/team8/plans/<file>.md
+branch: <branch>
+pr: <url, at close>
+
+## Shape
+- explorers: 3 subagents · <model>
+- spec reviewer: <n> findings, <n> applied, <n> declined (<why>)
+- spec rounds with the user: <n>
+
+## Plan
+- planner: opus · high · reviewer: opus · high · track writers: <n> · <model>
+- checkpoint 1: <n> findings · checkpoint 2: <n>/3 rounds · residuals: <n> (<one line each>)
+- tasks: <n> · tracks: <n>
+- estimate: ≈$<total> (per task in the plan's table)
+
+## Run
+- executors: <name> · <model> · <effort> · track <X>, one line each
+- track reviews: <X> <n>/3 rounds, one entry each · residuals: <n>
+- actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
+- estimate vs actual: <one line>
+- went wrong / change next time: <one line each, or "nothing">
+```
 
 ## Common mistakes
 
@@ -306,3 +362,6 @@ approved plan is not an approved run.
 | Planner keeps running as "plan owner" during execution | The plan file answers executor questions. Stop both teammates before `run` |
 | No self-review before the first reviewer round | Round one should be about judgment, not typos |
 | Dispatch prompts say "read writing-plans.md" without a path | A teammate cannot find this skill's directory. Absolute path |
+| Explorers spawned as teammates | Nobody messages an explorer. Subagents, three in one message, one page each |
+| Spec reviewer skipped because the self-review was clean | The self-review is the author's. The reviewer is the fresh pair of eyes |
+| Run log left for "after" | After is when the numbers are gone. Fill each section in the phase that has them |

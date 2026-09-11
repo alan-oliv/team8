@@ -205,6 +205,17 @@ Constraints, file structure, Tracks table, and every task's `Files` and
 path and the spec path. Keep writing the steps while reviewer reads; fold its
 findings in as they arrive.
 
+**Track writers.** Writing the steps is the slow part, and after checkpoint 1
+the tracks are known and their files are disjoint. With three or more tracks,
+do not write the steps alone: dispatch one subagent per track in one message,
+each with the skeleton path, its track letter, the spec path, and this file's
+path, told to write only its track's task sections, complete with the test
+and implementation code, into `<plan>.track-<X>.md`, and to change nothing
+in the skeleton. Merge the files into the plan in task order, delete them,
+then run the self-review across the whole plan: the type consistency pass is
+the net for what parallel writers break. One or two tracks: write them
+yourself; the merge costs more than it saves.
+
 **Checkpoint 2 — full plan.** When every step is written, the self-review is
 done, and the tasks exist, message reviewer the task count. Reviewer sends
 findings labelled Blocking or Minor. Fix every Blocking one in both the plan
