@@ -202,7 +202,7 @@ the PR URL, and what it actually cost. The console has the cost; its stream's
 first frame is the full state:
 
 ```bash
-curl -sN -m 3 http://127.0.0.1:4823/stream | sed -n '/^data: /{s/^data: //p;q}' \
+curl -sN -m 3 http://127.0.0.1:4823/stream | sed -n '/^data: /{s/^data: //p;q;}' \
   | jq '{total: .totalCostUsd, agents: [.agents[] | {name, model, costUsd}]}'
 ```
 
