@@ -22,6 +22,7 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
 3. **`TaskCreate` one task per item**, before any teammate exists.
    **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
+   If `team8:plan` already landed them, skip this step and its branch cut.
 4. **Decide how many teammates.** Count tracks, not tasks.
 5. **Dispatch**, using the contract below. Assign the owner with `TaskUpdate`.
 6. **Verify the roster before they get deep.** Every teammate you dispatched has
