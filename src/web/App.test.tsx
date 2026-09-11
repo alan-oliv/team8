@@ -1029,14 +1029,16 @@ it('gives a solo session the canvas two-figure bar, not the team figures', async
   expect(bar.textContent).not.toContain('ctx');
 });
 
-it('badges a session with a tree subagents, and a bare one solo', async () => {
+it('badges a session with a tree subagents, and a bare one not at all', async () => {
   const { rerender } = render(<App />);
   act(() => MockEventSource.last().emit('snapshot', soloState()));
   expect(screen.getByTestId('team-mode').textContent).toBe('subagents');
   cleanup();
 
+  // Nothing has spawned yet, so the mode is not known: the badge waits for
+  // evidence (a subagent, a roster, a workflow) rather than guessing "solo".
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', bareState()));
-  expect(screen.getByTestId('team-mode').textContent).toBe('solo');
+  expect(screen.queryByTestId('team-mode')).toBeNull();
   void rerender;
 });

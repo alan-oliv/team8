@@ -1,12 +1,14 @@
 # Writing Plans
 
-The planner teammate's reference. Read it once, top to bottom, before writing a line of the plan. `team8:plan` dispatches you with the spec path; this file is how the plan gets written.
-
 ## Overview
 
 Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Document everything they need to know: which files to touch for each task, code, testing, docs they might need to check, how to test it. Give them the whole plan as bite-sized tasks. DRY. YAGNI. TDD. Frequent commits.
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
+
+**Announce at start:** "I'm using team8:plan's writing-plans to create the implementation plan."
+
+**Context:** The batch branch is already checked out by the lead. Do not create branches or worktrees.
 
 **Save plans to:** `docs/team8/plans/YYYY-MM-DD-<feature-name>.md`
 - (User preferences for plan location override this default)
@@ -35,23 +37,6 @@ deliverable needs them; split only where a reviewer could meaningfully
 reject one task while approving its neighbor. Each task ends with an
 independently testable deliverable.
 
-## Tracks
-
-Tasks are grouped into tracks before they are written out. A track is the
-unit `team8:run` hands to one teammate, and teammates run in parallel in one
-shared checkout, so isolation comes from file ownership and nothing else.
-
-- **A file belongs to exactly one track.** Two tasks that edit the same file
-  are in the same track, in order. No exceptions for "just one line".
-- **A task that reads another task's output** (a type, a route, a field, a
-  decision) is either later in the same track, or in a track that starts after
-  the producer's track finishes. Say which.
-- **Fewest tracks that keep files disjoint.** Tracks are not a target; a
-  three-track plan with one shared file is a merge conflict, a one-track plan is
-  fine.
-- **Verification tasks belong to the track that can break them.** A task that
-  runs the whole suite comes after every track that touches what it tests.
-
 ## Bite-Sized Task Granularity
 
 **Each step is one action (2-5 minutes):**
@@ -68,7 +53,7 @@ shared checkout, so isolation comes from file ownership and nothing else.
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** this plan is executed by teammates that `team8:run` dispatches, one per track, in one shared checkout. Read your own task section and the Tracks section; nothing else. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** this plan is executed by teammates that `team8:run` dispatches from the shared task list. Read your own task section. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** [One sentence describing what this builds]
 
@@ -85,16 +70,6 @@ argues from the spec, so the spec travels with it; executors read both]
 naming and copy rules, platform requirements — one line each, with exact
 values copied verbatim from the spec. Every task's requirements implicitly
 include this section.]
-
-## Tracks
-
-| Track | Owns | Tasks |
-|---|---|---|
-| A | `src/shared/domain.ts`, `src/shared/domain.test.ts` | 1, 2 |
-| B | `src/web/panels/Diff.tsx`, `src/web/panels/Diff.test.tsx` | 3 |
-
-[One row per track. A file appears in exactly one row. Tasks within a
-track run in order; tracks run at the same time.]
 
 ---
 ```
@@ -170,10 +145,43 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
+## Checkpoints With the Reviewer
+
+Everything above is how the plan is written. This is where team8 deviates:
+the plan is reviewed by a teammate as it takes shape, and it ends as tasks on
+the shared list, not as an execution choice.
+
+**Checkpoint 1 — skeleton.** Save the plan as soon as the header, Global
+Constraints, the file structure, and every task's `Files` and `Interfaces`
+blocks exist, with no steps yet. Message **reviewer**: the plan path and the
+spec path. Keep writing the steps while reviewer reads; fold its findings in
+as they arrive.
+
+**Checkpoint 2 — full plan.** When every step is written, the self-review is
+done, and the tasks exist (below), message reviewer the task count. Reviewer
+sends findings labelled Blocking or Minor. Fix every Blocking one in both the
+plan and the task list, take or leave the Minor ones, append one line to the
+bottom of the plan — `Round N: <what changed, what was left and why>` — and
+message reviewer again. Three rounds at most; after that the lead rules.
+
 ## Create the Tasks
 
 The plan file carries the detail. The shared task list carries the delegation
 contract. Both are yours, written in the same pass, and they match one to one.
+
+**Tracks first.** `team8:run` hands each track to one teammate, and teammates
+run in parallel in one shared checkout, so isolation comes from file
+ownership and nothing else. Group the plan's tasks into tracks before
+creating them:
+
+- A file belongs to exactly one track. Two tasks that edit the same file are
+  in the same track, in order. No exceptions for "just one line".
+- A task that reads another task's output (a type, a route, a field, a
+  decision) is either later in the same track, or in a track that starts
+  after the producer's track finishes. Say which, with `blockedBy`.
+- Fewest tracks that keep files disjoint. A three-track list with one shared
+  file is a merge conflict; a one-track list is fine.
+- Verification tasks belong to the track that can break them.
 
 Invoke `team8:tasks` — its contract applies to every task. One `TaskCreate` per
 plan task, same order, same subject. The description stands alone; it never
@@ -196,29 +204,3 @@ Then `TaskUpdate` each task's `blockedBy` — real dependencies only, the blocke
 task reads something the blocker produces — and its `metadata`
 `{ complexity, model, effort, why }`, sized by decisions required, not lines
 changed. A task missing `metadata` is not created.
-
-## Checkpoints With the Reviewer
-
-**Checkpoint 1 — skeleton.** Save the plan as soon as the header, Global
-Constraints, file structure, Tracks table, and every task's `Files` and
-`Interfaces` blocks exist, with no steps yet. Message **reviewer**: the plan
-path and the spec path. Keep writing the steps while reviewer reads; fold its
-findings in as they arrive.
-
-**Track writers.** Writing the steps is the slow part, and after checkpoint 1
-the tracks are known and their files are disjoint. With three or more tracks,
-do not write the steps alone: dispatch one subagent per track in one message,
-each with the skeleton path, its track letter, the spec path, and this file's
-path, told to write only its track's task sections, complete with the test
-and implementation code, into `<plan>.track-<X>.md`, and to change nothing
-in the skeleton. Merge the files into the plan in task order, delete them,
-then run the self-review across the whole plan: the type consistency pass is
-the net for what parallel writers break. One or two tracks: write them
-yourself; the merge costs more than it saves.
-
-**Checkpoint 2 — full plan.** When every step is written, the self-review is
-done, and the tasks exist, message reviewer the task count. Reviewer sends
-findings labelled Blocking or Minor. Fix every Blocking one in both the plan
-and the task list, take or leave the Minor ones, append one line to the bottom
-of the plan — `Round N: <what changed, what was left and why>` — and message
-reviewer again. Three rounds at most; after that the lead rules.
