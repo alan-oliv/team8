@@ -26,7 +26,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
 4. **Take the mode from the task list's closing notes** — solo, subagents,
    teammates or workflow, per `team8:tasks` Mode. If no mode was stated, derive
    it now from the same table and say it in one line. Then, for teammates,
-   count tracks, not tasks.
+   take the waves from the closing: teammates alive at any moment are the
+   tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode: see Modes below. Teammates use the contract
    below; assign the owner with `TaskUpdate`.
 6. **Teammates only: verify the roster before they get deep.** Every teammate you dispatched has
@@ -127,8 +128,11 @@ Review below on `BASE..HEAD`, findings back to the same subagent by resuming
 it, three rounds. Never dispatch two implementers at once in this mode. The
 lead opens the PR when the last task is clear.
 
-**teammates.** Two or more tracks at once. **N = the number of tracks that do
-not fight over the same files**, not the number of tasks:
+**teammates.** A peak of two or more. Dispatch by wave, from the closing's
+wave lines: every track in wave 1 now, one teammate each; each later wave
+when the tasks it waits on close, fresh teammates. A teammate whose track is
+clear stops. **N per wave = the tracks in that wave**, not the number of
+tasks and not the number of tracks overall:
 
 | Situation | Teammates |
 |---|---|

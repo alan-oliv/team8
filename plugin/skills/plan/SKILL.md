@@ -406,11 +406,11 @@ pr: <url, at close>
 ## Plan
 - planner: opus · high · reviewer: opus · high
 - checkpoint 1: <n> findings · checkpoint 2: <n>/3 rounds · residuals: <n> (<one line each>)
-- tasks: <n> · tracks: <n> · mode: solo | subagents | teammates | workflow — <reason>
+- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: solo | subagents | teammates | workflow — <reason>
 - estimate: ≈$<total> (per task in the plan's table)
 
 ## Run
-- executors: <name> · <model> · <effort> · track <X>, one line each
+- executors: <name> · <model> · <effort> · track <X> · wave <n>, one line each · peak <n> at once
 - track reviews: <X> <n>/3 rounds, one entry each · residuals: <n>
 - actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
 - estimate vs actual: <one line>
