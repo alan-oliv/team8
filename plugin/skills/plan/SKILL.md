@@ -371,15 +371,16 @@ approved plan is not an approved run.
    **commit the plan and the log** on the batch branch, so every executor can
    read them.
 3. **Close with the `team8:tasks` ending**: the plan path, the table (task,
-   blocked by, model, estimate) with its total, the notes (tracks, what starts
-   now, sizing you were unsure about, any residual ruling), and the one ask —
+   blocked by, model, estimate) with its total, the notes (the mode and its
+   reason per `team8:tasks` Mode, tracks, what starts now, sizing you were
+   unsure about, any residual ruling), and the one ask —
    adjust models, adjust tasks, or start the work. `AskUserQuestion` where
    available, multiSelect on. Adjusting a model re-prices its row; show the
    new total.
 4. **Adjust** edits the task list and, where it changes the plan, the plan
    file. Show the table again and ask again.
-5. On **start the work**, invoke `team8:run`. The tasks and the branch exist;
-   `run` skips its own task creation and branch cut.
+5. On **start the work**, invoke `team8:run` in the stated mode. The tasks and
+   the branch exist; `run` skips its own task creation and branch cut.
 
 ## The run log
 
@@ -405,7 +406,7 @@ pr: <url, at close>
 ## Plan
 - planner: opus · high · reviewer: opus · high
 - checkpoint 1: <n> findings · checkpoint 2: <n>/3 rounds · residuals: <n> (<one line each>)
-- tasks: <n> · tracks: <n>
+- tasks: <n> · tracks: <n> · mode: solo | subagents | teammates | workflow — <reason>
 - estimate: ≈$<total> (per task in the plan's table)
 
 ## Run

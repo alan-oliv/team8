@@ -74,14 +74,38 @@ The closing message has three parts, in this order. A message that stops after p
 | 3 | Ingest the patch from the session transcript | 2 | sonnet · medium | ≈$1.15 |
 | | **Total** | | | **≈$9.40** |
 
-2. **The notes** — which tasks are startable now, and any sizing you were unsure about.
+2. **The notes** — the mode and its reason in one line (see Mode below), which tasks are startable now, and any sizing you were unsure about.
 
 3. **The ask** — end with one direct question: which way now? The options are exactly these three:
    - **adjust models** — re-size any task's model or effort
-   - **adjust tasks** — add, remove, merge, re-scope, or re-wire dependencies
-   - **start the work** — hand the list to `team8:run`
+   - **adjust tasks** — add, remove, merge, re-scope, re-wire dependencies, or change the mode
+   - **start the work** — hand the list to `team8:run` in the stated mode
 
    Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `run` until the user picks it.
+
+## Mode: read it off the graph
+
+The task list decides how it runs, not the plan and not habit. Four modes,
+matching the console's: solo, subagents, teammates, workflow. Derive it from
+the tracks and the task shapes, state it with its reason in the notes, and let
+the user override it in the ask. `team8:run` executes whichever was chosen.
+
+A track is a group of tasks whose files no other group touches. Count them
+first.
+
+| The graph says | Mode | Why |
+|---|---|---|
+| One task, or two you would finish in the next few tool calls | **solo** | Spawning costs more than the work. The lead does it, TDD, one commit |
+| One track — every task serial, or all in one file cluster — and at least one task is judgment or needs the lead's answers mid-way | **subagents** | Nothing runs in parallel and nobody needs a mailbox. A fresh subagent per task, the lead reviews each diff, keeps control and its own context |
+| Two or more tracks that can run at the same time | **teammates** | Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. That is what a team is |
+| Five or more tasks of the same shape — same mechanical edit across files, a review per PR, a fan-out with a verify step — with no judgment call between them | **workflow** | Deterministic fan-out and pipeline beat a lead improvising the same dispatch nine times. Needs the user's opt-in in their own words; recommend it, do not assume it |
+
+Ties break upward: solo before subagents, subagents before teammates, unless
+the graph has two tracks that genuinely run at once. Teammates before
+workflow whenever a task needs judgment between steps. A batch that mixes
+shapes takes the mode of its hardest part.
+
+Write it as one line: `mode: teammates — 3 tracks (domain, web, tests) run at once`.
 
 ## Estimating: complexity × model × effort, at list price
 

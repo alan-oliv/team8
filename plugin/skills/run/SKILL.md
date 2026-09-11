@@ -23,9 +23,13 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
    If `team8:plan` already landed them, skip this step and its branch cut.
-4. **Decide how many teammates.** Count tracks, not tasks.
-5. **Dispatch**, using the contract below. Assign the owner with `TaskUpdate`.
-6. **Verify the roster before they get deep.** Every teammate you dispatched has
+4. **Take the mode from the task list's closing notes** — solo, subagents,
+   teammates or workflow, per `team8:tasks` Mode. If no mode was stated, derive
+   it now from the same table and say it in one line. Then, for teammates,
+   count tracks, not tasks.
+5. **Dispatch** in that mode: see Modes below. Teammates use the contract
+   below; assign the owner with `TaskUpdate`.
+6. **Teammates only: verify the roster before they get deep.** Every teammate you dispatched has
    to appear in `~/.claude/teams/<team>/config.json`:
    `jq -r '.members[].name' ~/.claude/teams/<team>/config.json`. A name missing
    there is not a teammate, whatever the spawn result said — respawn it. Do this
@@ -104,17 +108,43 @@ how to branch, how many PRs, whether to start.
 
 **All of these mean: take the recommended option and dispatch.**
 
-## Step 4: How Many Teammates
+## Modes
 
-**N = the number of tracks that do not fight over the same files.** Not the number
-of tasks.
+The mode came from the task graph (`team8:tasks` Mode). Each mode ends the
+same way: the terminal deliverable from step 2b, the run log filled at close.
+
+**solo.** The lead does the work itself, task by task in dependency order,
+TDD, one commit per task staging paths by name. Mark each task `in_progress`
+and `completed` as you go. No dispatch, no roster.
+
+**subagents.** One track, nothing parallel. For each task in dependency order:
+record BASE (`git rev-parse HEAD`), dispatch one fresh subagent (`Agent`,
+general-purpose, `model` from the task's metadata — never omit it) with the
+seven-part contract below minus part 1, since subagents have no task tools:
+you claim and close the task with `TaskUpdate` on its behalf, the one case
+where that is right. It commits on the branch and reports. Then the Track
+Review below on `BASE..HEAD`, findings back to the same subagent by resuming
+it, three rounds. Never dispatch two implementers at once in this mode. The
+lead opens the PR when the last task is clear.
+
+**teammates.** Two or more tracks at once. **N = the number of tracks that do
+not fight over the same files**, not the number of tasks:
 
 | Situation | Teammates |
 |---|---|
 | Two tasks edit the same file | One teammate, both tasks, in order |
 | A task depends on another's output | Same teammate, sequentially, or a later wave |
 | A task nothing else touches | Its own teammate, dispatched now |
-| A task that is small and easy | Still a teammate. Never keep it for yourself |
+| A task that is small and easy | Still a teammate in this mode. Never keep it for yourself |
+
+**workflow.** Same-shape fan-out or a fixed pipeline. It needs the user's
+opt-in in their own words ("use a workflow"): the notes recommended it, so
+ask once — "run these <n> as a workflow?" — and on yes load the
+`workflow-authoring` skill and write the script: one `agent()` per task with
+its model, `pipeline` over the dependency edges, a review stage per task
+with the Track Review rubric, results to files. On no, fall back to the next
+mode down the table. The console shows a workflow in its own mode; agents in
+it never join the roster.
 
 ### Teammates share one checkout
 
