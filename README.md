@@ -163,7 +163,12 @@ URL, and starts it if a team is live but the server is down.
 
 ## Skills
 
-Two skills fire on their own, when the work calls for them.
+Three skills fire on their own, when the work calls for them.
+
+`team8:plan` takes an idea to an approved spec with you, then a planner
+teammate writes the plan and the task list while a reviewer teammate checks it
+as it takes shape. What comes back to you is the task table and a file path,
+and nothing runs until you say so.
 
 `team8:tasks` sets the contract a task needs before it's handed off: a
 description that stands alone, real `blockedBy` dependencies, and a
@@ -172,7 +177,7 @@ description that stands alone, real `blockedBy` dependencies, and a
 `team8:run` turns settled work into tasks and teammates: how many teammates,
 the dispatch contract, and the branch shape the dependency graph implies.
 
-A third is a plain toggle. Claude doesn't reach for it on its own, you call it
+A fourth is a plain toggle. Claude doesn't reach for it on its own, you call it
 by name: `/team8:enable-team true` or `/team8:enable-team false` flips the
 same two `env` vars `/team8:setup` writes.
 

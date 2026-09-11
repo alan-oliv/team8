@@ -67,11 +67,12 @@ Names are tiers — cheapest capable, mid, top. Substitute current names as mode
 
 The closing message has three parts, in this order. A message that stops after part 2 leaves the contract unsigned — part 3 is what turns the list into a decision.
 
-1. **The table** — dependency and model columns, so the user can override before anything runs:
+1. **The table** — dependency, model and estimate columns, so the user can override before anything runs, and a total row:
 
-| # | Task | Blocked by | Model |
-|---|---|---|---|
-| 3 | Ingest the patch from the session transcript | 2 | sonnet · medium |
+| # | Task | Blocked by | Model | Est. |
+|---|---|---|---|---|
+| 3 | Ingest the patch from the session transcript | 2 | sonnet · medium | ≈$1.15 |
+| | **Total** | | | **≈$9.40** |
 
 2. **The notes** — which tasks are startable now, and any sizing you were unsure about.
 
@@ -81,6 +82,47 @@ The closing message has three parts, in this order. A message that stops after p
    - **start the work** — hand the list to `team8:run`
 
    Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `run` until the user picks it.
+
+## Estimating: complexity × model × effort, at list price
+
+The estimate is a token budget per complexity, priced at the model's list
+rate, scaled by effort. It answers "is this batch a coffee or a dinner", not
+an invoice; the console's usage view shows what it actually cost.
+
+**Base, at `medium` effort:**
+
+| Complexity | haiku | sonnet | opus |
+|---|---|---|---|
+| mechanical | ≈$0.20 | ≈$0.35 | ≈$0.85 |
+| standard | ≈$0.60 | ≈$1.15 | ≈$2.90 |
+| judgment | ≈$1.05 | ≈$2.10 | ≈$5.30 |
+
+**Effort factor:**
+
+| low | medium | high | xhigh | max |
+|---|---|---|---|---|
+| ×0.7 | ×1 | ×1.3 | ×1.7 | ×2.2 |
+
+Estimate = base cell × effort factor. Effort buys thinking, and thinking is
+output, the expensive class; it also buys more tool calls per task, which is
+why the factor climbs faster than the output share alone. Sum for the total.
+Always draw the figures with `≈$`: they are list price, not a bill.
+
+The sizing table's defaults price as: mechanical · haiku · low ≈$0.15,
+standard · sonnet · medium ≈$1.15, judgment · opus · high ≈$6.90. An
+escalated judgment task, opus · xhigh, is ≈$9.00.
+
+Behind the cells, one teammate working one task, most of its context served
+from cache: mechanical ≈ 15 turns at 40k context (0.6M cache-read, 8k output,
+60k written or uncached); standard ≈ 40 turns at 70k (2.8M, 25k, 140k);
+judgment ≈ 60 turns at 100k (6M, 40k, 210k). Priced at `catalog.json` rates
+as of 2026-09 (haiku 1/5, sonnet 2/10, opus 5/25 USD per million in/out;
+cache read a tenth of input).
+
+**Calibrate from the console, not from this table.** After a batch, the usage
+view's cost per task is the real number for this repo. When it disagrees with
+a cell by more than half, change the cell; when every cell at one effort is off
+in the same direction, change the factor instead.
 
 ## Common mistakes
 
