@@ -9,6 +9,8 @@ description: Use when breaking work into tasks — a feature, a migration, a rev
 
 A task list is a delegation contract, not a to-do list. Each task gets picked up by an agent with **none of this conversation's context**, possibly in parallel with its siblings, possibly on a different model. That needs three things: a description that stands alone, dependencies that are real, and a model sized to the task.
 
+**This skill also decides how the list runs.** Solo, subagents, teammates or workflow is read off the finished graph here, stated as the first line of the closing message, and executed by `team8:run` as stated. Nothing upstream knows it — a plan is the same plan in any mode — and `run` does not re-decide it. Until this line exists, the mode is unknown, and the console shows no mode badge for the session.
+
 ## When to Use
 
 Breaking work down, planning it, or turning finished analysis into tasks — especially when it will be split across teammates or subagents.
@@ -63,20 +65,22 @@ Names are tiers — cheapest capable, mid, top. Substitute current names as mode
 - **A decision task blocks whatever the decision changes.** Model an open question as its own task rather than burying it in an implementation task.
 - **Leave parallel work unblocked.** Every needless blocker is serialized time.
 
-## After creating: the table, the notes, the ask
+## After creating: the mode, the table, the notes, the ask
 
-The closing message has three parts, in this order. A message that stops after part 2 leaves the contract unsigned — part 3 is what turns the list into a decision.
+The closing message has four parts, in this order. A message that stops after part 3 leaves the contract unsigned — part 4 is what turns the list into a decision.
 
-1. **The table** — dependency, model and estimate columns, so the user can override before anything runs, and a total row:
+1. **The mode** — the first line, on its own, derived from the graph per Mode below: `mode: teammates — 3 tracks (domain, web, tests) run at once`. A closing without this line has not decided anything, and `run` will have to.
+
+2. **The table** — dependency, model and estimate columns, so the user can override before anything runs, and a total row:
 
 | # | Task | Blocked by | Model | Est. |
 |---|---|---|---|---|
 | 3 | Ingest the patch from the session transcript | 2 | sonnet · medium | ≈$1.15 |
 | | **Total** | | | **≈$9.40** |
 
-2. **The notes** — the mode and its reason in one line (see Mode below), which tasks are startable now, and any sizing you were unsure about.
+3. **The notes** — which tasks are startable now, and any sizing you were unsure about.
 
-3. **The ask** — end with one direct question: which way now? The options are exactly these three:
+4. **The ask** — end with one direct question: which way now? The options are exactly these three:
    - **adjust models** — re-size any task's model or effort
    - **adjust tasks** — add, remove, merge, re-scope, re-wire dependencies, or change the mode
    - **start the work** — hand the list to `team8:run` in the stated mode
@@ -105,7 +109,7 @@ the graph has two tracks that genuinely run at once. Teammates before
 workflow whenever a task needs judgment between steps. A batch that mixes
 shapes takes the mode of its hardest part.
 
-Write it as one line: `mode: teammates — 3 tracks (domain, web, tests) run at once`.
+Write it as the first line of the closing: `mode: teammates — 3 tracks (domain, web, tests) run at once`.
 
 ## Estimating: complexity × model × effort, at list price
 
@@ -153,6 +157,8 @@ in the same direction, change the factor instead.
 | Mistake | Fix |
 |---|---|
 | One model for the whole list | Model is per-task. A list of nine usually spans two or three tiers. |
+| Mode left implicit, or left to `run` | It is part 1 of the closing. Read it off the tracks and say it with its reason. |
+| Teammates by habit for a one-track list | One track is subagents. Count the tracks before naming the mode. |
 | Chaining every task 1→2→3→4 | Per blocker, ask: what output does the blocked task read? No answer, no blocker. |
 | Sizing by diff size | Size by decisions. Bulk is cheap; a small ambiguous change is not. |
 | Descriptions pointing at the conversation | The executing agent can't see it. Inline the values. |

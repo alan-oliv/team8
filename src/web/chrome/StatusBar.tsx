@@ -174,7 +174,7 @@ export function StatusBar({
           <TeamSelect
             current={state.teamName}
             sessionName={state.sessionName}
-            mode={solo ? (hasSubagents ? 'subagents' : 'solo') : 'teammates'}
+            mode={solo ? (hasSubagents ? 'subagents' : undefined) : 'teammates'}
             open={teamsOpen}
             onOpenChange={onTeamsOpenChange}
             now={now}
