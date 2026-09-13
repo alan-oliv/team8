@@ -767,10 +767,9 @@ it('draws the menu at the width its rows were designed for, with an edge', async
   expect(menu.style.border).toBe('1px solid var(--color-neutral-800)');
 });
 
-// The in-world team name is decoration and lives HERE and nowhere else: the
-// session id it sits beside is the real one, in the trigger, the URL and every
-// call the picker makes.
-it('wears the film\'s team name as a chip on the trigger, and only there', () => {
+// The in-world team name is decoration and no longer drawn anywhere: the
+// session id in the trigger, the URL and every call the picker makes stay real.
+it('wears no chip even with a cast theme active, and keeps the goal capped', () => {
   render(
     <CastContext.Provider value={buildCast([], 'lotr')}>
       <WatchContext.Provider value={WATCH}>
@@ -784,28 +783,8 @@ it('wears the film\'s team name as a chip on the trigger, and only there', () =>
       </WatchContext.Provider>
     </CastContext.Provider>,
   );
-  const chip = screen.getByTestId('team-chip');
-  expect(chip.textContent).toBe('the fellowship');
-  // It bleeds rather than wraps, and it never squeezes the session name out.
-  expect(chip.style.flex).toBe('0 0 auto'); // jsdom's serialisation of `none`
-  expect(chip.style.whiteSpace).toBe('nowrap');
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console');
-  expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
-});
-
-it('wears no chip with no theme, and keeps the goal capped', () => {
-  render(
-    <WatchContext.Provider value={WATCH}>
-      <TeamSelect
-        current="session-98b0b4a7"
-        sessionName="agents-team-console"
-        open={false}
-        onOpenChange={vi.fn()}
-        now={FIXTURE_NOW}
-      />
-    </WatchContext.Provider>,
-  );
   expect(screen.queryByTestId('team-chip')).toBeNull();
+  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console');
   expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
 });
 
