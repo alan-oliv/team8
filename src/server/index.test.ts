@@ -820,6 +820,61 @@ describe('listTeamSummaries', () => {
     const inHome = await listTeamSummaries(teams(), sessions(), 'session-watched', projects, home);
     expect(inHome.teams.map((t) => t.name)).toContain('session-watched');
   });
+
+  describe('titles and branches read from the transcript', () => {
+    const projects = () => path.join(dir, 'projects');
+    const cwd = '/Users/x/code/arco';
+    const ID = 'eeeeeeee-4444-4444-4444-444444444444';
+    const file = (id: string) => path.join(projects(), cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${id}.jsonl`);
+    async function write(id: string, records: object[]) {
+      await fs.mkdir(path.dirname(file(id)), { recursive: true });
+      await fs.writeFile(file(id), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    }
+    const rowOf = async (name: string) =>
+      (await listTeamSummaries(teams(), sessions(), '', projects(), cwd)).teams.find((t) => t.name === name);
+
+    it("names an ended session by its /rename title, over Claude Code's own", async () => {
+      await write(ID, [
+        { type: 'user', cwd, gitBranch: 'hand-voices' },
+        { type: 'custom-title', customTitle: 'e2e', sessionId: ID },
+        { type: 'ai-title', aiTitle: 'Uncommitted files', sessionId: ID },
+      ]);
+      const row = await rowOf(ID);
+      expect(row?.goal).toBe('e2e');
+      expect(row?.branch).toBe('hand-voices');
+    });
+
+    it("falls back to Claude Code's own title for a session never renamed", async () => {
+      await write(ID, [{ type: 'user', cwd }, { type: 'ai-title', aiTitle: 'Uncommitted files', sessionId: ID }]);
+      expect((await rowOf(ID))?.goal).toBe('Uncommitted files');
+    });
+
+    it('picks up a rename made after the last listing', async () => {
+      await write(ID, [{ type: 'user', cwd }, { type: 'custom-title', customTitle: 'first', sessionId: ID }]);
+      expect((await rowOf(ID))?.goal).toBe('first');
+      await fs.appendFile(file(ID), JSON.stringify({ type: 'custom-title', customTitle: 'second', sessionId: ID }) + '\n');
+      expect((await rowOf(ID))?.goal).toBe('second');
+    });
+
+    it('ignores a title that is only quoted inside a message', async () => {
+      await write(ID, [{ type: 'user', cwd, message: { content: '{"type":"custom-title","customTitle":"fake"}' } }]);
+      expect((await rowOf(ID))?.goal).toBeUndefined();
+    });
+
+    it("names an ended team by its lead session's title and branch", async () => {
+      const lead = 'ffffffff-5555-5555-5555-555555555555';
+      const cfg = team('session-titled', { createdAt: 10, leadSessionId: lead, members: 2 });
+      cfg.members[0].cwd = cwd;
+      await writeConfig('session-titled', cfg);
+      await write(lead, [
+        { type: 'user', cwd, gitBranch: 'lyrics-on-screen' },
+        { type: 'custom-title', customTitle: 'minor-scales', sessionId: lead },
+      ]);
+      const row = await rowOf('session-titled');
+      expect(row?.goal).toBe('minor-scales');
+      expect(row?.branch).toBe('lyrics-on-screen');
+    });
+  });
 });
 
 describe('fencedSink', () => {
