@@ -238,3 +238,10 @@ it('still shows a plain allow on a permission hold without questions', () => {
   expect(button('allow')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'submit' })).toBeNull();
 });
+
+it('keeps every action button at its full width when a card is narrow', () => {
+  // The ellipsis on Action turns off the flex min-content floor, so without
+  // flexShrink 0 the approve/deny buttons shrink and truncate alongside the detail.
+  render(<NeedsYou items={[PLAN, FAILURE, PERMISSION, ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  for (const b of screen.getAllByRole('button')) expect(b.style.flexShrink).toBe('0');
+});

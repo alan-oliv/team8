@@ -53,6 +53,7 @@ function Action({
         padding: '1px 8px',
         fontSize: 10.5,
         whiteSpace: 'nowrap',
+        flexShrink: 0,
         maxWidth: '100%',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
