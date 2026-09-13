@@ -4851,7 +4851,19 @@ async function runClaude(prompt) {
   const stdout = await new Promise((resolve, reject) => {
     const child = execFile2(
       "claude",
-      ["-p", prompt, "--model", BRIEF_MODEL, "--tools", "", "--output-format", "json"],
+      [
+        "-p",
+        prompt,
+        "--model",
+        BRIEF_MODEL,
+        "--tools",
+        "",
+        "--output-format",
+        "json",
+        // Without it every brief is saved as a session in the folder the console
+        // runs from, and fills that folder's picker with one-shot runs.
+        "--no-session-persistence"
+      ],
       {
         timeout: TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
@@ -6115,7 +6127,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
     const here = new Set(scoped);
     for (let i = teams.length - 1; i >= 0; i--) {
       const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver) && !teams[i].current) teams.splice(i, 1);
+      if (!here.has(driver)) teams.splice(i, 1);
     }
   }
   if (projectsRoot) {
