@@ -463,6 +463,51 @@ describe('control routes', () => {
     }
   });
 
+  it('POST /api/permits/:id/allow with answers resolves an AskUserQuestion with updatedInput', async () => {
+    const { server, url } = await boot(false);
+    try {
+      const input = { questions: [{ question: 'ship it?', header: 'Ship', options: [], multiSelect: false }] };
+      const held = permits.hold('probe-bravo', 'AskUserQuestion', input, 600000);
+      const res = await post(`${url}/api/permits/${held.id}/allow`, { answers: { 'ship it?': 'yes' } });
+      expect(res.status).toBe(200);
+      expect(await held.promise).toEqual({
+        decision: 'allow',
+        reason: undefined,
+        updatedInput: { ...input, answers: { 'ship it?': 'yes' } },
+      });
+    } finally {
+      await shutdown(server);
+    }
+  });
+
+  it('POST /api/permits/:id/allow drops answers with non-string values or unknown keys', async () => {
+    const { server, url } = await boot(false);
+    try {
+      const input = { questions: [{ question: 'ship it?', header: 'Ship', options: [], multiSelect: false }] };
+      const held = permits.hold('probe-bravo', 'AskUserQuestion', input, 600000);
+      const res = await post(`${url}/api/permits/${held.id}/allow`, {
+        answers: { 'ship it?': 42, 'not a question': 'yes' },
+      });
+      expect(res.status).toBe(200);
+      expect(await held.promise).toEqual({ decision: 'allow', reason: undefined });
+    } finally {
+      await shutdown(server);
+    }
+  });
+
+  it('POST /api/permits/:id/allow with no answers behaves as before for AskUserQuestion', async () => {
+    const { server, url } = await boot(false);
+    try {
+      const input = { questions: [{ question: 'ship it?', header: 'Ship', options: [], multiSelect: false }] };
+      const held = permits.hold('probe-bravo', 'AskUserQuestion', input, 600000);
+      const res = await post(`${url}/api/permits/${held.id}/allow`);
+      expect(res.status).toBe(200);
+      expect(await held.promise).toEqual({ decision: 'allow', reason: undefined });
+    } finally {
+      await shutdown(server);
+    }
+  });
+
   it('POST /api/agents/:name/stop writes a shutdown_request frame', async () => {
     const { server, url } = await boot(false);
     try {

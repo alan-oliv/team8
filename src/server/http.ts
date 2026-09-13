@@ -224,6 +224,25 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+// updatedInput replaces the whole tool input, so an AskUserQuestion answer has
+// to be merged onto the held input rather than sent alone. Only answers that
+// key an actual question of that held input are kept: an unrelated or
+// non-string value here came from a hostile or stale client, not the card.
+function answersFor(heldInput: unknown, rawAnswers: unknown): Record<string, string> | undefined {
+  if (!isPlainObject(heldInput) || !Array.isArray(heldInput.questions) || !isPlainObject(rawAnswers)) return undefined;
+  const questionTexts = new Set(
+    heldInput.questions.map((q) => (isPlainObject(q) ? str(q.question) : undefined)).filter((q) => q !== undefined),
+  );
+  const answers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rawAnswers)) {
+    if (typeof value === 'string' && questionTexts.has(key)) answers[key] = value;
+  }
+  return Object.keys(answers).length > 0 ? answers : undefined;
+}
+
 export function createHttpServer(deps: HttpDeps): Server {
   const leadName = deps.leadName ?? 'team-lead';
   const webDist = deps.webDist ?? DEFAULT_WEB_DIST;
@@ -513,7 +532,13 @@ export function createHttpServer(deps: HttpDeps): Server {
             return;
           }
           const decision = permitMatch[2] === 'allow' ? 'allow' : 'deny';
-          const ok = deps.permits.resolve(id, decision, str(body.reason));
+          let updatedInput: Record<string, unknown> | undefined;
+          if (decision === 'allow') {
+            const held = deps.permits.list().find((p) => p.id === id);
+            const answers = held?.toolName === 'AskUserQuestion' ? answersFor(held.input, body.answers) : undefined;
+            if (answers) updatedInput = { ...(held!.input as Record<string, unknown>), answers };
+          }
+          const ok = deps.permits.resolve(id, decision, str(body.reason), updatedInput);
           if (!ok) {
             json(res, 404, { error: 'not found', message: `no held permit ${id}` });
             return;

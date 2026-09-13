@@ -13,22 +13,23 @@ import type { NeedsYouItem } from '../../shared/domain';
 // 'holds PermissionRequest' test needs, without depending on Task 15's work.
 function stubPermits(): Permits & { held: HeldPermit[] } {
   const held: HeldPermit[] = [];
-  const settlers = new Map<string, (d: { decision: 'allow' | 'deny'; reason?: string }) => void>();
+  type Settled = { decision: 'allow' | 'deny'; reason?: string; updatedInput?: Record<string, unknown> };
+  const settlers = new Map<string, (d: Settled) => void>();
   return {
     held,
     hold(agent, toolName, input, timeoutMs) {
       const id = `permit-${held.length + 1}`;
       held.push({ id, agent, toolName, input, expiresAt: Date.now() + timeoutMs });
-      const promise = new Promise<{ decision: 'allow' | 'deny'; reason?: string }>((settle) => {
+      const promise = new Promise<Settled>((settle) => {
         settlers.set(id, settle);
       });
       return { id, promise };
     },
-    resolve(id, decision, reason) {
+    resolve(id, decision, reason, updatedInput) {
       const idx = held.findIndex((p) => p.id === id);
       if (idx === -1) return false;
       held.splice(idx, 1);
-      settlers.get(id)?.({ decision, reason });
+      settlers.get(id)?.({ decision, reason, updatedInput });
       settlers.delete(id);
       return true;
     },
@@ -186,6 +187,50 @@ describe('hook', () => {
       },
     });
     expect(resolved.body).not.toHaveProperty('hookSpecificOutput.permissionDecision');
+  });
+
+  it('carries AskUserQuestion questions on the needsyou item', async () => {
+    const questions = [
+      { question: 'ship it?', header: 'Ship', options: [{ label: 'yes' }, { label: 'no' }], multiSelect: false },
+    ];
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions },
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      timeout: 10000,
+    });
+
+    const card = of(store.replay(), 'needsyou').at(-1)!.payload as NeedsYouItem;
+    expect(card.questions).toEqual(questions);
+    expect(card.detail).toBe('AskUserQuestion — 1 question(s) for you');
+
+    permits.resolve(card.id, 'allow');
+    await pending;
+  });
+
+  it('returns updatedInput on the response when the decision carries it', async () => {
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'ship it?', header: 'Ship', options: [], multiSelect: false }] },
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      timeout: 10000,
+    });
+
+    const card = of(store.replay(), 'needsyou').at(-1)!.payload as NeedsYouItem;
+    const updatedInput = { questions: card.questions, answers: { 'ship it?': 'yes' } };
+    permits.resolve(card.id, 'allow', undefined, updatedInput);
+    const resolved = await pending;
+    expect(resolved).toEqual({
+      status: 200,
+      body: {
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: { behavior: 'allow', updatedInput },
+        },
+      },
+    });
   });
 });
 

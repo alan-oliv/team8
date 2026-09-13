@@ -16,8 +16,16 @@ export interface Permits {
     toolName: string,
     input: unknown,
     timeoutMs: number,
-  ): { id: string; promise: Promise<{ decision: 'allow' | 'deny'; reason?: string }> };
-  resolve(id: string, decision: 'allow' | 'deny', reason?: string): boolean;
+  ): {
+    id: string;
+    promise: Promise<{ decision: 'allow' | 'deny'; reason?: string; updatedInput?: Record<string, unknown> }>;
+  };
+  resolve(
+    id: string,
+    decision: 'allow' | 'deny',
+    reason?: string,
+    updatedInput?: Record<string, unknown>,
+  ): boolean;
   list(): HeldPermit[];
 }
 
@@ -39,7 +47,7 @@ export function autoDenyReason(timeoutMs: number): string {
 interface Entry {
   permit: HeldPermit;
   timer: NodeJS.Timeout;
-  settle(decision: 'allow' | 'deny', reason?: string): void;
+  settle(decision: 'allow' | 'deny', reason?: string, updatedInput?: Record<string, unknown>): void;
 }
 
 export function createPermits(): Permits {
@@ -49,8 +57,16 @@ export function createPermits(): Permits {
     hold(agent, toolName, input, timeoutMs) {
       const id = randomUUID();
       const holdMs = holdMsFor(timeoutMs);
-      let settle!: (v: { decision: 'allow' | 'deny'; reason?: string }) => void;
-      const promise = new Promise<{ decision: 'allow' | 'deny'; reason?: string }>((res) => {
+      let settle!: (v: {
+        decision: 'allow' | 'deny';
+        reason?: string;
+        updatedInput?: Record<string, unknown>;
+      }) => void;
+      const promise = new Promise<{
+        decision: 'allow' | 'deny';
+        reason?: string;
+        updatedInput?: Record<string, unknown>;
+      }>((res) => {
         settle = res;
       });
 
@@ -63,18 +79,18 @@ export function createPermits(): Permits {
       held.set(id, {
         permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
         timer,
-        settle: (decision, reason) => settle({ decision, reason }),
+        settle: (decision, reason, updatedInput) => settle({ decision, reason, updatedInput }),
       });
 
       return { id, promise };
     },
 
-    resolve(id, decision, reason) {
+    resolve(id, decision, reason, updatedInput) {
       const entry = held.get(id);
       if (!entry) return false;
       clearTimeout(entry.timer);
       held.delete(id);
-      entry.settle(decision, reason);
+      entry.settle(decision, reason, updatedInput);
       return true;
     },
 
