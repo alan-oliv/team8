@@ -298,7 +298,11 @@ function lastBranch(buf: Buffer): string | undefined {
   if (at < 0) return undefined;
   const from = at + marker.length;
   const end = buf.indexOf(0x22, from);
-  return end > from ? buf.subarray(from, end).toString('utf8') : undefined;
+  const branch = end > from ? buf.subarray(from, end).toString('utf8') : undefined;
+  // Recorded when the tree was in a detached HEAD, same as `branchOf`'s own
+  // read of .git/HEAD — not a name worth showing, so it falls through to that
+  // read too rather than displaying a literal "HEAD".
+  return branch === 'HEAD' ? undefined : branch;
 }
 
 // ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
@@ -712,7 +716,10 @@ async function sessionRows(
     if (transcript.entrypoint === 'sdk-cli') continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
-    if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
+    // See the team loop above: an ended row gets no diffstat, so no read is
+    // spent on a folder holding only ended sessions.
+    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    if (state !== 'done' && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
     rows.push({
       // The SESSION id, not a team directory: `sessionOnly` below is what tells
       // the client to send it to /api/select-session rather than /select.
@@ -727,10 +734,10 @@ async function sessionRows(
       current: false,
       branch: transcript.branch ?? (await branchOf(cwd)),
       goal: sessions.names.get(sessionId) ?? transcript.title,
-      state: leadAlive ? 'live' : recent ? 'idle' : 'done',
+      state,
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
-      ...(diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}),
+      ...(state !== 'done' && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}),
     });
   }
   return rows;
@@ -981,7 +988,12 @@ export async function listTeamSummaries(
       ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? '', leadSession)
       : 0;
     const leadCwd = lead?.cwd ?? '';
-    if (!diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    // A finished team's own uncommitted work is gone by the time anyone is
+    // looking at the row — this is just whatever the folder's tree holds
+    // right now, which is not what that session did. Only a live or idle
+    // row, whose tree the session might still touch, earns the read.
+    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    if (state !== 'done' && !diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
     const leadTranscript =
       projectsRoot && leadSession
         ? await transcriptMeta(
@@ -1011,10 +1023,10 @@ export async function listTeamSummaries(
       goal: sessions.names.get(leadSession) ?? leadTranscript.title,
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
-      state: leadAlive ? 'live' : recent ? 'idle' : 'done',
+      state,
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
-      ...(diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}),
+      ...(state !== 'done' && diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}),
     });
   }
 

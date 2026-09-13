@@ -750,6 +750,31 @@ describe('listTeamSummaries', () => {
     expect(rows.map((r) => r.diffstat)).toEqual([undefined, undefined]);
   });
 
+  // A finished session's own uncommitted work is long gone; what a diffstat
+  // would report on its row is just whatever the folder's tree holds now,
+  // which could be unrelated later work. Two teams share the repo so the same
+  // git read is available to both — only the live one gets to show it.
+  it('withholds the diffstat from an ended row, but keeps it on a live row in the same folder', async () => {
+    const repo = path.join(dir, 'repo-mixed');
+    await initRepo(repo, 'one\ntwo\nthree\n');
+    await fs.writeFile(path.join(repo, 'file.txt'), 'one\nTWO\nthree\nfour\n');
+
+    await leadOnlyAt('session-live9001', 'live9001-x', repo);
+    const doneConfig = team('session-done9002', { createdAt: 20, leadSessionId: 'done9002-x', members: 1 });
+    doneConfig.members[0] = { ...doneConfig.members[0], cwd: repo };
+    await writeConfig('session-done9002', doneConfig);
+    const stale = (Date.now() - IDLE_GRACE_MS * 2) / 1000;
+    await fs.utimes(path.join(teams(), 'session-done9002', 'config.json'), stale, stale);
+
+    const rows = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    const live = rows.find((r) => r.name === 'session-live9001');
+    const done = rows.find((r) => r.name === 'session-done9002');
+    expect(live?.state).not.toBe('done');
+    expect(live?.diffstat).toEqual({ added: 2, removed: 1 });
+    expect(done?.state).toBe('done');
+    expect(done?.diffstat).toBeUndefined();
+  });
+
   it('returns an empty listing when there is no teams directory at all', async () => {
     expect(await listTeamSummaries(teams(), sessions(), '')).toEqual({ current: '', teams: [] });
   });
@@ -868,6 +893,14 @@ describe('listTeamSummaries', () => {
       const names = (await listTeamSummaries(teams(), sessions(), '', projects(), cwd)).teams.map((t) => t.name);
       expect(names).not.toContain(ID);
       expect(names).toContain(typed);
+    });
+
+    // A detached HEAD is recorded verbatim as `gitBranch: "HEAD"` — not a real
+    // branch name, so the row should read the same as no branch at all rather
+    // than showing the literal word.
+    it('treats a detached HEAD recorded in the transcript as no branch', async () => {
+      await write(ID, [{ type: 'user', cwd, gitBranch: 'HEAD' }]);
+      expect((await rowOf(ID))?.branch).toBeUndefined();
     });
 
     it("names an ended team by its lead session's title and branch", async () => {
