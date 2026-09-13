@@ -801,6 +801,24 @@ describe('listTeamSummaries', () => {
     const scopedToLive = await listTeamSummaries(teams(), sessions(), '', projects, liveCwd);
     expect(scopedToLive.teams.map((t) => t.name)).toContain('session-rekeyed');
   });
+
+  it('keeps the session on screen out of another folder\'s list', async () => {
+    const projects = path.join(dir, 'projects');
+    const home = '/Users/x/code/team8';
+    const other = '/Users/x/code/arco';
+    const leadSessionId = 'cccccccc-2222-2222-2222-222222222222';
+    await writeConfig('session-watched', team('session-watched', { createdAt: 10, leadSessionId, members: 5 }));
+    for (const [cwd, id] of [[home, leadSessionId], [other, 'dddddddd-3333-3333-3333-333333333333']]) {
+      const slug = path.join(projects, cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+      await fs.mkdir(slug, { recursive: true });
+      await fs.writeFile(path.join(slug, `${id}.jsonl`), '');
+    }
+
+    const inOther = await listTeamSummaries(teams(), sessions(), 'session-watched', projects, other);
+    expect(inOther.teams.map((t) => t.name)).not.toContain('session-watched');
+    const inHome = await listTeamSummaries(teams(), sessions(), 'session-watched', projects, home);
+    expect(inHome.teams.map((t) => t.name)).toContain('session-watched');
+  });
 });
 
 describe('fencedSink', () => {

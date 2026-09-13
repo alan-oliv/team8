@@ -906,9 +906,8 @@ export async function listTeamSummaries(
   const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : undefined;
   if (scoped) {
     // A team whose lead ran somewhere else belongs to that folder's picker, not
-    // this one. The session ON SCREEN is the exception, always: dropping the row
-    // you are looking at would leave the picker contradicting the body, and
-    // would take away the only way back to it.
+    // this one, the session on screen included. The header trigger still names
+    // it, and switching the picker back to its folder lists it again.
     //
     // Scoped by the session actually driving the team, not the row's own
     // leadSessionId: that field is config.leadSessionId, which a re-keyed team
@@ -916,7 +915,7 @@ export async function listTeamSummaries(
     const here = new Set(scoped);
     for (let i = teams.length - 1; i >= 0; i--) {
       const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver) && !teams[i].current) teams.splice(i, 1);
+      if (!here.has(driver)) teams.splice(i, 1);
     }
   }
 
