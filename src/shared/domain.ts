@@ -259,6 +259,13 @@ export interface MailMessage {
   protocol?: { type: ProtocolFrameType; data: Record<string, unknown> };
 }
 
+export interface AskQuestion {
+  question: string;
+  header: string;
+  options: { label: string; description?: string }[];
+  multiSelect: boolean;
+}
+
 export interface NeedsYouItem {
   id: string;
   kind: 'plan' | 'permission' | 'failure';
@@ -266,6 +273,7 @@ export interface NeedsYouItem {
   reason: string;            // e.g. 'plan approval', 'failed'
   detail: string;            // e.g. '4 steps · step 4 drops migrations/legacy/'
   expiresAt?: number;        // permission holds only
+  questions?: AskQuestion[]; // AskUserQuestion permission holds only
 }
 
 export interface RateLimits { fiveHourPct: number; sevenDayPct: number; resetsAt?: string }
