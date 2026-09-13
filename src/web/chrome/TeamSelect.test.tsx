@@ -414,16 +414,36 @@ it('clicking the dismissed current row resumes watching it, instead of a no-op c
 
 // Paging back into a finished session is what the picker is FOR, so it lists
 // them like anything else and says how long ago they ended.
-it('lists a team whose session has ended, and says when', async () => {
+it('folds an ended session into the collapsed group, and says when it ended', async () => {
   const done = { current: 'session-98b0b4a7', teams: sampleTeams() };
   fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(done), { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(within(rows[1]).getByTestId('team-meta').textContent).toContain('ended');
-  expect(screen.getByTestId('session-count').textContent).toBe('2');
+  expect(rows).toHaveLength(1);
+  expect(screen.getByTestId('session-count').textContent).toBe('1');
+
+  const toggle = screen.getByTestId('show-hidden-rows');
+  expect(toggle.textContent).toBe('▸ 1 ended');
+  fireEvent.click(toggle);
+  const expanded = screen.getAllByRole('option');
+  expect(expanded).toHaveLength(2);
+  expect(within(expanded[1]).getByTestId('team-meta').textContent).toContain('ended');
+  // Nothing to undo on a row the rule folded: it comes back on its own if the
+  // session goes live again.
+  expect(within(expanded[1]).queryByTestId('row-unhide')).toBeNull();
+  expect(within(expanded[1]).queryByTestId('row-hide')).toBeNull();
+});
+
+it('counts ended and hand-hidden rows apart in the group label', async () => {
+  const live = { ...sampleTeams()[1], name: 'session-cccc1111', live: true, state: 'live' as const };
+  const payload = { current: 'session-98b0b4a7', teams: [...sampleTeams(), live] };
+  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(payload), { status: 200 })));
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderSelect({}, { hidden: new Set(['session-cccc1111']) });
+  expect((await screen.findByTestId('show-hidden-rows')).textContent).toBe('▸ 1 ended · 1 hidden');
 });
 
 it('opens the sessions menu on ⌘K when it is closed', () => {

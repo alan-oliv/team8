@@ -93,6 +93,15 @@ function stateText(team: TeamSummary, now: number): string {
   return `ended ${formatElapsed(now - team.lastActivityAt)} ago`;
 }
 
+// The collapsed group under the list holds what the operator hid with `✕` and
+// every session that has ended, so the main list is what is running. The session
+// on screen never folds by the ended rule: the picker must not hide what the
+// wall is showing.
+function folded(team: TeamSummary, hidden: ReadonlySet<string>, current: string): boolean {
+  if (hidden.has(team.name)) return true;
+  return team.name !== current && (team.state ?? (team.live ? 'live' : 'done')) === 'done';
+}
+
 function agentCount(team: TeamSummary): string {
   return `${team.members} agent${team.members === 1 ? '' : 's'}`;
 }
@@ -177,7 +186,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         setTeams(payload.teams);
         setScope(payload.folder ?? '');
         setFolders(payload.folders ?? []);
-        const sorted = payload.teams.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+        const sorted = payload.teams.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
         setCursor(Math.max(0, sorted.findIndex((t) => t.name === current)));
         setLoading(false);
       })
@@ -270,16 +279,24 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // filter, its `reveal` escape hatch and the `done` drop were ever
   // compensating for (supersedes decision 23's bare-window carve-out).
   //
-  // The `✕` stays: taking a row out is an operator's choice, not a rule.
+  // The `✕` stays, and ended sessions fold into the same collapsed group
+  // (`folded`): out of the way, never out of reach.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
   const listed = teams ?? [];
-  const rows = listed.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+  const rows = listed.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
   const hiddenCount = listed.length - rows.length;
+  const handHidden = listed.filter((t) => watch.hidden.has(t.name)).length;
+  const groupLabel = [
+    hiddenCount > handHidden && `${hiddenCount - handHidden} ended`,
+    handHidden > 0 && `${handHidden} hidden`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const filteredRows = rows.filter((t) => matchesQuery(t, query));
   const teamCount = rows.length;
   const cursorTeam = filteredRows[Math.min(cursor, filteredRows.length - 1)];
   const hiddenRows = listed
-    .filter((t) => watch.hidden.has(t.name))
+    .filter((t) => folded(t, watch.hidden, current))
     .filter((t) => matchesQuery(t, query))
     .sort(byDisplayName);
 
@@ -403,9 +420,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               stop watching
             </button>
           )}
-          {dimmed ? (
+          {dimmed ? watch.hidden.has(team.name) && (
             // The hidden group's own control: puts just this row back,
-            // leaving the rest of the group hidden.
+            // leaving the rest of the group hidden. An ended row folded by
+            // the rule has nothing to undo, so it gets no control.
             <button
               type="button"
               data-testid="row-unhide"
@@ -897,9 +915,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
 
             {/* The way back, in the picker itself as well as on the empty
                 screen — hiding the last row otherwise leaves a list with no
-                control in it at all. Collapsed by default: a group of rows
-                the operator already chose to get out of the way should not
-                reappear open every time the menu does. */}
+                control in it at all. Collapsed by default: rows that are
+                hidden or finished should not reappear open every time the
+                menu does. */}
             {hiddenCount > 0 && (
               <button
                 type="button"
@@ -918,7 +936,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   textAlign: 'left',
                 }}
               >
-                {`${hiddenOpen ? '▾' : '▸'} ${hiddenCount} hidden`}
+                {`${hiddenOpen ? '▾' : '▸'} ${groupLabel}`}
               </button>
             )}
             {hiddenOpen && hiddenRows.map((team) => renderRow(team, true))}
