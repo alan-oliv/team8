@@ -43,7 +43,12 @@ async function runClaude(prompt: string): Promise<BriefRun> {
   const stdout = await new Promise<string>((resolve, reject) => {
     const child = execFile(
       'claude',
-      ['-p', prompt, '--model', BRIEF_MODEL, '--tools', '', '--output-format', 'json'],
+      [
+        '-p', prompt, '--model', BRIEF_MODEL, '--tools', '', '--output-format', 'json',
+        // Without it every brief is saved as a session in the folder the console
+        // runs from, and fills that folder's picker with one-shot runs.
+        '--no-session-persistence',
+      ],
       {
         timeout: TIMEOUT_MS,
         maxBuffer: 4 * 1024 * 1024,
