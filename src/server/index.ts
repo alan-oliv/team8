@@ -264,7 +264,7 @@ async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
  * records inside a message is stored escaped, so the markers only match real
  * records; a stray unescaped one on some other record is skipped by type.
  */
-interface TranscriptFacts { customTitle?: string; aiTitle?: string; branch?: string }
+interface TranscriptFacts { customTitle?: string; aiTitle?: string; branch?: string; entrypoint?: string }
 const transcriptFacts = new Map<string, { offset: number; facts: TranscriptFacts }>();
 
 function lastRecordField(buf: Buffer, type: string, key: string): string | undefined {
@@ -283,6 +283,15 @@ function lastRecordField(buf: Buffer, type: string, key: string): string | undef
   return undefined;
 }
 
+function firstEntrypoint(buf: Buffer): string | undefined {
+  const marker = '"entrypoint":"';
+  const at = buf.indexOf(marker);
+  if (at < 0) return undefined;
+  const from = at + marker.length;
+  const end = buf.indexOf(0x22, from);
+  return end > from ? buf.subarray(from, end).toString('utf8') : undefined;
+}
+
 function lastBranch(buf: Buffer): string | undefined {
   const marker = '"gitBranch":"';
   const at = buf.lastIndexOf(marker);
@@ -293,7 +302,7 @@ function lastBranch(buf: Buffer): string | undefined {
 }
 
 // ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
-async function transcriptMeta(file: string): Promise<{ title?: string; branch?: string }> {
+async function transcriptMeta(file: string): Promise<{ title?: string; branch?: string; entrypoint?: string }> {
   let size: number;
   try {
     size = (await fs.stat(file)).size;
@@ -313,12 +322,14 @@ async function transcriptMeta(file: string): Promise<{ title?: string; branch?: 
       facts.customTitle = lastRecordField(whole, 'custom-title', 'customTitle') ?? facts.customTitle;
       facts.aiTitle = lastRecordField(whole, 'ai-title', 'aiTitle') ?? facts.aiTitle;
       facts.branch = lastBranch(whole) ?? facts.branch;
+      // Written on the first record, so only the read from the top can see it.
+      if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
     } finally {
       await handle.close();
     }
   }
-  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch };
+  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch, entrypoint: facts.entrypoint };
 }
 
 async function branchOf(cwd: string | undefined): Promise<string | undefined> {
@@ -696,6 +707,9 @@ async function sessionRows(
       }
     }
     const transcript = await transcriptMeta(`${dir}.jsonl`);
+    // `claude -p` and SDK runs (the console's own briefs, headless reviewers)
+    // are not sessions anyone switches to; /resume leaves them out too.
+    if (transcript.entrypoint === 'sdk-cli') continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));

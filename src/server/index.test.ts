@@ -861,6 +861,15 @@ describe('listTeamSummaries', () => {
       expect((await rowOf(ID))?.goal).toBeUndefined();
     });
 
+    it('leaves print-mode runs out of the list, the way /resume does', async () => {
+      const typed = 'abababab-6666-6666-6666-666666666666';
+      await write(ID, [{ type: 'user', cwd, entrypoint: 'sdk-cli' }, { type: 'ai-title', aiTitle: 'Standing brief', sessionId: ID }]);
+      await write(typed, [{ type: 'user', cwd, entrypoint: 'cli' }, { type: 'ai-title', aiTitle: 'ipad', sessionId: typed }]);
+      const names = (await listTeamSummaries(teams(), sessions(), '', projects(), cwd)).teams.map((t) => t.name);
+      expect(names).not.toContain(ID);
+      expect(names).toContain(typed);
+    });
+
     it("names an ended team by its lead session's title and branch", async () => {
       const lead = 'ffffffff-5555-5555-5555-555555555555';
       const cfg = team('session-titled', { createdAt: 10, leadSessionId: lead, members: 2 });
