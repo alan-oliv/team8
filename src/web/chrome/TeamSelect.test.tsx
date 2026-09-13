@@ -59,6 +59,7 @@ function renderSelect(props: Partial<Parameters<typeof TeamSelect>[0]> = {}, wat
     watchAgain: vi.fn(),
     hidden: new Set(),
     hideSession: vi.fn(),
+    unhideSession: vi.fn(),
     showHidden: vi.fn(),
     ...watch,
   };
@@ -80,6 +81,7 @@ const WATCH: WatchState = {
   watchAgain: vi.fn(),
   hidden: new Set(),
   hideSession: vi.fn(),
+  unhideSession: vi.fn(),
   showHidden: vi.fn(),
 };
 
@@ -541,15 +543,54 @@ it('drops hidden sessions from the list and from the header count', async () => 
   expect(screen.getByTestId('session-count').textContent).toBe(String(rows.length));
 });
 
-// Hiding the last row would otherwise be a one-way door: an empty list with no
-// control left in it to undo the hiding.
-it('keeps a way back in the menu once anything is hidden', async () => {
-  const showHidden = vi.fn();
-  renderSelect({}, { hidden: new Set(['session-b5129c7b']), showHidden });
-  const back = await screen.findByTestId('show-hidden-rows');
-  expect(back.textContent).toContain('1 not shown');
-  fireEvent.click(back);
-  expect(showHidden).toHaveBeenCalled();
+// Hiding the last row would otherwise be a one-way door: a group left in the
+// menu to undo the hiding from, collapsed so it does not reopen every time the
+// picker does.
+it('keeps a way back in the menu once anything is hidden, collapsed by default', async () => {
+  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
+  const toggle = await screen.findByTestId('show-hidden-rows');
+  expect(toggle.textContent).toBe('▸ 1 hidden');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByTestId('row-unhide')).toBeNull();
+});
+
+it('expands into the hidden rows A to Z, dimmed, on a click', async () => {
+  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']) });
+  const toggle = await screen.findByTestId('show-hidden-rows');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.textContent).toBe('▾ 2 hidden');
+
+  // Both rows are hidden, so the main list is empty — every `team-title` left
+  // is one of these, in display-name order.
+  const titles = screen.getAllByTestId('team-title');
+  expect(titles.map((t) => t.textContent)).toEqual([
+    'agents-team-console-design',
+    'session-b5129c7b',
+  ]);
+  expect(titles[0].style.color).toBe('var(--color-neutral-600)');
+});
+
+it('unhides one row at a time, leaving the rest hidden', async () => {
+  const unhideSession = vi.fn();
+  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']), unhideSession });
+  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
+
+  const unhideButtons = screen.getAllByTestId('row-unhide');
+  expect(unhideButtons).toHaveLength(2);
+  fireEvent.click(unhideButtons[1]);
+  expect(unhideSession).toHaveBeenCalledWith('session-b5129c7b');
+  expect(unhideSession).not.toHaveBeenCalledWith('session-98b0b4a7');
+});
+
+it('still selects a hidden row on a click, once its group is expanded', async () => {
+  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
+  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
+
+  const rows = await screen.findAllByRole('option');
+  expect(rows).toHaveLength(2);
+  fireEvent.click(rows[1]);
+  expect(fetchMock).toHaveBeenLastCalledWith(...SWITCH_TO_B5);
 });
 
 it('says the list is empty when every row has been hidden', async () => {

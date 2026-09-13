@@ -22,6 +22,8 @@ export interface WatchState {
   hidden: ReadonlySet<string>;
   /** Takes one session out of the picker. Never touches `~/.claude`. */
   hideSession(name: string): void;
+  /** Puts one hidden session back, leaving the rest hidden. */
+  unhideSession(name: string): void;
   /** Puts every hidden session back — the way out of an empty picker. */
   showHidden(): void;
 }
@@ -35,6 +37,7 @@ export const WatchContext = createContext<WatchState>({
   watchAgain: () => {},
   hidden: new Set(),
   hideSession: () => {},
+  unhideSession: () => {},
   showHidden: () => {},
 });
 

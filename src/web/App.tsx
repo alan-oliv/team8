@@ -115,7 +115,7 @@ export function App() {
     setDismissed(false);
   }, [state?.teamName]);
 
-  const { hidden, hide, showAll } = useHiddenSessions();
+  const { hidden, hide, unhide, showAll } = useHiddenSessions();
   /**
    * Nothing worth drawing in the body: the session on screen was hidden with
    * the picker's `✕`. That is the only way to get here now — a session with no
@@ -170,9 +170,10 @@ export function App() {
       watchAgain,
       hidden,
       hideSession: hide,
+      unhideSession: unhide,
       showHidden: showAll,
     }),
-    [dismissed, watchAgain, hidden, hide, showAll],
+    [dismissed, watchAgain, hidden, hide, unhide, showAll],
   );
 
   // The launcher announces a new team at a console that is already running for

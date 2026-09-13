@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { parseHidden } from './useHiddenSessions';
+// @vitest-environment jsdom
+import { act, renderHook } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { HIDDEN_KEY, parseHidden, useHiddenSessions } from './useHiddenSessions';
+
+afterEach(() => window.localStorage.clear());
 
 describe('parseHidden', () => {
   it('reads back the names it stored', () => {
@@ -25,5 +29,23 @@ describe('parseHidden', () => {
       'session-a',
       'session-b',
     ]);
+  });
+});
+
+describe('useHiddenSessions', () => {
+  it('puts one session back, leaving the rest hidden', () => {
+    const { result } = renderHook(() => useHiddenSessions());
+    act(() => result.current.hide('session-a'));
+    act(() => result.current.hide('session-b'));
+    act(() => result.current.unhide('session-a'));
+    expect([...result.current.hidden]).toEqual(['session-b']);
+  });
+
+  it('persists an unhide the same way hide and showAll do', () => {
+    const { result } = renderHook(() => useHiddenSessions());
+    act(() => result.current.hide('session-a'));
+    act(() => result.current.hide('session-b'));
+    act(() => result.current.unhide('session-a'));
+    expect(JSON.parse(window.localStorage.getItem(HIDDEN_KEY)!)).toEqual(['session-b']);
   });
 });
