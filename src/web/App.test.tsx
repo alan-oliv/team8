@@ -5,6 +5,8 @@ import type { Diff } from '../shared/domain';
 import { App } from './App';
 import { MockEventSource, installMockEventSource } from './test/mockEventSource';
 import { FIXTURE_NOW, sampleTeamState, sampleTeams } from './test/state-fixture';
+import { FOLDER_SETTINGS_KEY } from './state/useSettings';
+import { THEMES } from './themes';
 
 beforeEach(() => {
   installMockEventSource();
@@ -1041,4 +1043,18 @@ it('badges a session with a tree subagents, and a bare one not at all', async ()
   act(() => MockEventSource.last().emit('snapshot', bareState()));
   expect(screen.queryByTestId('team-mode')).toBeNull();
   void rerender;
+});
+
+it('wears the watched folder theme, and only while the session lives there', () => {
+  window.localStorage.setItem(
+    FOLDER_SETTINGS_KEY,
+    JSON.stringify({ '/work/alpha': { theme: 'ember' } }),
+  );
+  render(<App />);
+  const console_ = () => document.querySelector('.console') as HTMLElement;
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), folder: '/work/alpha' }));
+  expect(console_().style.getPropertyValue('--term')).toBe(THEMES.ember.term);
+
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), folder: '/work/beta' }));
+  expect(console_().style.getPropertyValue('--term')).toBe(THEMES.nocturne.term);
 });

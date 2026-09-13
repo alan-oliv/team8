@@ -310,6 +310,8 @@ export interface TeamState {
   sessionName?: string;
   leadSessionId: string;
   branch?: string;
+  /** The lead's absolute cwd, which a per-folder theme is keyed on. */
+  folder?: string;
   startedAt: number;
   totalTokens: number;
   totalCostUsd: number;

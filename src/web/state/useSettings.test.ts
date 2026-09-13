@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { themeFor } from '../../shared/cast';
 import { THEMES } from '../themes';
-import { DEFAULT_SETTINGS, SETTINGS_KEY, parseSettings, useSettings } from './useSettings';
+import {
+  DEFAULT_SETTINGS,
+  FOLDER_SETTINGS_KEY,
+  SETTINGS_KEY,
+  parseSettings,
+  useSettings,
+} from './useSettings';
 
-afterEach(() => window.localStorage.clear());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  window.localStorage.clear();
+});
 
 describe('parseSettings', () => {
   it('defaults an empty store', () => {
@@ -127,5 +136,124 @@ describe('the film palette switch', () => {
     expect(stored.movieTheme).toBe('lotr');
     expect(stored.filmPalette).toBe(false);
     expect(stored.theme).toBe(DEFAULT_SETTINGS.theme);
+  });
+});
+
+describe('a folder theme', () => {
+  const HERE = '/work/alpha';
+  const store = (global: object, folders: unknown) => {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(global));
+    window.localStorage.setItem(FOLDER_SETTINGS_KEY, JSON.stringify(folders));
+  };
+  const storedFolders = () => JSON.parse(window.localStorage.getItem(FOLDER_SETTINGS_KEY) ?? 'null');
+  const storedGlobal = () => parseSettings(window.localStorage.getItem(SETTINGS_KEY));
+
+  it('stores under its own key, beside the machine-wide one', () => {
+    expect(FOLDER_SETTINGS_KEY).toBe('console.appearance.folders');
+  });
+
+  it('lands on top of the all-folders settings', () => {
+    store({ theme: 'ember', density: 'roomy' }, { [HERE]: { theme: 'frost' } });
+    const { result } = renderHook(() => useSettings(HERE));
+    expect(result.current.settings.theme).toBe('frost');
+    expect(result.current.settings.density).toBe('roomy');
+    expect(result.current.vars['--color-bg']).toBe(THEMES.frost.bg);
+  });
+
+  it('is not worn by a session in another folder', () => {
+    store({ theme: 'ember' }, { [HERE]: { theme: 'frost' } });
+    const { result } = renderHook(() => useSettings('/work/beta'));
+    expect(result.current.settings.theme).toBe('ember');
+  });
+
+  it('keeps an explicit film-off as a folder choice', () => {
+    store({ movieTheme: 'lotr' }, { [HERE]: { movieTheme: null } });
+    const { result } = renderHook(() => useSettings(HERE));
+    expect(result.current.settings.movieTheme).toBeNull();
+  });
+
+  it('opens in folder scope on a folder that already has a theme, else in all-folders scope', () => {
+    store({}, { [HERE]: { theme: 'frost' } });
+    expect(renderHook(() => useSettings(HERE)).result.current.folder?.scope).toBe('folder');
+    expect(renderHook(() => useSettings('/work/beta')).result.current.folder?.scope).toBe('all');
+  });
+
+  it('writes a look field to the folder key only in folder scope', () => {
+    const { result } = renderHook(() => useSettings(HERE));
+    act(() => result.current.folder!.setScope('folder'));
+    act(() => result.current.set('theme', 'phosphor'));
+    expect(result.current.settings.theme).toBe('phosphor');
+    expect(storedFolders()).toEqual({ [HERE]: { theme: 'phosphor' } });
+    expect(storedGlobal().theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(result.current.folder!.global.theme).toBe(DEFAULT_SETTINGS.theme);
+  });
+
+  it('writes a look field globally in all-folders scope', () => {
+    const { result } = renderHook(() => useSettings(HERE));
+    act(() => result.current.set('theme', 'phosphor'));
+    expect(storedGlobal().theme).toBe('phosphor');
+    expect(storedFolders()).toBeNull();
+  });
+
+  it('always writes a non-look field globally', () => {
+    const { result } = renderHook(() => useSettings(HERE));
+    act(() => result.current.folder!.setScope('folder'));
+    act(() => result.current.set('density', 'compact'));
+    expect(storedGlobal().density).toBe('compact');
+    expect(storedFolders()).toBeNull();
+  });
+
+  it('clearing the folder puts the all-folders theme back', () => {
+    store({ theme: 'ember' }, { [HERE]: { theme: 'frost' }, '/work/beta': { theme: 'slate' } });
+    const { result } = renderHook(() => useSettings(HERE));
+    act(() => result.current.folder!.clear());
+    expect(result.current.settings.theme).toBe('ember');
+    expect(result.current.folder!.overridden).toBe(false);
+    expect(storedFolders()).toEqual({ '/work/beta': { theme: 'slate' } });
+  });
+
+  it('has no folder scope when no folder is known', () => {
+    const { result } = renderHook(() => useSettings());
+    expect(result.current.folder).toBeUndefined();
+    act(() => result.current.set('theme', 'phosphor'));
+    expect(storedGlobal().theme).toBe('phosphor');
+  });
+
+  it('falls back to the all-folders settings on a garbage folder store', () => {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ theme: 'ember' }));
+    for (const raw of [
+      '{not json',
+      '"a string"',
+      JSON.stringify({ [HERE]: 'frost' }),
+      JSON.stringify({ [HERE]: { theme: 'sepia', scheme: 7, movieTheme: 'a film nobody made' } }),
+    ]) {
+      window.localStorage.setItem(FOLDER_SETTINGS_KEY, raw);
+      const { result } = renderHook(() => useSettings(HERE));
+      expect(result.current.settings.theme, raw).toBe('ember');
+      expect(result.current.folder!.overridden, raw).toBe(false);
+    }
+  });
+
+  it('keeps the fields a folder entry gets right and drops the rest', () => {
+    store({}, { [HERE]: { theme: 'frost', scheme: 'nope', density: 'roomy' } });
+    const { result } = renderHook(() => useSettings(HERE));
+    expect(result.current.settings.theme).toBe('frost');
+    expect(result.current.settings.scheme).toBe(DEFAULT_SETTINGS.scheme);
+    // Density is never a folder field, whatever the blob says.
+    expect(result.current.settings.density).toBe(DEFAULT_SETTINGS.density);
+  });
+
+  it('falls back to global on a store that throws, and still takes a folder pick in memory', () => {
+    const boom = () => {
+      throw new Error('blocked origin');
+    };
+    vi.stubGlobal('localStorage', { getItem: boom, setItem: boom, clear: () => {} });
+    const { result } = renderHook(() => useSettings(HERE));
+    expect(result.current.settings.theme).toBe(DEFAULT_SETTINGS.theme);
+    act(() => result.current.folder!.setScope('folder'));
+    act(() => result.current.set('theme', 'ember'));
+    expect(result.current.settings.theme).toBe('ember');
+    act(() => result.current.folder!.clear());
+    expect(result.current.settings.theme).toBe(DEFAULT_SETTINGS.theme);
   });
 });
