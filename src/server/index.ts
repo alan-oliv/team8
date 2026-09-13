@@ -19,6 +19,7 @@ import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
 import type { FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
+import { ALL_FOLDERS } from '../shared/domain';
 
 const execFileAsync = promisify(execFile);
 
@@ -778,6 +779,28 @@ export async function listFolders(projectsRoot: string): Promise<FolderSummary[]
  * required to be in the list, since a working copy whose first session has not
  * been written yet is still the right scope for it.
  */
+/**
+ * Every folder's rows at once, for the picker's `all` scope: the per-folder
+ * listing run for each folder and merged, so every scoping rule above holds
+ * unchanged. Each row carries its folder's name, since a mixed list otherwise
+ * cannot say where a `session-…` row lives.
+ */
+// ponytail: re-lists every folder on each open; fine at tens of folders, cache per folder if it drags
+export async function listAllFolders(
+  teamsRoot: string,
+  sessionsRoot: string,
+  current: string,
+  projectsRoot: string,
+): Promise<TeamsResponse> {
+  const folders = await listFolders(projectsRoot);
+  const teams: TeamSummary[] = [];
+  for (const f of folders) {
+    const one = await listTeamSummaries(teamsRoot, sessionsRoot, current, projectsRoot, f.path);
+    teams.push(...one.teams.map((t) => ({ ...t, folder: f.name })));
+  }
+  return { current, teams, folder: ALL_FOLDERS, folders };
+}
+
 export async function folderScope(
   projectsRoot: string,
   fallback: string,
@@ -1317,13 +1340,15 @@ export async function main(argv: string[]): Promise<number> {
     state: publish,
     readOnly: cli.readOnly,
     listTeams: async (folder?: string) =>
-      listTeamSummaries(
-        teamsRoot,
-        sessionsRoot,
-        currentTeam,
-        projectsRoot,
-        await folderScope(projectsRoot, cli.cwd, folder),
-      ),
+      folder === ALL_FOLDERS
+        ? listAllFolders(teamsRoot, sessionsRoot, currentTeam, projectsRoot)
+        : listTeamSummaries(
+            teamsRoot,
+            sessionsRoot,
+            currentTeam,
+            projectsRoot,
+            await folderScope(projectsRoot, cli.cwd, folder),
+          ),
     history: (agent: string) => transcriptHistory(store.replay(), agent),
     lineText: (agent: string, id: string) => transcriptLineText(store.replay(), agent, id),
     // Only the lead session's own directory is searched: that is the session

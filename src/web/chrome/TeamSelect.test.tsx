@@ -929,17 +929,18 @@ it('opens the folder menu from the chip and lists every folder with its count', 
   fireEvent.click(screen.getByTestId('folder-chip'));
   const menu = screen.getByTestId('folder-menu');
   const rows = within(menu).getAllByRole('option');
-  expect(rows.map((r) => r.textContent)).toEqual(['octo~/code/octo2', 'hatch~/code/hatch5']);
+  expect(rows.map((r) => r.textContent)).toEqual(['allevery folder7', 'octo~/code/octo2', 'hatch~/code/hatch5']);
   // The folder in scope is the marked one, so the menu says where you already are.
-  expect(rows[0].getAttribute('aria-selected')).toBe('true');
-  expect(rows[1].getAttribute('aria-selected')).toBe('false');
+  expect(rows[0].getAttribute('aria-selected')).toBe('false');
+  expect(rows[1].getAttribute('aria-selected')).toBe('true');
+  expect(rows[2].getAttribute('aria-selected')).toBe('false');
 });
 
 it('refetches the list scoped to the folder that was picked, and closes the folder menu', async () => {
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
 
   expect(fetchMock).toHaveBeenLastCalledWith(
     `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
@@ -957,7 +958,7 @@ it('remembers the picked folder across a remount, the way navigating between vie
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
   expect(fetchMock).toHaveBeenLastCalledWith(
     `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
   );
@@ -978,10 +979,34 @@ it('names the folder the server answered with, not the one requested', async () 
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
 
   await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
+});
+
+it('offers all as the first folder, and asks the server for every folder at once', async () => {
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[0]);
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
+});
+
+it('names the all scope, counts every folder, and says which folder each row is in', async () => {
+  const all = { ...LIST, folder: '*', teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? 'octo' : 'hatch' })) };
+  vi.stubGlobal('fetch', vi.fn((path: string) =>
+    path.startsWith('/api/teams')
+      ? Promise.resolve(new Response(JSON.stringify(all), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  ));
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('all');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('every folder');
+  expect(screen.getByTestId('folder-note').textContent).toBe('7 sessions across 2 folders');
+  expect(within(rows[0]).getByTestId('team-folder').textContent).toBe('octo');
+  expect(within(rows[1]).getByTestId('team-folder').textContent).toBe('hatch');
 });
 
 it('states the scope in the footer, with the way out of it', async () => {

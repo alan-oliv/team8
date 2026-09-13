@@ -4,13 +4,14 @@ import { promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
+import { ALL_FOLDERS } from '../shared/domain';
 import {
   parseArgs,
   discoverTeam,
   fencedSink,
   folderScope,
   listFolders,
-  listTeamSummaries,
+  listAllFolders, listTeamSummaries,
   sessionProjectDir,
   workflowScriptOf,
   DEFAULT_PORT,
@@ -960,6 +961,16 @@ describe('the folder menu on a listing', () => {
     );
     expect(listing.folder).toBe('/Users/dev/code/octo');
     expect(listing.folders?.map((f) => f.name).sort()).toEqual(['hatch', 'octo']);
+  });
+
+  it('lists every folder at once for the all scope, each row naming its folder', async () => {
+    await writeTranscript('/Users/dev/code/octo');
+    await writeTranscript('/Users/dev/code/hatch');
+
+    const listing = await listAllFolders(teams(), sessions(), '', projects());
+    expect(listing.folder).toBe(ALL_FOLDERS);
+    expect(listing.folders?.map((f) => f.name).sort()).toEqual(['hatch', 'octo']);
+    expect(listing.teams.map((t) => t.folder).sort()).toEqual(['hatch', 'octo']);
   });
 
   // A machine-wide listing has no chip to draw, and a menu on it would be

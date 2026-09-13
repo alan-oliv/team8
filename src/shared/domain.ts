@@ -364,6 +364,7 @@ export interface TeamSummary {
   // The dropdown's row. All three are best-effort: a team whose lead session
   // sidecar or working tree is gone still lists, just with less on the row.
   branch?: string;           // read from <cwd>/.git/HEAD, not the statusline hook
+  folder?: string;           // the folder's name, only on a listing across every folder
   goal?: string;             // the lead session's name (`/branch` sets it)
   state: 'live' | 'idle' | 'done';
   /**
@@ -419,6 +420,12 @@ export interface FolderSummary {
   name: string;              // its basename — what the chip shows first
   sessions: number;          // `<sessionId>.jsonl` files under its project dir
 }
+
+/**
+ * The folder scope that means every folder at once. A `*` can never be a real
+ * absolute path, so it cannot collide with a folder the menu lists.
+ */
+export const ALL_FOLDERS = '*';
 
 export interface TeamsResponse {
   current: string;           // '' when the console has not resolved a team yet

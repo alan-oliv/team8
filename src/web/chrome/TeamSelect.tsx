@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { FolderSummary, TeamSummary, TeamsResponse } from '../../shared/domain';
+import { ALL_FOLDERS } from '../../shared/domain';
 import { postJson } from '../api';
 import { diffStat, formatElapsed, shortPath } from '../format';
 import { useWatch } from '../state/useWatch';
@@ -304,13 +305,16 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // beside them counts; the header count above the list counts ROWS, because it
   // sits directly on top of them. The two differ whenever a folder's sessions
   // fold into one team row, and each is true of what it is next to.
+  const everyFolder = scope === ALL_FOLDERS;
   const here = folders.find((f) => f.path === scope);
-  const folderName = here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope;
+  const folderName = everyFolder ? 'all' : (here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope);
   const totalSessions = folders.reduce((n, f) => n + f.sessions, 0);
-  const folderNote = here
-    ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
-      (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
-    : '';
+  const folderNote = everyFolder
+    ? `${totalSessions} sessions across ${folders.length} folders`
+    : here
+      ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
+        (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
+      : '';
 
   // Shared by the main list and the collapsed hidden group below it: same row
   // anatomy either way, just dimmed and with `unhide` where `hide` sits.
@@ -510,6 +514,14 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               }}
             >
               {run.name ?? run.runId}
+            </span>
+          )}
+          {team.folder && (
+            <span
+              data-testid="team-folder"
+              style={{ color: 'var(--color-neutral-500)', fontSize: '10.5px', whiteSpace: 'nowrap', flex: 'none' }}
+            >
+              {team.folder}
             </span>
           )}
           {team.branch && (
@@ -754,7 +766,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 {folderName}
               </span>
               <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                {shortPath(scope)}
+                {everyFolder ? 'every folder' : shortPath(scope)}
               </span>
               <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: '10px' }}>
                 {foldersOpen ? '\u25b4' : '\u25be'}
@@ -817,7 +829,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   overflowY: 'auto',
                 }}
               >
-                {folders.map((f) => {
+                {/* `all` only where there are folders to span: a listing that is not
+                    scoped to one has no menu rows at all. */}
+                {(folders.length ? [{ path: ALL_FOLDERS, name: 'all', sessions: totalSessions }, ...folders] : []).map((f) => {
                   const isHere = f.path === scope;
                   return (
                     <div
@@ -863,7 +877,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {shortPath(f.path)}
+                        {f.path === ALL_FOLDERS ? 'every folder' : shortPath(f.path)}
                       </span>
                       <span style={{ flex: 1 }} />
                       <span
