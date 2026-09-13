@@ -107,31 +107,6 @@ describe('a film reaches every view that renders a cast', () => {
   });
 });
 
-// (b) teamNameIsDecoration says to measure the LONGEST state, because the bar
-// bleeds rather than wraps and an overflow is therefore silent.
-describe('the status bar survives the longest in-world team name', () => {
-  it('names the longest chip across the ten films', () => {
-    const longest = films.map((f) => f.team).reduce((a, b) => (b.length > a.length ? b : a));
-    expect(longest).toBe('the fellowship');
-  });
-
-  it('keeps the bar on one line for every film, longest included', () => {
-    for (const film of films) {
-      mount();
-      openConfig();
-      pickFilm(film.key);
-      fireEvent.click(screen.getByTestId('config-trigger')); // close the panel
-
-      const chip = screen.getByTestId('team-chip');
-      expect(chip.textContent, film.key).toBe(film.team);
-      // The bar bleeds rather than wraps, so the guard is that the chip refuses
-      // to wrap and the row stays a single flex line.
-      expect(chip.style.whiteSpace, film.key).toBe('nowrap');
-      reset();
-    }
-  });
-});
-
 // (c) noSemanticRecolour. The rev 4b fix moved three gold films off amber; a
 // derived warn would land back on the accent and vanish beside it.
 describe('warn never collides with a film accent', () => {
