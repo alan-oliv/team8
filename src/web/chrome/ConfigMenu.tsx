@@ -196,7 +196,9 @@ export interface ConfigMenuProps {
 }
 
 export function ConfigMenu({ appearance, open, onOpenChange }: ConfigMenuProps) {
-  const { settings, set, reset } = appearance;
+  const { set, reset, folder } = appearance;
+  // The pickers show the scope they write to; the console wears the folder's look either way.
+  const settings = folder?.scope === 'all' ? folder.global : appearance.settings;
   const wrapper = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [open_, setOpen_] = useState(false);
@@ -331,6 +333,59 @@ export function ConfigMenu({ appearance, open, onOpenChange }: ConfigMenuProps) 
               reset
             </button>
           </div>
+
+          {folder && (
+            <div style={SECTION}>
+              <span style={LABEL}>theme applies to</span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {(['all', 'folder'] as const).map((scope) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    className="cfg-seg"
+                    data-testid={`scope-${scope}`}
+                    aria-pressed={folder.scope === scope}
+                    title={scope === 'folder' ? folder.path : undefined}
+                    onClick={() => folder.setScope(scope)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      fontSize: '10.5px',
+                      padding: '3px 6px',
+                      borderRadius: 'var(--radius-sm)',
+                      ...pickStyle(folder.scope === scope),
+                    }}
+                  >
+                    {scope === 'all'
+                      ? 'all folders'
+                      : `this folder \u00b7 ${folder.path.split(/[\\/]/).filter(Boolean).pop() ?? folder.path}`}
+                  </button>
+                ))}
+              </div>
+              {folder.overridden && (
+                <button
+                  type="button"
+                  className="cfg-reset"
+                  data-testid="scope-clear"
+                  onClick={folder.clear}
+                  style={{
+                    alignSelf: 'flex-start',
+                    color: 'var(--color-neutral-600)',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid var(--color-neutral-800)',
+                  }}
+                >
+                  use the all-folders theme
+                </button>
+              )}
+            </div>
+          )}
 
           <div style={{ ...SECTION, paddingBottom: '12px' }}>
             <span style={LABEL}>theme</span>

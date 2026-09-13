@@ -167,6 +167,34 @@ it('shortens an unnamed session-only row instead of showing its full uuid', asyn
   expect(within(rows[1]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
 });
 
+// The title shortens a session-only row's full uuid, but the id line under it
+// is a second, separate read of `team.name` — a goal on the row (a transcript
+// title) must not let that second read spell out all 36 characters either.
+it('shortens a session-only row id line to the short id even when the row has a goal', async () => {
+  const teams = [
+    ...LIST.teams,
+    {
+      ...LIST.teams[1],
+      name: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      goal: 'adding-folders',
+      sessionOnly: true,
+      subagents: 2,
+    },
+  ];
+  fetchMock = vi.fn((path: string) =>
+    path === '/api/teams'
+      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  const row = rows.find((r) => within(r).getByTestId('team-title').textContent === 'adding-folders')!;
+  expect(within(row).getByTestId('team-id').textContent).toBe('session-51a30a6b');
+});
+
 it('carries the agent count and state on the second line', async () => {
   renderSelect();
   const rows = await screen.findAllByRole('option');
@@ -414,16 +442,36 @@ it('clicking the dismissed current row resumes watching it, instead of a no-op c
 
 // Paging back into a finished session is what the picker is FOR, so it lists
 // them like anything else and says how long ago they ended.
-it('lists a team whose session has ended, and says when', async () => {
+it('folds an ended session into the collapsed group, and says when it ended', async () => {
   const done = { current: 'session-98b0b4a7', teams: sampleTeams() };
   fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(done), { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(within(rows[1]).getByTestId('team-meta').textContent).toContain('ended');
-  expect(screen.getByTestId('session-count').textContent).toBe('2');
+  expect(rows).toHaveLength(1);
+  expect(screen.getByTestId('session-count').textContent).toBe('1');
+
+  const toggle = screen.getByTestId('show-hidden-rows');
+  expect(toggle.textContent).toBe('▸ 1 ended');
+  fireEvent.click(toggle);
+  const expanded = screen.getAllByRole('option');
+  expect(expanded).toHaveLength(2);
+  expect(within(expanded[1]).getByTestId('team-meta').textContent).toContain('ended');
+  // Nothing to undo on a row the rule folded: it comes back on its own if the
+  // session goes live again.
+  expect(within(expanded[1]).queryByTestId('row-unhide')).toBeNull();
+  expect(within(expanded[1]).queryByTestId('row-hide')).toBeNull();
+});
+
+it('counts ended and hand-hidden rows apart in the group label', async () => {
+  const live = { ...sampleTeams()[1], name: 'session-cccc1111', live: true, state: 'live' as const };
+  const payload = { current: 'session-98b0b4a7', teams: [...sampleTeams(), live] };
+  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(payload), { status: 200 })));
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderSelect({}, { hidden: new Set(['session-cccc1111']) });
+  expect((await screen.findByTestId('show-hidden-rows')).textContent).toBe('▸ 1 ended · 1 hidden');
 });
 
 it('opens the sessions menu on ⌘K when it is closed', () => {
@@ -909,17 +957,18 @@ it('opens the folder menu from the chip and lists every folder with its count', 
   fireEvent.click(screen.getByTestId('folder-chip'));
   const menu = screen.getByTestId('folder-menu');
   const rows = within(menu).getAllByRole('option');
-  expect(rows.map((r) => r.textContent)).toEqual(['octo~/code/octo2', 'hatch~/code/hatch5']);
+  expect(rows.map((r) => r.textContent)).toEqual(['allevery folder7', 'octo~/code/octo2', 'hatch~/code/hatch5']);
   // The folder in scope is the marked one, so the menu says where you already are.
-  expect(rows[0].getAttribute('aria-selected')).toBe('true');
-  expect(rows[1].getAttribute('aria-selected')).toBe('false');
+  expect(rows[0].getAttribute('aria-selected')).toBe('false');
+  expect(rows[1].getAttribute('aria-selected')).toBe('true');
+  expect(rows[2].getAttribute('aria-selected')).toBe('false');
 });
 
 it('refetches the list scoped to the folder that was picked, and closes the folder menu', async () => {
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
 
   expect(fetchMock).toHaveBeenLastCalledWith(
     `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
@@ -937,7 +986,7 @@ it('remembers the picked folder across a remount, the way navigating between vie
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
   expect(fetchMock).toHaveBeenLastCalledWith(
     `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
   );
@@ -958,10 +1007,34 @@ it('names the folder the server answered with, not the one requested', async () 
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
 
   await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
+});
+
+it('offers all as the first folder, and asks the server for every folder at once', async () => {
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[0]);
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
+});
+
+it('names the all scope, counts every folder, and says which folder each row is in', async () => {
+  const all = { ...LIST, folder: '*', teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? 'octo' : 'hatch' })) };
+  vi.stubGlobal('fetch', vi.fn((path: string) =>
+    path.startsWith('/api/teams')
+      ? Promise.resolve(new Response(JSON.stringify(all), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  ));
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('all');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('every folder');
+  expect(screen.getByTestId('folder-note').textContent).toBe('7 sessions across 2 folders');
+  expect(within(rows[0]).getByTestId('team-folder').textContent).toBe('octo');
+  expect(within(rows[1]).getByTestId('team-folder').textContent).toBe('hatch');
 });
 
 it('states the scope in the footer, with the way out of it', async () => {

@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { MockEventSource, installMockEventSource } from '../test/mockEventSource';
 import { sampleTeamState } from '../test/state-fixture';
-import { SETTINGS_KEY, SettingsContext, DEFAULT_SETTINGS, type Settings } from '../state/useSettings';
+import {
+  DEFAULT_SETTINGS,
+  FOLDER_SETTINGS_KEY,
+  SETTINGS_KEY,
+  SettingsContext,
+  parseSettings,
+  type Settings,
+} from '../state/useSettings';
 import { themeFor } from '../../shared/cast';
 import { THEMES } from '../themes';
 import { TranscriptFeed } from '../components/TranscriptFeed';
@@ -529,5 +536,59 @@ describe('the rate-card toggle the usage view reads', () => {
     fireEvent.click(toggle);
     expect(screen.getByTestId('toggle-showRateCard').getAttribute('aria-checked')).toBe('false');
     expect(JSON.parse(window.localStorage.getItem(SETTINGS_KEY)!).showRateCard).toBe(false);
+  });
+});
+
+describe('a theme for this folder', () => {
+  const HERE = '/Users/op/code/alpha';
+  const mountIn = (folder: string | undefined) => {
+    render(<App />);
+    act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), folder }));
+    return document.querySelector('.console') as HTMLElement;
+  };
+
+  it('names the folder on the scope switch', () => {
+    mountIn(HERE);
+    open();
+    expect(screen.getByTestId('scope-all').textContent).toBe('all folders');
+    expect(screen.getByTestId('scope-folder').textContent).toBe('this folder · alpha');
+    expect(screen.getByTestId('scope-all').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('hides the switch when the session has no folder', () => {
+    mountIn(undefined);
+    open();
+    expect(screen.queryByTestId('scope-folder')).toBeNull();
+    expect(screen.queryByTestId('scope-all')).toBeNull();
+  });
+
+  it('paints a folder pick and leaves the all-folders theme alone', () => {
+    const console_ = mountIn(HERE);
+    open();
+    fireEvent.click(screen.getByTestId('scope-folder'));
+    pickTheme('ember');
+    expect(console_.style.getPropertyValue('--term')).toBe(THEMES.ember.term);
+    expect(parseSettings(window.localStorage.getItem(SETTINGS_KEY)).theme).toBe('nocturne');
+    expect(JSON.parse(window.localStorage.getItem(FOLDER_SETTINGS_KEY)!)[HERE].theme).toBe('ember');
+
+    // The all-folders pickers show the all-folders theme; the console still wears the folder's.
+    fireEvent.click(screen.getByTestId('scope-all'));
+    expect(screen.getByTestId('theme-trigger').textContent).toContain('System default · Nocturne');
+    expect(console_.style.getPropertyValue('--term')).toBe(THEMES.ember.term);
+  });
+
+  it('offers to drop the folder theme only while there is one', () => {
+    const console_ = mountIn(HERE);
+    open();
+    fireEvent.click(screen.getByTestId('scope-folder'));
+    expect(screen.queryByTestId('scope-clear')).toBeNull();
+
+    pickTheme('ember');
+    const clear = screen.getByTestId('scope-clear');
+    expect(clear.textContent).toBe('use the all-folders theme');
+    fireEvent.click(clear);
+    expect(console_.style.getPropertyValue('--term')).toBe(THEMES.nocturne.term);
+    expect(screen.queryByTestId('scope-clear')).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem(FOLDER_SETTINGS_KEY)!)).toEqual({});
   });
 });

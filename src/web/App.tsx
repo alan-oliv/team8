@@ -31,7 +31,7 @@ import { Workflow } from './views/Workflow';
 
 export function App() {
   const store = useTeamState();
-  const appearance = useSettings();
+  const appearance = useSettings(store.state?.folder);
   const [now, setNow] = useState(() => Date.now());
   const [teamsOpen, setTeamsOpen] = useState(false);
 

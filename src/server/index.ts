@@ -19,6 +19,7 @@ import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
 import type { FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
+import { ALL_FOLDERS } from '../shared/domain';
 
 const execFileAsync = promisify(execFile);
 
@@ -249,6 +250,95 @@ async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
  * spawning git per team: one small file, no subprocess, and a detached HEAD
  * simply yields nothing rather than a bogus name.
  */
+/**
+ * A session's own title and branch, read from its transcript: the last
+ * `custom-title` is the latest /rename, the last `ai-title` Claude Code's own
+ * title for it, the last `gitBranch` where the session was when it last wrote.
+ * The live-process sidecar carries a name only while the process runs, so an
+ * ended session was a bare `session-…` without this, and every row showed the
+ * folder's CURRENT branch rather than its own.
+ *
+ * Searched from the end with a native byte search rather than parsed line by
+ * line, and remembered with the byte offset reached: an ended transcript is read
+ * once, a live one only for what it appended since. A quoted mention of these
+ * records inside a message is stored escaped, so the markers only match real
+ * records; a stray unescaped one on some other record is skipped by type.
+ */
+interface TranscriptFacts { customTitle?: string; aiTitle?: string; branch?: string; entrypoint?: string }
+const transcriptFacts = new Map<string, { offset: number; facts: TranscriptFacts }>();
+
+function lastRecordField(buf: Buffer, type: string, key: string): string | undefined {
+  const marker = `"type":"${type}"`;
+  for (let at = buf.lastIndexOf(marker); at >= 0; at = at > 0 ? buf.lastIndexOf(marker, at - 1) : -1) {
+    const start = buf.lastIndexOf(0x0a, at) + 1;
+    const end = buf.indexOf(0x0a, at);
+    try {
+      const record = JSON.parse(buf.subarray(start, end < 0 ? buf.length : end).toString('utf8')) as Record<string, unknown>;
+      const value = record[key];
+      if (record.type === type && typeof value === 'string' && value !== '') return value;
+    } catch {
+      // Not a whole record; keep looking further back.
+    }
+  }
+  return undefined;
+}
+
+function firstEntrypoint(buf: Buffer): string | undefined {
+  const marker = '"entrypoint":"';
+  const at = buf.indexOf(marker);
+  if (at < 0) return undefined;
+  const from = at + marker.length;
+  const end = buf.indexOf(0x22, from);
+  return end > from ? buf.subarray(from, end).toString('utf8') : undefined;
+}
+
+// `undefined` means this chunk had no `gitBranch` marker at all — the caller
+// keeps whatever branch an earlier chunk already found. `null` means it did,
+// and the tree was in a detached HEAD when it wrote — same as `branchOf`'s own
+// read of .git/HEAD, not a name worth showing, but a real answer that must
+// replace a stale branch from before the session went detached.
+function lastBranch(buf: Buffer): string | null | undefined {
+  const marker = '"gitBranch":"';
+  const at = buf.lastIndexOf(marker);
+  if (at < 0) return undefined;
+  const from = at + marker.length;
+  const end = buf.indexOf(0x22, from);
+  const branch = end > from ? buf.subarray(from, end).toString('utf8') : undefined;
+  return branch === 'HEAD' ? null : branch;
+}
+
+// ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
+async function transcriptMeta(file: string): Promise<{ title?: string; branch?: string; entrypoint?: string }> {
+  let size: number;
+  try {
+    size = (await fs.stat(file)).size;
+  } catch {
+    return {};
+  }
+  const known = transcriptFacts.get(file);
+  const offset = known && known.offset <= size ? known.offset : 0;
+  const facts: TranscriptFacts = known && offset > 0 ? { ...known.facts } : {};
+  if (size > offset) {
+    const handle = await fs.open(file, 'r');
+    try {
+      const read = Buffer.alloc(size - offset);
+      await handle.read(read, 0, read.length, offset);
+      // Whole lines only: a record being written right now is read next time.
+      const whole = read.subarray(0, read.lastIndexOf(0x0a) + 1);
+      facts.customTitle = lastRecordField(whole, 'custom-title', 'customTitle') ?? facts.customTitle;
+      facts.aiTitle = lastRecordField(whole, 'ai-title', 'aiTitle') ?? facts.aiTitle;
+      const foundBranch = lastBranch(whole);
+      facts.branch = foundBranch === null ? undefined : (foundBranch ?? facts.branch);
+      // Written on the first record, so only the read from the top can see it.
+      if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
+      transcriptFacts.set(file, { offset: offset + whole.length, facts });
+    } finally {
+      await handle.close();
+    }
+  }
+  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch, entrypoint: facts.entrypoint };
+}
+
 async function branchOf(cwd: string | undefined): Promise<string | undefined> {
   if (!cwd) return undefined;
   try {
@@ -623,9 +713,16 @@ async function sessionRows(
         lastActivityAt = now;
       }
     }
+    const transcript = await transcriptMeta(`${dir}.jsonl`);
+    // `claude -p` and SDK runs (the console's own briefs, headless reviewers)
+    // are not sessions anyone switches to; /resume leaves them out too.
+    if (transcript.entrypoint === 'sdk-cli') continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
-    if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
+    // See the team loop above: an ended row gets no diffstat, so no read is
+    // spent on a folder holding only ended sessions.
+    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    if (state !== 'done' && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
     rows.push({
       // The SESSION id, not a team directory: `sessionOnly` below is what tells
       // the client to send it to /api/select-session rather than /select.
@@ -638,12 +735,12 @@ async function sessionRows(
       lastActivityAt,
       live: leadAlive || recent,
       current: false,
-      branch: await branchOf(cwd),
-      goal: sessions.names.get(sessionId),
-      state: leadAlive ? 'live' : recent ? 'idle' : 'done',
+      branch: transcript.branch ?? (await branchOf(cwd)),
+      goal: sessions.names.get(sessionId) ?? transcript.title,
+      state,
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
-      ...(diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}),
+      ...(state !== 'done' && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}),
     });
   }
   return rows;
@@ -778,6 +875,28 @@ export async function listFolders(projectsRoot: string): Promise<FolderSummary[]
  * required to be in the list, since a working copy whose first session has not
  * been written yet is still the right scope for it.
  */
+/**
+ * Every folder's rows at once, for the picker's `all` scope: the per-folder
+ * listing run for each folder and merged, so every scoping rule above holds
+ * unchanged. Each row carries its folder's name, since a mixed list otherwise
+ * cannot say where a `session-…` row lives.
+ */
+// ponytail: re-lists every folder on each open; fine at tens of folders, cache per folder if it drags
+export async function listAllFolders(
+  teamsRoot: string,
+  sessionsRoot: string,
+  current: string,
+  projectsRoot: string,
+): Promise<TeamsResponse> {
+  const folders = await listFolders(projectsRoot);
+  const teams: TeamSummary[] = [];
+  for (const f of folders) {
+    const one = await listTeamSummaries(teamsRoot, sessionsRoot, current, projectsRoot, f.path);
+    teams.push(...one.teams.map((t) => ({ ...t, folder: f.name })));
+  }
+  return { current, teams, folder: ALL_FOLDERS, folders };
+}
+
 export async function folderScope(
   projectsRoot: string,
   fallback: string,
@@ -872,7 +991,22 @@ export async function listTeamSummaries(
       ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? '', leadSession)
       : 0;
     const leadCwd = lead?.cwd ?? '';
-    if (!diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    // A finished team's own uncommitted work is gone by the time anyone is
+    // looking at the row — this is just whatever the folder's tree holds
+    // right now, which is not what that session did. Only a live or idle
+    // row, whose tree the session might still touch, earns the read.
+    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    if (state !== 'done' && !diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    const leadTranscript =
+      projectsRoot && leadSession
+        ? await transcriptMeta(
+            path.join(
+              projectsRoot,
+              (sessions.cwds.get(leadSession) ?? leadCwd).replace(/[^a-zA-Z0-9]/g, '-'),
+              `${leadSession}.jsonl`,
+            ),
+          )
+        : {};
     teams.push({
       // The DIRECTORY name, not config.name: the ingest gates its own team's
       // config.json on the directory, so a mismatch would make the team
@@ -885,17 +1019,17 @@ export async function listTeamSummaries(
       lastActivityAt,
       live: leadAlive || recent,
       current: name === current,
-      branch: await branchOf(lead?.cwd),
+      branch: leadTranscript.branch ?? (await branchOf(lead?.cwd)),
       // Named after the session actually driving the team. Keyed on
       // config.leadSessionId this was blank for every re-keyed team — the live
       // one showed no name while a four-hour-dead one showed its own.
-      goal: sessions.names.get(leadSession),
+      goal: sessions.names.get(leadSession) ?? leadTranscript.title,
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
-      state: leadAlive ? 'live' : recent ? 'idle' : 'done',
+      state,
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
-      ...(diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}),
+      ...(state !== 'done' && diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}),
     });
   }
 
@@ -906,9 +1040,8 @@ export async function listTeamSummaries(
   const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : undefined;
   if (scoped) {
     // A team whose lead ran somewhere else belongs to that folder's picker, not
-    // this one. The session ON SCREEN is the exception, always: dropping the row
-    // you are looking at would leave the picker contradicting the body, and
-    // would take away the only way back to it.
+    // this one, the session on screen included. The header trigger still names
+    // it, and switching the picker back to its folder lists it again.
     //
     // Scoped by the session actually driving the team, not the row's own
     // leadSessionId: that field is config.leadSessionId, which a re-keyed team
@@ -916,7 +1049,7 @@ export async function listTeamSummaries(
     const here = new Set(scoped);
     for (let i = teams.length - 1; i >= 0; i--) {
       const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver) && !teams[i].current) teams.splice(i, 1);
+      if (!here.has(driver)) teams.splice(i, 1);
     }
   }
 
@@ -1006,7 +1139,9 @@ function adoptByCwd(
     best.leadAlive = true;
     best.live = true;
     best.state = 'live';
-    best.goal ??= sessions.names.get(sessionId);
+    // The running session's own name wins over a title read from the stale
+    // lead's transcript.
+    best.goal = sessions.names.get(sessionId) ?? best.goal;
   }
   return adopted;
 }
@@ -1318,13 +1453,15 @@ export async function main(argv: string[]): Promise<number> {
     state: publish,
     readOnly: cli.readOnly,
     listTeams: async (folder?: string) =>
-      listTeamSummaries(
-        teamsRoot,
-        sessionsRoot,
-        currentTeam,
-        projectsRoot,
-        await folderScope(projectsRoot, cli.cwd, folder),
-      ),
+      folder === ALL_FOLDERS
+        ? listAllFolders(teamsRoot, sessionsRoot, currentTeam, projectsRoot)
+        : listTeamSummaries(
+            teamsRoot,
+            sessionsRoot,
+            currentTeam,
+            projectsRoot,
+            await folderScope(projectsRoot, cli.cwd, folder),
+          ),
     history: (agent: string) => transcriptHistory(store.replay(), agent),
     lineText: (agent: string, id: string) => transcriptLineText(store.replay(), agent, id),
     // Only the lead session's own directory is searched: that is the session

@@ -4,13 +4,14 @@ import { promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
+import { ALL_FOLDERS } from '../shared/domain';
 import {
   parseArgs,
   discoverTeam,
   fencedSink,
   folderScope,
   listFolders,
-  listTeamSummaries,
+  listAllFolders, listTeamSummaries,
   sessionProjectDir,
   workflowScriptOf,
   DEFAULT_PORT,
@@ -749,6 +750,31 @@ describe('listTeamSummaries', () => {
     expect(rows.map((r) => r.diffstat)).toEqual([undefined, undefined]);
   });
 
+  // A finished session's own uncommitted work is long gone; what a diffstat
+  // would report on its row is just whatever the folder's tree holds now,
+  // which could be unrelated later work. Two teams share the repo so the same
+  // git read is available to both — only the live one gets to show it.
+  it('withholds the diffstat from an ended row, but keeps it on a live row in the same folder', async () => {
+    const repo = path.join(dir, 'repo-mixed');
+    await initRepo(repo, 'one\ntwo\nthree\n');
+    await fs.writeFile(path.join(repo, 'file.txt'), 'one\nTWO\nthree\nfour\n');
+
+    await leadOnlyAt('session-live9001', 'live9001-x', repo);
+    const doneConfig = team('session-done9002', { createdAt: 20, leadSessionId: 'done9002-x', members: 1 });
+    doneConfig.members[0] = { ...doneConfig.members[0], cwd: repo };
+    await writeConfig('session-done9002', doneConfig);
+    const stale = (Date.now() - IDLE_GRACE_MS * 2) / 1000;
+    await fs.utimes(path.join(teams(), 'session-done9002', 'config.json'), stale, stale);
+
+    const rows = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    const live = rows.find((r) => r.name === 'session-live9001');
+    const done = rows.find((r) => r.name === 'session-done9002');
+    expect(live?.state).not.toBe('done');
+    expect(live?.diffstat).toEqual({ added: 2, removed: 1 });
+    expect(done?.state).toBe('done');
+    expect(done?.diffstat).toBeUndefined();
+  });
+
   it('returns an empty listing when there is no teams directory at all', async () => {
     expect(await listTeamSummaries(teams(), sessions(), '')).toEqual({ current: '', teams: [] });
   });
@@ -800,6 +826,106 @@ describe('listTeamSummaries', () => {
 
     const scopedToLive = await listTeamSummaries(teams(), sessions(), '', projects, liveCwd);
     expect(scopedToLive.teams.map((t) => t.name)).toContain('session-rekeyed');
+  });
+
+  it('keeps the session on screen out of another folder\'s list', async () => {
+    const projects = path.join(dir, 'projects');
+    const home = '/Users/x/code/team8';
+    const other = '/Users/x/code/arco';
+    const leadSessionId = 'cccccccc-2222-2222-2222-222222222222';
+    await writeConfig('session-watched', team('session-watched', { createdAt: 10, leadSessionId, members: 5 }));
+    for (const [cwd, id] of [[home, leadSessionId], [other, 'dddddddd-3333-3333-3333-333333333333']]) {
+      const slug = path.join(projects, cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+      await fs.mkdir(slug, { recursive: true });
+      await fs.writeFile(path.join(slug, `${id}.jsonl`), '');
+    }
+
+    const inOther = await listTeamSummaries(teams(), sessions(), 'session-watched', projects, other);
+    expect(inOther.teams.map((t) => t.name)).not.toContain('session-watched');
+    const inHome = await listTeamSummaries(teams(), sessions(), 'session-watched', projects, home);
+    expect(inHome.teams.map((t) => t.name)).toContain('session-watched');
+  });
+
+  describe('titles and branches read from the transcript', () => {
+    const projects = () => path.join(dir, 'projects');
+    const cwd = '/Users/x/code/arco';
+    const ID = 'eeeeeeee-4444-4444-4444-444444444444';
+    const file = (id: string) => path.join(projects(), cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${id}.jsonl`);
+    async function write(id: string, records: object[]) {
+      await fs.mkdir(path.dirname(file(id)), { recursive: true });
+      await fs.writeFile(file(id), records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    }
+    const rowOf = async (name: string) =>
+      (await listTeamSummaries(teams(), sessions(), '', projects(), cwd)).teams.find((t) => t.name === name);
+
+    it("names an ended session by its /rename title, over Claude Code's own", async () => {
+      await write(ID, [
+        { type: 'user', cwd, gitBranch: 'hand-voices' },
+        { type: 'custom-title', customTitle: 'e2e', sessionId: ID },
+        { type: 'ai-title', aiTitle: 'Uncommitted files', sessionId: ID },
+      ]);
+      const row = await rowOf(ID);
+      expect(row?.goal).toBe('e2e');
+      expect(row?.branch).toBe('hand-voices');
+    });
+
+    it("falls back to Claude Code's own title for a session never renamed", async () => {
+      await write(ID, [{ type: 'user', cwd }, { type: 'ai-title', aiTitle: 'Uncommitted files', sessionId: ID }]);
+      expect((await rowOf(ID))?.goal).toBe('Uncommitted files');
+    });
+
+    it('picks up a rename made after the last listing', async () => {
+      await write(ID, [{ type: 'user', cwd }, { type: 'custom-title', customTitle: 'first', sessionId: ID }]);
+      expect((await rowOf(ID))?.goal).toBe('first');
+      await fs.appendFile(file(ID), JSON.stringify({ type: 'custom-title', customTitle: 'second', sessionId: ID }) + '\n');
+      expect((await rowOf(ID))?.goal).toBe('second');
+    });
+
+    it('ignores a title that is only quoted inside a message', async () => {
+      await write(ID, [{ type: 'user', cwd, message: { content: '{"type":"custom-title","customTitle":"fake"}' } }]);
+      expect((await rowOf(ID))?.goal).toBeUndefined();
+    });
+
+    it('leaves print-mode runs out of the list, the way /resume does', async () => {
+      const typed = 'abababab-6666-6666-6666-666666666666';
+      await write(ID, [{ type: 'user', cwd, entrypoint: 'sdk-cli' }, { type: 'ai-title', aiTitle: 'Standing brief', sessionId: ID }]);
+      await write(typed, [{ type: 'user', cwd, entrypoint: 'cli' }, { type: 'ai-title', aiTitle: 'ipad', sessionId: typed }]);
+      const names = (await listTeamSummaries(teams(), sessions(), '', projects(), cwd)).teams.map((t) => t.name);
+      expect(names).not.toContain(ID);
+      expect(names).toContain(typed);
+    });
+
+    // A detached HEAD is recorded verbatim as `gitBranch: "HEAD"` — not a real
+    // branch name, so the row should read the same as no branch at all rather
+    // than showing the literal word.
+    it('treats a detached HEAD recorded in the transcript as no branch', async () => {
+      await write(ID, [{ type: 'user', cwd, gitBranch: 'HEAD' }]);
+      expect((await rowOf(ID))?.branch).toBeUndefined();
+    });
+
+    // The cache only holds the LATEST chunk's finding — a session that goes
+    // detached after an earlier listing already cached its real branch must
+    // not keep showing that stale name forever.
+    it('drops a cached real branch once a later chunk records a detached HEAD', async () => {
+      await write(ID, [{ type: 'user', cwd, gitBranch: 'main' }]);
+      expect((await rowOf(ID))?.branch).toBe('main');
+      await fs.appendFile(file(ID), JSON.stringify({ type: 'user', cwd, gitBranch: 'HEAD' }) + '\n');
+      expect((await rowOf(ID))?.branch).toBeUndefined();
+    });
+
+    it("names an ended team by its lead session's title and branch", async () => {
+      const lead = 'ffffffff-5555-5555-5555-555555555555';
+      const cfg = team('session-titled', { createdAt: 10, leadSessionId: lead, members: 2 });
+      cfg.members[0].cwd = cwd;
+      await writeConfig('session-titled', cfg);
+      await write(lead, [
+        { type: 'user', cwd, gitBranch: 'lyrics-on-screen' },
+        { type: 'custom-title', customTitle: 'minor-scales', sessionId: lead },
+      ]);
+      const row = await rowOf('session-titled');
+      expect(row?.goal).toBe('minor-scales');
+      expect(row?.branch).toBe('lyrics-on-screen');
+    });
   });
 });
 
@@ -942,6 +1068,16 @@ describe('the folder menu on a listing', () => {
     );
     expect(listing.folder).toBe('/Users/dev/code/octo');
     expect(listing.folders?.map((f) => f.name).sort()).toEqual(['hatch', 'octo']);
+  });
+
+  it('lists every folder at once for the all scope, each row naming its folder', async () => {
+    await writeTranscript('/Users/dev/code/octo');
+    await writeTranscript('/Users/dev/code/hatch');
+
+    const listing = await listAllFolders(teams(), sessions(), '', projects());
+    expect(listing.folder).toBe(ALL_FOLDERS);
+    expect(listing.folders?.map((f) => f.name).sort()).toEqual(['hatch', 'octo']);
+    expect(listing.teams.map((t) => t.folder).sort()).toEqual(['hatch', 'octo']);
   });
 
   // A machine-wide listing has no chip to draw, and a menu on it would be

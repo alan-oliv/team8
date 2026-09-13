@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { FolderSummary, TeamSummary, TeamsResponse } from '../../shared/domain';
+import { ALL_FOLDERS } from '../../shared/domain';
 import { postJson } from '../api';
 import { diffStat, formatElapsed, shortPath } from '../format';
 import { useWatch } from '../state/useWatch';
@@ -93,21 +94,33 @@ function stateText(team: TeamSummary, now: number): string {
   return `ended ${formatElapsed(now - team.lastActivityAt)} ago`;
 }
 
+// The collapsed group under the list holds what the operator hid with `✕` and
+// every session that has ended, so the main list is what is running. The session
+// on screen never folds by the ended rule: the picker must not hide what the
+// wall is showing.
+function folded(team: TeamSummary, hidden: ReadonlySet<string>, current: string): boolean {
+  if (hidden.has(team.name)) return true;
+  return team.name !== current && (team.state ?? (team.live ? 'live' : 'done')) === 'done';
+}
+
 function agentCount(team: TeamSummary): string {
   return `${team.members} agent${team.members === 1 ? '' : 's'}`;
 }
 
 /**
- * The row's title when the operator never named the session. A team's own
- * `name` is already a short directory id (`session-<8>`); a `sessionOnly`
- * row's `name` is the FULL session uuid (domain.ts), so that is the one case
- * needing the same shortening `WorkflowRun`'s `shortId` applies elsewhere —
- * otherwise the row is the one place in the picker that spells out all 36
- * characters.
+ * A team's own `name` is already a short directory id (`session-<8>`); a
+ * `sessionOnly` row's `name` is the FULL session uuid (domain.ts), so this is
+ * the one case needing the same shortening `WorkflowRun`'s `shortId` applies
+ * elsewhere. Every row's id — title fallback and the id line beneath a goal
+ * alike — routes through here, so neither spells out all 36 characters.
  */
-function displayName(team: TeamSummary): string {
-  if (team.goal) return team.goal;
+function rowId(team: TeamSummary): string {
   return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
+}
+
+/** The row's title when the operator never named the session. */
+function displayName(team: TeamSummary): string {
+  return team.goal || rowId(team);
 }
 
 export function byDisplayName(a: TeamSummary, b: TeamSummary): number {
@@ -177,7 +190,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         setTeams(payload.teams);
         setScope(payload.folder ?? '');
         setFolders(payload.folders ?? []);
-        const sorted = payload.teams.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+        const sorted = payload.teams.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
         setCursor(Math.max(0, sorted.findIndex((t) => t.name === current)));
         setLoading(false);
       })
@@ -270,16 +283,24 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // filter, its `reveal` escape hatch and the `done` drop were ever
   // compensating for (supersedes decision 23's bare-window carve-out).
   //
-  // The `✕` stays: taking a row out is an operator's choice, not a rule.
+  // The `✕` stays, and ended sessions fold into the same collapsed group
+  // (`folded`): out of the way, never out of reach.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
   const listed = teams ?? [];
-  const rows = listed.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+  const rows = listed.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
   const hiddenCount = listed.length - rows.length;
+  const handHidden = listed.filter((t) => watch.hidden.has(t.name)).length;
+  const groupLabel = [
+    hiddenCount > handHidden && `${hiddenCount - handHidden} ended`,
+    handHidden > 0 && `${handHidden} hidden`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const filteredRows = rows.filter((t) => matchesQuery(t, query));
   const teamCount = rows.length;
   const cursorTeam = filteredRows[Math.min(cursor, filteredRows.length - 1)];
   const hiddenRows = listed
-    .filter((t) => watch.hidden.has(t.name))
+    .filter((t) => folded(t, watch.hidden, current))
     .filter((t) => matchesQuery(t, query))
     .sort(byDisplayName);
 
@@ -287,13 +308,16 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // beside them counts; the header count above the list counts ROWS, because it
   // sits directly on top of them. The two differ whenever a folder's sessions
   // fold into one team row, and each is true of what it is next to.
+  const everyFolder = scope === ALL_FOLDERS;
   const here = folders.find((f) => f.path === scope);
-  const folderName = here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope;
+  const folderName = everyFolder ? 'all' : (here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope);
   const totalSessions = folders.reduce((n, f) => n + f.sessions, 0);
-  const folderNote = here
-    ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
-      (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
-    : '';
+  const folderNote = everyFolder
+    ? `${totalSessions} sessions across ${folders.length} folders`
+    : here
+      ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
+        (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
+      : '';
 
   // Shared by the main list and the collapsed hidden group below it: same row
   // anatomy either way, just dimmed and with `unhide` where `hide` sits.
@@ -403,9 +427,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               stop watching
             </button>
           )}
-          {dimmed ? (
+          {dimmed ? watch.hidden.has(team.name) && (
             // The hidden group's own control: puts just this row back,
-            // leaving the rest of the group hidden.
+            // leaving the rest of the group hidden. An ended row folded by
+            // the rule has nothing to undo, so it gets no control.
             <button
               type="button"
               data-testid="row-unhide"
@@ -472,7 +497,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 flex: 'none',
               }}
             >
-              {team.name}
+              {rowId(team)}
             </span>
           )}
           {/* The run's own name lands with its snapshot, which is
@@ -492,6 +517,14 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               }}
             >
               {run.name ?? run.runId}
+            </span>
+          )}
+          {team.folder && (
+            <span
+              data-testid="team-folder"
+              style={{ color: 'var(--color-neutral-500)', fontSize: '10.5px', whiteSpace: 'nowrap', flex: 'none' }}
+            >
+              {team.folder}
             </span>
           )}
           {team.branch && (
@@ -736,7 +769,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 {folderName}
               </span>
               <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                {shortPath(scope)}
+                {everyFolder ? 'every folder' : shortPath(scope)}
               </span>
               <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: '10px' }}>
                 {foldersOpen ? '\u25b4' : '\u25be'}
@@ -799,7 +832,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   overflowY: 'auto',
                 }}
               >
-                {folders.map((f) => {
+                {/* `all` only where there are folders to span: a listing that is not
+                    scoped to one has no menu rows at all. */}
+                {(folders.length ? [{ path: ALL_FOLDERS, name: 'all', sessions: totalSessions }, ...folders] : []).map((f) => {
                   const isHere = f.path === scope;
                   return (
                     <div
@@ -845,7 +880,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {shortPath(f.path)}
+                        {f.path === ALL_FOLDERS ? 'every folder' : shortPath(f.path)}
                       </span>
                       <span style={{ flex: 1 }} />
                       <span
@@ -897,9 +932,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
 
             {/* The way back, in the picker itself as well as on the empty
                 screen — hiding the last row otherwise leaves a list with no
-                control in it at all. Collapsed by default: a group of rows
-                the operator already chose to get out of the way should not
-                reappear open every time the menu does. */}
+                control in it at all. Collapsed by default: rows that are
+                hidden or finished should not reappear open every time the
+                menu does. */}
             {hiddenCount > 0 && (
               <button
                 type="button"
@@ -918,7 +953,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   textAlign: 'left',
                 }}
               >
-                {`${hiddenOpen ? '▾' : '▸'} ${hiddenCount} hidden`}
+                {`${hiddenOpen ? '▾' : '▸'} ${groupLabel}`}
               </button>
             )}
             {hiddenOpen && hiddenRows.map((team) => renderRow(team, true))}

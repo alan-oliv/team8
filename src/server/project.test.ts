@@ -1425,3 +1425,35 @@ it('counts turns and dates the current one from the last prompt', () => {
   // The session still starts at its first record — only the BAR reads the turn.
   expect(lead.startedAt).toBe(Date.parse('2026-08-26T10:00:00.000Z'));
 });
+
+describe('the watched folder', () => {
+  const member = (agentId: string, cwd: string) => ({
+    agentId, name: agentId, joinedAt: 0, tmuxPaneId: '', subscriptions: [], cwd,
+  });
+  const folderOf = (config: TeamConfig | null) =>
+    project([{ seq: 1, ts: 0, kind: 'roster', payload: { config, sidecars: [] } }], false).folder;
+
+  it('is the cwd of the member the config names lead', () => {
+    const config: TeamConfig = {
+      name: 't', createdAt: 0, leadAgentId: 'lead', leadSessionId: 's',
+      members: [member('mate', '/work/mate'), member('lead', '/work/lead')],
+    };
+    expect(folderOf(config)).toBe('/work/lead');
+  });
+
+  it('falls back to the first member when the lead id names nobody', () => {
+    const config: TeamConfig = {
+      name: 't', createdAt: 0, leadAgentId: 'gone', leadSessionId: 's',
+      members: [member('mate', '/work/mate'), member('lead', '/work/lead')],
+    };
+    expect(folderOf(config)).toBe('/work/mate');
+  });
+
+  it('is absent with no config to read it from', () => {
+    expect(folderOf(null)).toBeUndefined();
+  });
+
+  it('reads the real config lead folder', () => {
+    expect(project(buildLog(), false).folder).toBe('/Users/alanoliv/code/team8');
+  });
+});

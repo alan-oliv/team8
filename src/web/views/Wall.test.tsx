@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { FIXTURE_NOW, fixtureAgents } from '../agents.fixture';
 import { buildCast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
-import type { Task } from '../../shared/domain';
+import type { Task, TranscriptLine } from '../../shared/domain';
 import { Wall, taskListSummary } from './Wall';
 
 afterEach(cleanup);
@@ -970,5 +970,34 @@ describe('a roster of one', () => {
     for (const feed of screen.getAllByTestId('transcript-feed')) {
       expect(feed.style.padding).toBe('13px 12px');
     }
+  });
+});
+
+// TranscriptFeed's own suite covers which row counts as "the latest message"
+// and how the default tracks it; this is the one test proving Wall actually
+// wires `expandLatest` in, and only where a column is a real wall column.
+describe('the wall opens each column’s latest message by default', () => {
+  const reply: TranscriptLine = {
+    id: 'reply-0',
+    marker: '⏺',
+    text: 'All caught up.\nNothing blocked.',
+    ts: FIXTURE_NOW + 100,
+  };
+
+  it('opens the newest own-text row on a real roster, unclicked', () => {
+    const withReply = agents.map((a) =>
+      a.name === 'team-lead' ? { ...a, transcript: [...a.transcript, reply] } : a,
+    );
+    render(<Wall agents={withReply} focused={null} onFocus={vi.fn()} now={FIXTURE_NOW} />);
+    const column = screen.getAllByTestId('wall-column').find((c) => c.dataset.agent === 'team-lead')!;
+    const rows = within(column).getAllByTestId('transcript-row');
+    expect(rows[rows.length - 1].getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('leaves the roster-of-one stream on today’s behaviour: closed until clicked', () => {
+    const solo = [{ ...agents[0], transcript: [...agents[0].transcript, reply] }];
+    render(<Wall agents={solo} focused={solo[0].name} onFocus={vi.fn()} now={FIXTURE_NOW} />);
+    const rows = screen.getAllByTestId('transcript-row');
+    expect(rows[rows.length - 1].getAttribute('aria-expanded')).toBe('false');
   });
 });

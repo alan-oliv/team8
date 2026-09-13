@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+
+// Only the test that exercises the real CLI launch reaches this; every other
+// test injects its own `run`.
+const execFileMock = vi.hoisted(() => vi.fn());
+vi.mock('node:child_process', () => ({ execFile: execFileMock }));
 import { createBriefs, type BriefRun } from './brief';
 import type { Agent, Task } from '../shared/domain';
 
@@ -23,6 +28,17 @@ const answer: BriefRun = {
 };
 
 describe('createBriefs', () => {
+  it('asks the CLI not to save each brief as a session of its own', async () => {
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, done: (err: null, out: string) => void) => {
+      done(null, JSON.stringify({ result: answer.text, usage: {}, modelUsage: { 'claude-haiku-4-5': {} } }));
+      return { stdin: { end: () => {} } };
+    });
+    const briefs = createBriefs({ publish: vi.fn(), minGapMs: 0 });
+    briefs.observe({ agents, tasks: [task()] }, true);
+    await vi.waitFor(() => expect(execFileMock).toHaveBeenCalledTimes(1));
+    expect(execFileMock.mock.calls[0][1]).toContain('--no-session-persistence');
+  });
+
   it('writes its first brief for an open console, unasked', async () => {
     const run = vi.fn(async () => answer);
     const briefs = createBriefs({ publish: vi.fn(), run, minGapMs: 0 });

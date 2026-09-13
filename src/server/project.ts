@@ -645,11 +645,14 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     subagentFacts,
   );
 
+  const leadMember = config?.members.find((m) => m.agentId === config.leadAgentId) ?? config?.members[0];
+
   return {
     teamName: config?.name ?? '',
     sessionName,
     leadSessionId: config?.leadSessionId ?? '',
     branch,
+    folder: leadMember?.cwd,
     // A config-less session has no createdAt, so the lead's own start stands in
     // — the alternative is an elapsed measured from the epoch.
     startedAt: config?.createdAt ?? agents.find((a) => a.isLead)?.startedAt ?? 0,
