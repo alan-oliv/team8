@@ -1054,9 +1054,11 @@ export async function listTeamSummaries(
   }
 
   if (projectsRoot) {
+    // Only teams that made it into `teams`: a sidecar still names its team after
+    // teams/<name>/ is reaped, and covering its session then hid it entirely.
     const covered = new Set([
       ...teams.map((t) => t.leadSessionId),
-      ...liveTeams.values(),
+      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
       ...adopted,
     ]);
     // Scoped: every session this folder holds, so a finished team whose

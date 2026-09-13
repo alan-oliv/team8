@@ -568,6 +568,23 @@ describe('listTeamSummaries', () => {
       expect(listed.teams.map((t) => t.name)).toEqual(['session-8f2a1c00']);
     });
 
+    // Claude Code reaps teams/<name>/ when a team ends, but the teammates'
+    // sidecars under the session stay behind still naming it. A session that
+    // went on to run a workflow was hidden behind a team row that never lists.
+    it('lists a live session whose sidecars name a team that has been reaped', async () => {
+      const projects = await liveSessionWithSubagents(SOLO, 0);
+      await fs.writeFile(
+        path.join(sessionDirOf(projects, CWD, SOLO), 'subagents', 'agent-aworker-1111.meta.json'),
+        JSON.stringify({ name: 'worker', taskKind: 'in_process_teammate', teamName: 'session-8f2a1c00' }),
+      );
+      await writeJournal(projects, CWD, SOLO, 'wf_reaped1');
+
+      const listed = await listTeamSummaries(teams(), sessions(), '', projects, CWD);
+
+      const row = listed.teams.find((t) => t.name === SOLO);
+      expect(row?.workflow).toEqual({ runId: 'wf_reaped1', live: true });
+    });
+
     // The config-less machine: no teams directory has ever been created.
     it('still lists the session when there is no teams directory at all', async () => {
       const projects = await liveSessionWithSubagents(SOLO, 1);
