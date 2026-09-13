@@ -327,7 +327,6 @@ interface Draft {
   text: string;
   diff?: Diff;
   sender?: string;
-  own?: true;
 }
 
 /**
@@ -372,7 +371,7 @@ function draftsOf(rec: TranscriptRecord, agent = ''): { ts: number; drafts: Draf
       const b = block as { type?: string; text?: string; name?: string; input?: unknown };
       if (b.type === 'text' && typeof b.text === 'string') {
         const text = tidy(b.text);
-        if (text) drafts.push({ marker: '⏺', text, own: true });
+        if (text) drafts.push({ marker: '⏺', text });
       } else if (b.type === 'tool_use' && typeof b.name === 'string') {
         const diff = diffOfToolUse(b.name, b.input, agent, ts);
         const draft: Draft = { marker: '⏺', text: describeTool(b.name, b.input) };
@@ -395,7 +394,6 @@ export function toTranscriptLines(rec: TranscriptRecord, agent = ''): Transcript
     ts: built.ts,
     ...(draft.diff ? { diff: draft.diff } : {}),
     ...(draft.sender ? { sender: draft.sender } : {}),
-    ...(draft.own ? { own: draft.own } : {}),
   }));
 }
 

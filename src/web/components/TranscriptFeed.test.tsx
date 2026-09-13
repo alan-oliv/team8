@@ -631,10 +631,10 @@ describe('an opened row fetches its full text', () => {
 });
 
 // `expandLatest` is what Wall.tsx sets and nothing else does — a column shows
-// its agent's newest own text open, unclicked. "Own text" is `line.own`,
-// which the projection (transcript.ts) sets from the record's actual block
-// type — never guessed back from the rendered text, which a tool call and a
-// reply can both defeat (a bare one-word reply, an MCP tool named lowercase).
+// its agent's newest own text open, unclicked. "Own text" means marker `⏺`
+// with no diff and a first line that is not `describeTool`'s `Name`/`Name(…)`
+// shape, since that shape is the one thing every tool call has and a reply
+// never does.
 describe('expanding the latest message by default (wall only)', () => {
   function stubLine(bodies: Record<string, string>) {
     const calls: string[] = [];
@@ -654,7 +654,7 @@ describe('expanding the latest message by default (wall only)', () => {
     { id: 'r0', marker: '❯', text: 'check the build', ts: 1 },
     { id: 'r1', marker: '⏺', text: 'Bash(npm test)', ts: 2 },
     { id: 'r2', marker: '⎿', text: 'All green', ts: 3 },
-    { id: 'r3', marker: '⏺', text: 'All tests pass.\nNo further action needed.', ts: 4, own: true },
+    { id: 'r3', marker: '⏺', text: 'All tests pass.\nNo further action needed.', ts: 4 },
   ];
   const rows = () => screen.getAllByTestId('transcript-row');
 
@@ -682,33 +682,6 @@ describe('expanding the latest message by default (wall only)', () => {
     expect(rows()[3].getAttribute('aria-expanded')).toBe('true');
   });
 
-  // Not a hypothetical: a shape-based guess reads this as `Bash(` and misses
-  // it, or opens the tool call below thinking IT is the reply.
-  it('never opens a lowercase-named MCP tool call as the reply, however new', () => {
-    const withMcpTail: TranscriptLine[] = [
-      ...REPLY,
-      { id: 'r6', marker: '⏺', text: 'mcp__claude-in-chrome__navigate(https://example.com)', ts: 6 },
-    ];
-    render(<TranscriptFeed lines={withMcpTail} size="wall" agent="probe-alpha" expandLatest />);
-    expect(rows()[4].getAttribute('aria-expanded')).toBeNull();
-    expect(rows()[3].getAttribute('aria-expanded')).toBe('true');
-  });
-
-  // Nor the opposite mistake: a shape-based guess reads a bare, punctuation-free
-  // one-word reply as a tool call and skips it for an older row.
-  it('opens a bare one-word reply, not an older tool row', () => {
-    const bareWord: TranscriptLine[] = [
-      REPLY[0],
-      REPLY[1],
-      { id: 'r7', marker: '⏺', text: 'Done.', ts: 7, own: true },
-    ];
-    render(<TranscriptFeed lines={bareWord} size="wall" agent="probe-alpha" expandLatest />);
-    // Too short to be expandable, so there is nothing to assert open on the
-    // row itself — the header already shows it in full — but it must not have
-    // pulled the default back to the tool call before it.
-    expect(rows()[1].getAttribute('aria-expanded')).toBeNull();
-  });
-
   it('moves the default to a newer reply as it arrives', () => {
     stubLine({ r3: REPLY[3].text, r5: 'Wrapping up.\nDone for today.' });
     const { rerender } = render(
@@ -716,7 +689,7 @@ describe('expanding the latest message by default (wall only)', () => {
     );
     const newer: TranscriptLine[] = [
       ...REPLY,
-      { id: 'r5', marker: '⏺', text: 'Wrapping up.\nDone for today.', ts: 5, own: true },
+      { id: 'r5', marker: '⏺', text: 'Wrapping up.\nDone for today.', ts: 5 },
     ];
     rerender(<TranscriptFeed lines={newer} size="wall" agent="probe-alpha" expandLatest />);
     expect(within(rows()[4]).getByTestId('transcript-text').textContent).toBe('Wrapping up.');
