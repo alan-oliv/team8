@@ -292,17 +292,19 @@ function firstEntrypoint(buf: Buffer): string | undefined {
   return end > from ? buf.subarray(from, end).toString('utf8') : undefined;
 }
 
-function lastBranch(buf: Buffer): string | undefined {
+// `undefined` means this chunk had no `gitBranch` marker at all — the caller
+// keeps whatever branch an earlier chunk already found. `null` means it did,
+// and the tree was in a detached HEAD when it wrote — same as `branchOf`'s own
+// read of .git/HEAD, not a name worth showing, but a real answer that must
+// replace a stale branch from before the session went detached.
+function lastBranch(buf: Buffer): string | null | undefined {
   const marker = '"gitBranch":"';
   const at = buf.lastIndexOf(marker);
   if (at < 0) return undefined;
   const from = at + marker.length;
   const end = buf.indexOf(0x22, from);
   const branch = end > from ? buf.subarray(from, end).toString('utf8') : undefined;
-  // Recorded when the tree was in a detached HEAD, same as `branchOf`'s own
-  // read of .git/HEAD — not a name worth showing, so it falls through to that
-  // read too rather than displaying a literal "HEAD".
-  return branch === 'HEAD' ? undefined : branch;
+  return branch === 'HEAD' ? null : branch;
 }
 
 // ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
@@ -325,7 +327,8 @@ async function transcriptMeta(file: string): Promise<{ title?: string; branch?: 
       const whole = read.subarray(0, read.lastIndexOf(0x0a) + 1);
       facts.customTitle = lastRecordField(whole, 'custom-title', 'customTitle') ?? facts.customTitle;
       facts.aiTitle = lastRecordField(whole, 'ai-title', 'aiTitle') ?? facts.aiTitle;
-      facts.branch = lastBranch(whole) ?? facts.branch;
+      const foundBranch = lastBranch(whole);
+      facts.branch = foundBranch === null ? undefined : (foundBranch ?? facts.branch);
       // Written on the first record, so only the read from the top can see it.
       if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });

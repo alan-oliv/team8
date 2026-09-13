@@ -903,6 +903,16 @@ describe('listTeamSummaries', () => {
       expect((await rowOf(ID))?.branch).toBeUndefined();
     });
 
+    // The cache only holds the LATEST chunk's finding — a session that goes
+    // detached after an earlier listing already cached its real branch must
+    // not keep showing that stale name forever.
+    it('drops a cached real branch once a later chunk records a detached HEAD', async () => {
+      await write(ID, [{ type: 'user', cwd, gitBranch: 'main' }]);
+      expect((await rowOf(ID))?.branch).toBe('main');
+      await fs.appendFile(file(ID), JSON.stringify({ type: 'user', cwd, gitBranch: 'HEAD' }) + '\n');
+      expect((await rowOf(ID))?.branch).toBeUndefined();
+    });
+
     it("names an ended team by its lead session's title and branch", async () => {
       const lead = 'ffffffff-5555-5555-5555-555555555555';
       const cfg = team('session-titled', { createdAt: 10, leadSessionId: lead, members: 2 });
