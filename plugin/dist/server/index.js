@@ -5750,6 +5750,55 @@ async function readSessions(sessionsRoot) {
   }
   return facts;
 }
+var transcriptFacts = /* @__PURE__ */ new Map();
+function lastRecordField(buf, type, key) {
+  const marker = `"type":"${type}"`;
+  for (let at = buf.lastIndexOf(marker); at >= 0; at = at > 0 ? buf.lastIndexOf(marker, at - 1) : -1) {
+    const start = buf.lastIndexOf(10, at) + 1;
+    const end = buf.indexOf(10, at);
+    try {
+      const record = JSON.parse(buf.subarray(start, end < 0 ? buf.length : end).toString("utf8"));
+      const value = record[key];
+      if (record.type === type && typeof value === "string" && value !== "") return value;
+    } catch {
+    }
+  }
+  return void 0;
+}
+function lastBranch(buf) {
+  const marker = '"gitBranch":"';
+  const at = buf.lastIndexOf(marker);
+  if (at < 0) return void 0;
+  const from = at + marker.length;
+  const end = buf.indexOf(34, from);
+  return end > from ? buf.subarray(from, end).toString("utf8") : void 0;
+}
+async function transcriptMeta(file) {
+  let size;
+  try {
+    size = (await fs8.stat(file)).size;
+  } catch {
+    return {};
+  }
+  const known = transcriptFacts.get(file);
+  const offset = known && known.offset <= size ? known.offset : 0;
+  const facts = known && offset > 0 ? { ...known.facts } : {};
+  if (size > offset) {
+    const handle = await fs8.open(file, "r");
+    try {
+      const read = Buffer.alloc(size - offset);
+      await handle.read(read, 0, read.length, offset);
+      const whole = read.subarray(0, read.lastIndexOf(10) + 1);
+      facts.customTitle = lastRecordField(whole, "custom-title", "customTitle") ?? facts.customTitle;
+      facts.aiTitle = lastRecordField(whole, "ai-title", "aiTitle") ?? facts.aiTitle;
+      facts.branch = lastBranch(whole) ?? facts.branch;
+      transcriptFacts.set(file, { offset: offset + whole.length, facts });
+    } finally {
+      await handle.close();
+    }
+  }
+  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch };
+}
 async function branchOf(cwd) {
   if (!cwd) return void 0;
   try {
@@ -5959,6 +6008,7 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
         lastActivityAt = now;
       }
     }
+    const transcript = await transcriptMeta(`${dir}.jsonl`);
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
@@ -5974,8 +6024,8 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
       lastActivityAt,
       live: leadAlive || recent,
       current: false,
-      branch: await branchOf(cwd),
-      goal: sessions.names.get(sessionId),
+      branch: transcript.branch ?? await branchOf(cwd),
+      goal: sessions.names.get(sessionId) ?? transcript.title,
       state: leadAlive ? "live" : recent ? "idle" : "done",
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {},
@@ -6106,6 +6156,13 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
     const subagents = projectsRoot ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession) : 0;
     const leadCwd = lead?.cwd ?? "";
     if (!diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    const leadTranscript = projectsRoot && leadSession ? await transcriptMeta(
+      path10.join(
+        projectsRoot,
+        (sessions.cwds.get(leadSession) ?? leadCwd).replace(/[^a-zA-Z0-9]/g, "-"),
+        `${leadSession}.jsonl`
+      )
+    ) : {};
     teams.push({
       // The DIRECTORY name, not config.name: the ingest gates its own team's
       // config.json on the directory, so a mismatch would make the team
@@ -6118,11 +6175,11 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
       lastActivityAt,
       live: leadAlive || recent,
       current: name === current,
-      branch: await branchOf(lead?.cwd),
+      branch: leadTranscript.branch ?? await branchOf(lead?.cwd),
       // Named after the session actually driving the team. Keyed on
       // config.leadSessionId this was blank for every re-keyed team — the live
       // one showed no name while a four-hour-dead one showed its own.
-      goal: sessions.names.get(leadSession),
+      goal: sessions.names.get(leadSession) ?? leadTranscript.title,
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
       state: leadAlive ? "live" : recent ? "idle" : "done",
@@ -6188,7 +6245,7 @@ function adoptByCwd(teams, leadCwds, leadSessions, sessions, now) {
     best.leadAlive = true;
     best.live = true;
     best.state = "live";
-    best.goal ??= sessions.names.get(sessionId);
+    best.goal = sessions.names.get(sessionId) ?? best.goal;
   }
   return adopted;
 }
