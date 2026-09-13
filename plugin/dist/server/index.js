@@ -6216,7 +6216,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
   if (projectsRoot) {
     const covered = /* @__PURE__ */ new Set([
       ...teams.map((t) => t.leadSessionId),
-      ...liveTeams.values(),
+      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
       ...adopted
     ]);
     const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
