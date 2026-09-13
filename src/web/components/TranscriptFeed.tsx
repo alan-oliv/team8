@@ -142,16 +142,16 @@ function isSubagentCall(text: string): boolean {
   return text === 'Task' || text === 'Agent' || text.startsWith('Task(') || text.startsWith('Agent(');
 }
 
-// `describeTool` (transcript.ts) only ever renders a tool call as `Name` or
-// `Name(args)` — a bare capitalized identifier, optionally followed by one
-// paren group. An assistant's own prose never takes that shape. Marker `⏺` is
-// the one marker shared by a text reply and a tool call, so this is what tells
-// them apart for the wall's default-open row.
-const TOOL_CALL_SHAPE = /^[A-Z][A-Za-z]*(\(|$)/;
-
-/** The newest row that is this agent's own text to read — never a tool call, a diff, or a delivery. */
+/**
+ * The newest row that is this agent's own text to read — never a tool call.
+ * `own` is set at the source (draftsOf in transcript.ts) from the record's own
+ * `text` vs `tool_use` block type, which is the one place that distinction
+ * still exists: both project to marker `⏺`, so nothing about the rendered row
+ * itself — its marker, or the shape of a tool's describeTool text — can be
+ * trusted to tell them apart again.
+ */
 function isOwnReply(line: TranscriptLine): boolean {
-  return line.marker === '⏺' && !line.diff && !TOOL_CALL_SHAPE.test(line.text.split('\n')[0]);
+  return line.own === true;
 }
 
 /**

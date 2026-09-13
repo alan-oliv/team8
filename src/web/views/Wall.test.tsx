@@ -982,6 +982,7 @@ describe('the wall opens each column’s latest message by default', () => {
     marker: '⏺',
     text: 'All caught up.\nNothing blocked.',
     ts: FIXTURE_NOW + 100,
+    own: true,
   };
 
   it('opens the newest own-text row on a real roster, unclicked', () => {

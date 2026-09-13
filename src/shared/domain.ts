@@ -18,6 +18,7 @@ export interface TranscriptLine {
   ts: number;          // epoch ms
   diff?: Diff;         // present only on a line that reports an edit
   sender?: string;     // teammate this row was delivered FROM; absent on the agent's own lines
+  own?: true;          // an assistant `text` block, never a tool call — see draftsOf in transcript.ts
 }
 
 export type DiffSign = ' ' | '-' | '+';

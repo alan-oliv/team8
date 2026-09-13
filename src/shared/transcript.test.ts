@@ -100,7 +100,7 @@ describe('toTranscriptLines', () => {
     expect(lines[0].text).not.toMatch(/\n{3,}| \n|\n /);
   });
 
-  it('maps assistant text to ⏺', () => {
+  it('maps assistant text to ⏺, marked own — the one place a reply is still told apart from a tool call', () => {
     const lines = toTranscriptLines(records[3]);
     expect(lines).toEqual([
       {
@@ -108,20 +108,58 @@ describe('toTranscriptLines', () => {
         marker: '⏺',
         text: "I'll run the probe steps exactly as specified.",
         ts: 1787843385081,
+        own: true,
       },
     ]);
   });
 
-  it('maps assistant tool_use to ⏺ with the salient input', () => {
+  it('maps assistant tool_use to ⏺ with the salient input, and never marks it own', () => {
     expect(toTranscriptLines(records[4])[0]).toEqual({
       id: '5412b8c2-5d6d-4ab3-8e71-04873ee86f26#0',
       marker: '⏺',
       text: 'Bash(sleep 10)',
       ts: 1787843385568,
     });
+    expect(toTranscriptLines(records[4])[0].own).toBeUndefined();
     expect(toTranscriptLines(records[5])[0].text).toBe('ToolSearch(select:TaskList,TaskUpdate,SendMessage)');
     expect(toTranscriptLines(records[8])[0].text).toBe('TaskList');
     expect(toTranscriptLines(records[19])[0].text).toBe('TaskUpdate(1)');
+  });
+
+  // The reviewer's two adversarial cases for the wall's default-open row: a
+  // bare one-word reply with no trailing punctuation, and an MCP tool whose
+  // name starts lowercase. Both used to be told apart by the SHAPE of the
+  // rendered text, which get either of these backwards; `own` comes from the
+  // record's own block type instead; and so cannot.
+  it('marks a bare one-word reply own, never mistaking it for a tool call', () => {
+    const rec: TranscriptRecord = {
+      type: 'assistant',
+      uuid: 'a1',
+      timestamp: '2026-08-27T15:09:55.618Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
+    };
+    expect(toTranscriptLines(rec)[0]).toMatchObject({ text: 'Done.', own: true });
+  });
+
+  it('never marks a lowercase-named MCP tool call own', () => {
+    const rec: TranscriptRecord = {
+      type: 'assistant',
+      uuid: 'a2',
+      timestamp: '2026-08-27T15:09:55.618Z',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'mcp__claude-in-chrome__navigate',
+            input: { url: 'https://example.com' },
+          },
+        ],
+      },
+    };
+    const line = toTranscriptLines(rec)[0];
+    expect(line.text).toBe('mcp__claude-in-chrome__navigate(https://example.com)');
+    expect(line.own).toBeUndefined();
   });
 
   it('maps a plain tool_result to ⎿', () => {
