@@ -630,6 +630,89 @@ describe('an opened row fetches its full text', () => {
   });
 });
 
+// `expandLatest` is what Wall.tsx sets and nothing else does — a column shows
+// its agent's newest own text open, unclicked. "Own text" means marker `⏺`
+// with no diff and a first line that is not `describeTool`'s `Name`/`Name(…)`
+// shape, since that shape is the one thing every tool call has and a reply
+// never does.
+describe('expanding the latest message by default (wall only)', () => {
+  function stubLine(bodies: Record<string, string>) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        const id = new URLSearchParams(url.split('?')[1]).get('id') ?? '';
+        return { ok: true, status: 200, json: async () => ({ id, text: bodies[id] }), url };
+      }),
+    );
+    return calls;
+  }
+  afterEach(() => vi.unstubAllGlobals());
+
+  const REPLY: TranscriptLine[] = [
+    { id: 'r0', marker: '❯', text: 'check the build', ts: 1 },
+    { id: 'r1', marker: '⏺', text: 'Bash(npm test)', ts: 2 },
+    { id: 'r2', marker: '⎿', text: 'All green', ts: 3 },
+    { id: 'r3', marker: '⏺', text: 'All tests pass.\nNo further action needed.', ts: 4 },
+  ];
+  const rows = () => screen.getAllByTestId('transcript-row');
+
+  it('opens the newest own-text row without a click', () => {
+    stubLine({ r3: REPLY[3].text });
+    render(<TranscriptFeed lines={REPLY} size="wall" agent="probe-alpha" expandLatest />);
+    expect(rows()[3].getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('fetches that row full text once, exactly as a click would', async () => {
+    const calls = stubLine({ r3: REPLY[3].text });
+    render(<TranscriptFeed lines={REPLY} size="wall" agent="probe-alpha" expandLatest />);
+    await waitFor(() => expect(calls).toEqual(['/api/line?agent=probe-alpha&id=r3']));
+  });
+
+  it('never opens a tool row, even one newer than the last real reply', () => {
+    const withToolTail: TranscriptLine[] = [
+      ...REPLY,
+      { id: 'r4', marker: '⏺', text: 'Bash(git status)', ts: 5 },
+    ];
+    stubLine({ r3: REPLY[3].text });
+    render(<TranscriptFeed lines={withToolTail} size="wall" agent="probe-alpha" expandLatest />);
+    // Too short to be expandable at all, so it carries no aria-expanded.
+    expect(rows()[4].getAttribute('aria-expanded')).toBeNull();
+    expect(rows()[3].getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('moves the default to a newer reply as it arrives', () => {
+    stubLine({ r3: REPLY[3].text, r5: 'Wrapping up.\nDone for today.' });
+    const { rerender } = render(
+      <TranscriptFeed lines={REPLY} size="wall" agent="probe-alpha" expandLatest />,
+    );
+    const newer: TranscriptLine[] = [
+      ...REPLY,
+      { id: 'r5', marker: '⏺', text: 'Wrapping up.\nDone for today.', ts: 5 },
+    ];
+    rerender(<TranscriptFeed lines={newer} size="wall" agent="probe-alpha" expandLatest />);
+    expect(within(rows()[4]).getByTestId('transcript-text').textContent).toBe('Wrapping up.');
+    expect(rows()[4].getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('leaves a row the operator closed by hand closed, since nothing newer replaced it', () => {
+    stubLine({ r3: REPLY[3].text });
+    const { rerender } = render(
+      <TranscriptFeed lines={REPLY} size="wall" agent="probe-alpha" expandLatest />,
+    );
+    fireEvent.click(screen.getByTestId('transcript-collapse'));
+    rerender(<TranscriptFeed lines={[...REPLY]} size="wall" agent="probe-alpha" expandLatest />);
+    expect(rows()[3].getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('opens nothing by default where the prop is not set, as on the rail', () => {
+    stubLine({ r3: REPLY[3].text });
+    render(<TranscriptFeed lines={REPLY} size="rail" agent="probe-alpha" />);
+    expect(rows()[3].getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
 describe('markdown in an expanded row', () => {
   const RICH: TranscriptLine[] = [
     {

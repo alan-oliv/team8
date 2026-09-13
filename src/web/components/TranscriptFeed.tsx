@@ -1,6 +1,7 @@
 import {
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useLayoutEffect,
   useRef,
@@ -139,6 +140,18 @@ const TYPE_BADGE: CSSProperties = {
 /** A Task/Agent dispatch line, as `describeTool` renders it — never any other tool call. */
 function isSubagentCall(text: string): boolean {
   return text === 'Task' || text === 'Agent' || text.startsWith('Task(') || text.startsWith('Agent(');
+}
+
+// `describeTool` (transcript.ts) only ever renders a tool call as `Name` or
+// `Name(args)` — a bare capitalized identifier, optionally followed by one
+// paren group. An assistant's own prose never takes that shape. Marker `⏺` is
+// the one marker shared by a text reply and a tool call, so this is what tells
+// them apart for the wall's default-open row.
+const TOOL_CALL_SHAPE = /^[A-Z][A-Za-z]*(\(|$)/;
+
+/** The newest row that is this agent's own text to read — never a tool call, a diff, or a delivery. */
+function isOwnReply(line: TranscriptLine): boolean {
+  return line.marker === '⏺' && !line.diff && !TOOL_CALL_SHAPE.test(line.text.split('\n')[0]);
 }
 
 /**
@@ -794,6 +807,7 @@ export function TranscriptFeed({
   agent,
   working = true,
   subagents,
+  expandLatest = false,
 }: {
   lines: TranscriptLine[];
   size: FeedSize;
@@ -803,6 +817,8 @@ export function TranscriptFeed({
   working?: boolean;
   /** This agent's own Task/Agent dispatches, in spawn order. */
   subagents?: Subagent[];
+  /** Wall-only: the newest own-text row starts open, fetched exactly as a click would. */
+  expandLatest?: boolean;
 }) {
   const s = FEED[size];
   const appearance = useAppearance();
@@ -946,6 +962,25 @@ export function TranscriptFeed({
     const live = new Set(lines.map((l) => l.id));
     return [...older.filter((l) => !live.has(l.id)), ...lines].slice(-RENDER_LIMIT);
   }, [older, lines]);
+
+  // The row the wall opens without a click. Recomputed on every change to
+  // `shown`, so a new reply becomes the default the moment it lands.
+  const latestMessageId = useMemo(() => {
+    if (!expandLatest) return undefined;
+    for (let i = shown.length - 1; i >= 0; i--) {
+      if (isOwnReply(shown[i])) return shown[i].id;
+    }
+    return undefined;
+  }, [shown, expandLatest]);
+
+  // Runs only when the id itself changes — never when the operator's own click
+  // changes `open` — so a row closed by hand stays closed until a genuinely
+  // newer message takes over the default.
+  useEffect(() => {
+    if (!latestMessageId) return;
+    setOpen((prev) => (prev.has(latestMessageId) ? prev : new Set(prev).add(latestMessageId)));
+    void loadFull(latestMessageId);
+  }, [latestMessageId, loadFull]);
 
   // Parsed once per list change rather than per render: the cheap prefix test
   // rejects almost every line, but the ones it accepts run a JSON.parse. Reruns
