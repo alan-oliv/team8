@@ -22,6 +22,11 @@ what superpowers lacks: tracks, the task list, the approval table with its cost
 estimate, and parallel execution in `team8:run`. The console gets a plan tab
 that shows the plan being written, with a progress bar.
 
+Planning is solo: the lead works alone, with no teammates or subagents, until
+it presents the task table. The run's mode (solo, subagents, teammates or
+workflow) is then recommended from the task list by `team8:tasks` Mode, as
+today, and the user can override it.
+
 ## Part 1: the plan skill
 
 Phase 1 (brainstorm) and Phase 3 (approve) keep their shape. Phase 2 changes:
@@ -37,9 +42,11 @@ Phase 1 (brainstorm) and Phase 3 (approve) keep their shape. Phase 2 changes:
 3. Self-review inline: superpowers' three checks (spec coverage, placeholder
    scan, type consistency), fixed in place.
 4. Tracks and `TaskCreate` at the end, as today, then two more checks before
-   the approval table, because tasks run in parallel in one checkout:
-   - no two tracks own the same file;
-   - every task that consumes another task's output has it in `blockedBy`.
+   the approval table, because tasks run in parallel in one checkout. Both
+   fixes touch the task list only, never the plan:
+   - two tracks own the same file → put both tasks in one track, in order;
+   - a task consumes another task's output without blocking on it → add the
+     blocker with `TaskUpdate addBlockedBy`.
 
 New rule, stated in both `SKILL.md` and `writing-plans.md`: **code in the plan
 is written, not run.** No builds, prototypes or scratch code. If a step rests
@@ -58,8 +65,8 @@ Files:
   plan in one Write and for running plan code).
 - `plugin/skills/plan/writing-plans.md`: "Checkpoints With the Reviewer"
   becomes "Writing in Pieces" (skeleton, then one Edit per task, the progress
-  line); the parallel checks go at the end of "Create the Tasks". The text
-  copied from superpowers stays as it is.
+  line); the parallel checks and their fixes go at the end of "Create the
+  Tasks". The text copied from superpowers stays as it is.
 - `README.md`: the `team8:plan` paragraph.
 
 Run log template, Plan section:
@@ -71,14 +78,20 @@ Not changed: `team8:run`, `team8:tasks`.
 
 ## Part 2: the console plan tab
 
-**Finding the plan (server).** At the publish boundary (`src/server/index.ts`,
-where `mode` and `workflows` are layered on), look in
-`<folder>/docs/team8/plans/` for the newest `*.md` modified at or after the
-session's `startedAt`. `folder` is `TeamState.folder`, and for a session with
-no team config (a lead planning alone), the lead session's cwd, which the team
-listing already resolves (`leadCwds`, `index.ts:950–1005`) and which
-`leadFacts` carries next to `branch`. `publish` is synchronous, so the lookup
-uses sync fs calls and re-reads the file only when its mtime changes.
+**Finding the plan (server).** The plan is the file the lead itself wrote: at
+the publish boundary (`src/server/index.ts`, where `mode` and `workflows` are
+layered on), take the newest `file_path` among the lead's own `Write` and
+`Edit` calls in the stored transcript events that matches
+`/docs/team8/plans/[^/]+\.md$`, and read that file. The path is absolute, so no
+folder lookup is needed, and a plan written by another session in the same
+folder is never picked up. The store keeps 1,000 transcript records per agent
+(`src/server/store.ts`), so the path is remembered per lead session once seen,
+and the tab survives those records aging out. `publish` is synchronous, so the
+read uses sync fs calls and re-reads the file only when its mtime changes.
+
+Known shortcut: a server restart after the plan's writes have aged out of the
+store loses the tab. By then the plan has long been approved. Marked in code
+with a `ponytail:` comment.
 
 **Reading it.** A task is a line matching `^### Task (\d+): (.+)$`. Its section
 runs to the next such heading or the end of the file. It is *written* when its
@@ -86,36 +99,43 @@ section has a line matching `^- \[[ x]\] \*\*Step`. Text before the first task
 is ignored.
 
 **On the wire.** `TeamState.plan?: PlanProgress`, where
-`PlanProgress = { path: string; tasks: Array<{ n: number; title: string; written: boolean }> }`.
-It is absent when there's no plan file. Section text is not in the frame; one
-task's section comes from `GET /api/plan-task?n=<n>`, next to `/api/line` in
-`src/server/http.ts`, and returns 404 when there's no plan or no such task.
+`PlanProgress = { path: string; mtime: number; tasks: Array<{ n: number; title: string; written: boolean }> }`.
+It is absent when the lead has written no plan. Section text is not in the
+frame; one task's section comes from `GET /api/plan-task?n=<n>`, built like
+`/api/line` in `src/server/http.ts`: 400 without `n`, 404 when there's no plan
+or no such task.
 
-**The tab (web).** `plan` joins the view switcher whenever `state.plan` exists,
-with or without teammates. `src/web/views/Plan.tsx`:
+**The tab (web).** `plan` joins the view switcher of the solo and team layouts
+whenever `state.plan` exists, and not the workflow layout: workflow mode starts
+only after approval, when every task is written. `src/web/views/Plan.tsx`:
 - a strip in the Tasks progress strip's style: `PLAN`, the percentage, `3 of 7
   tasks written`, the plan's path, and a one-segment bar;
 - one row per task: `N`, the title, `outlined` or `written`;
 - clicking a row fetches its section and shows it below the row as monospace
-  text; clicking again closes it;
+  text; clicking again closes it; an open section is fetched again when
+  `mtime` changes, so a task you opened while outlined fills in as it's
+  written;
 - a plan with no task headings yet shows the strip at `0 of 0` and no rows.
-
-Known shortcut: two sessions planning in the same folder at once would both
-show the newer plan. Marked in code with a `ponytail:` comment.
 
 ## Testing
 
 - **Plan reader** (unit): headings and titles; written versus outlined,
-  including `[x]`; text before the first task ignored; no headings; picking
-  the newest file at or after `startedAt` and ignoring older ones; a missing
-  directory.
-- **Endpoint**: a task's section; 404 for an unknown task and for no plan.
+  including `[x]`; text before the first task ignored; no headings.
+- **Finding the plan** (unit): the path comes from the lead's newest `Write`
+  or `Edit` under `docs/team8/plans/`; another agent's writes and other paths
+  are ignored; the path is still known after those records are dropped; no
+  such call means no `plan`.
+- **Endpoint**: a task's section; 400 without `n`; 404 for an unknown task and
+  for no plan.
 - **`Plan.tsx`**: the percentage and count; each row's state; a click opens
-  and closes the section.
-- **`App.tsx`**: `plan` is offered only when `state.plan` exists.
+  and closes the section; an open section is fetched again when `mtime`
+  changes.
+- **`App.tsx`**: `plan` is offered in the solo and team layouts only when
+  `state.plan` exists, and never in the workflow layout.
 - `npm test` and the typecheck pass; `plugin/dist` rebuilt.
 - **The skill**, in one fresh-session `/team8:plan` on a small change:
   - a progress line after every task;
   - the console bar counts up as tasks are written;
   - no code written outside the plan file;
+  - no teammate or subagent spawned before the task table;
   - planning takes a fraction of 391's 54 minutes.
