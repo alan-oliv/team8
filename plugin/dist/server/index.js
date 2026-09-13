@@ -5765,6 +5765,14 @@ function lastRecordField(buf, type, key) {
   }
   return void 0;
 }
+function firstEntrypoint(buf) {
+  const marker = '"entrypoint":"';
+  const at = buf.indexOf(marker);
+  if (at < 0) return void 0;
+  const from = at + marker.length;
+  const end = buf.indexOf(34, from);
+  return end > from ? buf.subarray(from, end).toString("utf8") : void 0;
+}
 function lastBranch(buf) {
   const marker = '"gitBranch":"';
   const at = buf.lastIndexOf(marker);
@@ -5792,12 +5800,13 @@ async function transcriptMeta(file) {
       facts.customTitle = lastRecordField(whole, "custom-title", "customTitle") ?? facts.customTitle;
       facts.aiTitle = lastRecordField(whole, "ai-title", "aiTitle") ?? facts.aiTitle;
       facts.branch = lastBranch(whole) ?? facts.branch;
+      if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
     } finally {
       await handle.close();
     }
   }
-  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch };
+  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch, entrypoint: facts.entrypoint };
 }
 async function branchOf(cwd) {
   if (!cwd) return void 0;
@@ -6009,6 +6018,7 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
       }
     }
     const transcript = await transcriptMeta(`${dir}.jsonl`);
+    if (transcript.entrypoint === "sdk-cli") continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
