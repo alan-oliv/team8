@@ -150,17 +150,42 @@ describe('hook', () => {
     expect(permits.list().map((p) => p.id)).toEqual([card.id]);
 
     expect(permits.resolve(card.id, 'allow')).toBe(true);
-    expect(await pending).toEqual({
+    const resolved = await pending;
+    expect(resolved).toEqual({
       status: 200,
       body: {
         hookSpecificOutput: {
           hookEventName: 'PermissionRequest',
-          permissionDecision: 'allow',
-          permissionDecisionReason: '',
+          decision: { behavior: 'allow' },
         },
       },
     });
+    expect(resolved.body).not.toHaveProperty('hookSpecificOutput.permissionDecision');
     expect((of(store.replay(), 'needsyou-resolved').at(-1)!.payload as { id: string }).id).toBe(card.id);
+  });
+
+  it('answers a denied PermissionRequest with the reason as decision.message', async () => {
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf migrations/legacy' },
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      timeout: 10000,
+    });
+
+    const card = of(store.replay(), 'needsyou').at(-1)!.payload as NeedsYouItem;
+    expect(permits.resolve(card.id, 'deny', 'not while migrations are running')).toBe(true);
+    const resolved = await pending;
+    expect(resolved).toEqual({
+      status: 200,
+      body: {
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: { behavior: 'deny', message: 'not while migrations are running' },
+        },
+      },
+    });
+    expect(resolved.body).not.toHaveProperty('hookSpecificOutput.permissionDecision');
   });
 });
 

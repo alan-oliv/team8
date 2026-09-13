@@ -145,8 +145,10 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           body: {
             hookSpecificOutput: {
               hookEventName: 'PermissionRequest',
-              permissionDecision: decided.decision,
-              permissionDecisionReason: decided.reason ?? '',
+              decision:
+                decided.decision === 'allow'
+                  ? { behavior: 'allow' }
+                  : { behavior: 'deny', message: decided.reason ?? '' },
             },
           },
         };
