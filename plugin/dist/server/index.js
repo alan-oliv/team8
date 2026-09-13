@@ -2648,6 +2648,7 @@ function buildRoster(config, sidecars) {
 var DIFF_LINES_CAP = 300;
 var DIFF_LINE_TEXT_CAP = 200;
 var CONSOLE_SENDER = "console";
+var ALL_FOLDERS = "*";
 var WORKFLOW_BURN_SAMPLES = 60;
 
 // src/shared/mailbox.ts
@@ -6054,6 +6055,15 @@ async function listFolders(projectsRoot) {
   folders.sort((a, b) => b.at - a.at);
   return folders.map(({ at: _at, ...folder }) => folder);
 }
+async function listAllFolders(teamsRoot2, sessionsRoot, current, projectsRoot) {
+  const folders = await listFolders(projectsRoot);
+  const teams = [];
+  for (const f of folders) {
+    const one = await listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, f.path);
+    teams.push(...one.teams.map((t) => ({ ...t, folder: f.name })));
+  }
+  return { current, teams, folder: ALL_FOLDERS, folders };
+}
 async function folderScope(projectsRoot, fallback, folder) {
   if (!folder || folder === fallback) return fallback;
   const known = await listFolders(projectsRoot);
@@ -6385,7 +6395,7 @@ async function main(argv) {
     stream: hub,
     state: publish,
     readOnly: cli.readOnly,
-    listTeams: async (folder) => listTeamSummaries(
+    listTeams: async (folder) => folder === ALL_FOLDERS ? listAllFolders(teamsRoot2, sessionsRoot, currentTeam, projectsRoot) : listTeamSummaries(
       teamsRoot2,
       sessionsRoot,
       currentTeam,
@@ -6469,6 +6479,7 @@ export {
   discoverTeam,
   fencedSink,
   folderScope,
+  listAllFolders,
   listFolders,
   listTeamSummaries,
   main,
