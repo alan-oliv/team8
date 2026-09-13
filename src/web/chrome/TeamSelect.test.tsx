@@ -160,7 +160,9 @@ it('shortens an unnamed session-only row instead of showing its full uuid', asyn
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  expect(within(rows[2]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
+  // Sorted A to Z by displayed name: goal, then "session-51a30a6b", then
+  // "session-b5129c7b" — the new row lands between the other two, not last.
+  expect(within(rows[1]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
 });
 
 it('carries the agent count and state on the second line', async () => {
@@ -219,7 +221,9 @@ it('routes a session-only row to /s/:sessionId instead of posting the team switc
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[2]);
+  // Sorted A to Z by displayed name: goal, then "session-abc12345", then
+  // "session-b5129c7b" — the new row lands between the other two, not last.
+  fireEvent.click(rows[1]);
 
   expect(assign).toHaveBeenCalledWith('/s/abc12345');
   expect(fetchMock).not.toHaveBeenCalledWith('/api/teams/abc12345/select', expect.anything());
@@ -621,6 +625,39 @@ const selectPosts = () =>
   (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
     .map((c) => c[0] as string)
     .filter((p) => p.includes('/select'));
+
+// The server's order — current first, then live — is not the picker's order.
+// The picker re-sorts A to Z by what each row actually shows, case-insensitive,
+// and a goal governs that sort ahead of the directory name underneath it.
+it("sorts rows A to Z by displayed name, case-insensitive, ignoring the server's order", async () => {
+  const [current, other] = sampleTeams();
+  listOf([
+    { ...current, goal: 'Bravo Goal', state: 'live' as const },
+    { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
+    { ...other, name: 'session-11110000', goal: 'alpha task', current: false, live: false, state: 'idle' as const },
+  ]);
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  expect(rows.map((r) => within(r).getByTestId('team-title').textContent)).toEqual([
+    'alpha task',
+    'Bravo Goal',
+    'session-9999zzz',
+  ]);
+});
+
+// Wherever the current row lands in the re-sorted list, the keyboard cursor
+// has to start there, not on the server's index for it.
+it('starts the cursor on the current row wherever it sorts', async () => {
+  const [current, other] = sampleTeams();
+  listOf([
+    { ...current, goal: 'Zulu Goal', state: 'live' as const },
+    { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
+  ]);
+  renderSelect();
+  await screen.findAllByRole('option');
+  const list = screen.getByRole('listbox', { name: 'teams' });
+  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
+});
 
 // A workflow's agents never enter members[], so the session running one has a
 // roster of 1 and is indistinguishable from an empty window on every other

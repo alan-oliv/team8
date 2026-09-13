@@ -110,6 +110,13 @@ function displayName(team: TeamSummary): string {
   return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
 }
 
+export function byDisplayName(a: TeamSummary, b: TeamSummary): number {
+  return (
+    displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' }) ||
+    (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  );
+}
+
 function matchesQuery(team: TeamSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -169,7 +176,8 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         setTeams(payload.teams);
         setScope(payload.folder ?? '');
         setFolders(payload.folders ?? []);
-        setCursor(Math.max(0, payload.teams.findIndex((t) => t.name === current)));
+        const sorted = payload.teams.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+        setCursor(Math.max(0, sorted.findIndex((t) => t.name === current)));
         setLoading(false);
       })
       .catch(() => {
@@ -264,7 +272,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // The `✕` stays: taking a row out is an operator's choice, not a rule.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
   const listed = teams ?? [];
-  const rows = listed.filter((t) => !watch.hidden.has(t.name));
+  const rows = listed.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
   const hiddenCount = listed.length - rows.length;
   const filteredRows = rows.filter((t) => matchesQuery(t, query));
   const teamCount = rows.length;
