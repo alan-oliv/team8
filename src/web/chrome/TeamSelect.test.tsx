@@ -167,6 +167,34 @@ it('shortens an unnamed session-only row instead of showing its full uuid', asyn
   expect(within(rows[1]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
 });
 
+// The title shortens a session-only row's full uuid, but the id line under it
+// is a second, separate read of `team.name` — a goal on the row (a transcript
+// title) must not let that second read spell out all 36 characters either.
+it('shortens a session-only row id line to the short id even when the row has a goal', async () => {
+  const teams = [
+    ...LIST.teams,
+    {
+      ...LIST.teams[1],
+      name: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
+      goal: 'adding-folders',
+      sessionOnly: true,
+      subagents: 2,
+    },
+  ];
+  fetchMock = vi.fn((path: string) =>
+    path === '/api/teams'
+      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  const row = rows.find((r) => within(r).getByTestId('team-title').textContent === 'adding-folders')!;
+  expect(within(row).getByTestId('team-id').textContent).toBe('session-51a30a6b');
+});
+
 it('carries the agent count and state on the second line', async () => {
   renderSelect();
   const rows = await screen.findAllByRole('option');

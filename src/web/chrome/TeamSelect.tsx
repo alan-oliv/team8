@@ -108,16 +108,19 @@ function agentCount(team: TeamSummary): string {
 }
 
 /**
- * The row's title when the operator never named the session. A team's own
- * `name` is already a short directory id (`session-<8>`); a `sessionOnly`
- * row's `name` is the FULL session uuid (domain.ts), so that is the one case
- * needing the same shortening `WorkflowRun`'s `shortId` applies elsewhere —
- * otherwise the row is the one place in the picker that spells out all 36
- * characters.
+ * A team's own `name` is already a short directory id (`session-<8>`); a
+ * `sessionOnly` row's `name` is the FULL session uuid (domain.ts), so this is
+ * the one case needing the same shortening `WorkflowRun`'s `shortId` applies
+ * elsewhere. Every row's id — title fallback and the id line beneath a goal
+ * alike — routes through here, so neither spells out all 36 characters.
  */
-function displayName(team: TeamSummary): string {
-  if (team.goal) return team.goal;
+function rowId(team: TeamSummary): string {
   return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
+}
+
+/** The row's title when the operator never named the session. */
+function displayName(team: TeamSummary): string {
+  return team.goal || rowId(team);
 }
 
 export function byDisplayName(a: TeamSummary, b: TeamSummary): number {
@@ -494,7 +497,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 flex: 'none',
               }}
             >
-              {team.name}
+              {rowId(team)}
             </span>
           )}
           {/* The run's own name lands with its snapshot, which is
