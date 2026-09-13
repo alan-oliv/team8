@@ -3387,11 +3387,13 @@ function project(events, readOnly, now = Date.now()) {
     agents.map((a) => ({ agent: a.name, spawns: spawnFolds.get(a.name)?.spawns ?? [] })),
     subagentFacts
   );
+  const leadMember = config?.members.find((m) => m.agentId === config.leadAgentId) ?? config?.members[0];
   return {
     teamName: config?.name ?? "",
     sessionName,
     leadSessionId: config?.leadSessionId ?? "",
     branch,
+    folder: leadMember?.cwd,
     // A config-less session has no createdAt, so the lead's own start stands in
     // — the alternative is an elapsed measured from the epoch.
     startedAt: config?.createdAt ?? agents.find((a) => a.isLead)?.startedAt ?? 0,
@@ -5779,7 +5781,8 @@ function lastBranch(buf) {
   if (at < 0) return void 0;
   const from = at + marker.length;
   const end = buf.indexOf(34, from);
-  return end > from ? buf.subarray(from, end).toString("utf8") : void 0;
+  const branch = end > from ? buf.subarray(from, end).toString("utf8") : void 0;
+  return branch === "HEAD" ? void 0 : branch;
 }
 async function transcriptMeta(file) {
   let size;
@@ -6021,7 +6024,8 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
     if (transcript.entrypoint === "sdk-cli") continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
-    if (!diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
+    const state = leadAlive ? "live" : recent ? "idle" : "done";
+    if (state !== "done" && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
     rows.push({
       // The SESSION id, not a team directory: `sessionOnly` below is what tells
       // the client to send it to /api/select-session rather than /select.
@@ -6036,10 +6040,10 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
       current: false,
       branch: transcript.branch ?? await branchOf(cwd),
       goal: sessions.names.get(sessionId) ?? transcript.title,
-      state: leadAlive ? "live" : recent ? "idle" : "done",
+      state,
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {},
-      ...diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}
+      ...state !== "done" && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}
     });
   }
   return rows;
@@ -6165,7 +6169,8 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
     const workflow = projectsRoot ? await workflowOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession, now) : void 0;
     const subagents = projectsRoot ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession) : 0;
     const leadCwd = lead?.cwd ?? "";
-    if (!diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    const state = leadAlive ? "live" : recent ? "idle" : "done";
+    if (state !== "done" && !diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
     const leadTranscript = projectsRoot && leadSession ? await transcriptMeta(
       path10.join(
         projectsRoot,
@@ -6192,10 +6197,10 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
       goal: sessions.names.get(leadSession) ?? leadTranscript.title,
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
-      state: leadAlive ? "live" : recent ? "idle" : "done",
+      state,
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {},
-      ...diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}
+      ...state !== "done" && diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}
     });
   }
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
