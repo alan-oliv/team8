@@ -141,3 +141,107 @@ it('names the character on a card, and still answers on the real id', () => {
   fireEvent.click(screen.getByRole('button', { name: 'approve' }));
   expect(fetchMock).toHaveBeenCalledWith('/api/plans/req-7f3/approve', expect.anything());
 });
+
+const ASK: NeedsYouItem = {
+  ...PERMISSION,
+  id: 'permit-ask',
+  detail: 'AskUserQuestion',
+  questions: [
+    {
+      question: 'Which database?',
+      header: 'DB',
+      multiSelect: false,
+      options: [{ label: 'Postgres', description: 'relational, already in prod' }, { label: 'SQLite' }],
+    },
+    {
+      question: 'Which checks run in CI?',
+      header: 'CI',
+      multiSelect: true,
+      options: [{ label: 'lint' }, { label: 'test' }, { label: 'e2e' }],
+    },
+  ],
+};
+
+const button = (name: string | RegExp) => screen.getByRole('button', { name }) as HTMLButtonElement;
+const lastBody = () => JSON.parse(fetchMock.mock.lastCall![1].body as string);
+
+it('renders each question with its header, options and an other answer in place of allow', () => {
+  render(<NeedsYou items={[ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  expect(screen.getByText('DB')).toBeTruthy();
+  expect(screen.getByText('Which database?')).toBeTruthy();
+  expect(screen.getByText('CI')).toBeTruthy();
+  expect(screen.getByText('Which checks run in CI?')).toBeTruthy();
+  expect(button('Postgres').title).toBe('relational, already in prod');
+  for (const label of ['SQLite', 'lint', 'test', 'e2e']) expect(button(label)).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'other' })).toHaveLength(2);
+  expect(button('deny with reason')).toBeTruthy();
+  expect(screen.getByTestId('permit-countdown').textContent).toBe('90s');
+  expect(screen.queryByRole('button', { name: 'allow' })).toBeNull();
+});
+
+it('keeps submit disabled until every question has an answer', () => {
+  render(<NeedsYou items={[ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  expect(button('submit').disabled).toBe(true);
+  fireEvent.click(button('Postgres'));
+  expect(button('submit').disabled).toBe(true);
+  fireEvent.click(button('lint'));
+  expect(button('submit').disabled).toBe(false);
+});
+
+it('posts the picked answers keyed by question, a later single-select pick replacing the earlier one', () => {
+  render(<NeedsYou items={[ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  fireEvent.click(button('SQLite'));
+  fireEvent.click(button('Postgres'));
+  fireEvent.click(button('lint'));
+  expect(button('SQLite').getAttribute('aria-pressed')).toBe('false');
+  expect(button('Postgres').getAttribute('aria-pressed')).toBe('true');
+  fireEvent.click(button('submit'));
+  expect(fetchMock.mock.lastCall![0]).toBe('/api/permits/permit-ask/allow');
+  expect(lastBody()).toEqual({ answers: { 'Which database?': 'Postgres', 'Which checks run in CI?': 'lint' } });
+});
+
+it('toggles multiSelect options and joins the picks with ", "', () => {
+  render(<NeedsYou items={[ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  fireEvent.click(button('Postgres'));
+  for (const label of ['e2e', 'test', 'lint', 'e2e']) fireEvent.click(button(label));
+  expect(button('e2e').getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(button('submit'));
+  expect(lastBody().answers['Which checks run in CI?']).toBe('lint, test');
+});
+
+it('posts typed free text from other, and a cancelled prompt changes nothing', () => {
+  render(<NeedsYou items={[ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  fireEvent.click(button('Postgres'));
+  vi.spyOn(window, 'prompt').mockReturnValueOnce('MySQL').mockReturnValueOnce(null);
+  const [otherDb, otherCi] = screen.getAllByRole('button', { name: 'other' });
+  fireEvent.click(otherDb);
+  expect(button('Postgres').getAttribute('aria-pressed')).toBe('false');
+  expect(button('other: MySQL')).toBeTruthy();
+  fireEvent.click(otherCi);
+  expect(button('submit').disabled).toBe(true);
+  fireEvent.click(button('test'));
+  fireEvent.click(button('submit'));
+  expect(lastBody()).toEqual({ answers: { 'Which database?': 'MySQL', 'Which checks run in CI?': 'test' } });
+});
+
+it('disables every question button in read-only mode', () => {
+  render(<NeedsYou items={[ASK]} readOnly now={FIXTURE_NOW} />);
+  for (const b of screen.getAllByRole('button')) expect((b as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(button('Postgres'));
+  fireEvent.click(button('lint'));
+  fireEvent.click(button('submit'));
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('still shows a plain allow on a permission hold without questions', () => {
+  render(<NeedsYou items={[PERMISSION]} readOnly={false} now={FIXTURE_NOW} />);
+  expect(button('allow')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'submit' })).toBeNull();
+});
+
+it('keeps every action button at its full width when a card is narrow', () => {
+  // The ellipsis on Action turns off the flex min-content floor, so without
+  // flexShrink 0 the approve/deny buttons shrink and truncate alongside the detail.
+  render(<NeedsYou items={[PLAN, FAILURE, PERMISSION, ASK]} readOnly={false} now={FIXTURE_NOW} />);
+  for (const b of screen.getAllByRole('button')) expect(b.style.flexShrink).toBe('0');
+});

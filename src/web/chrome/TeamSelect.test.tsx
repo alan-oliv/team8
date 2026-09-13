@@ -59,6 +59,7 @@ function renderSelect(props: Partial<Parameters<typeof TeamSelect>[0]> = {}, wat
     watchAgain: vi.fn(),
     hidden: new Set(),
     hideSession: vi.fn(),
+    unhideSession: vi.fn(),
     showHidden: vi.fn(),
     ...watch,
   };
@@ -80,6 +81,7 @@ const WATCH: WatchState = {
   watchAgain: vi.fn(),
   hidden: new Set(),
   hideSession: vi.fn(),
+  unhideSession: vi.fn(),
   showHidden: vi.fn(),
 };
 
@@ -160,7 +162,9 @@ it('shortens an unnamed session-only row instead of showing its full uuid', asyn
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  expect(within(rows[2]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
+  // Sorted A to Z by displayed name: goal, then "session-51a30a6b", then
+  // "session-b5129c7b" — the new row lands between the other two, not last.
+  expect(within(rows[1]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
 });
 
 it('carries the agent count and state on the second line', async () => {
@@ -219,7 +223,9 @@ it('routes a session-only row to /s/:sessionId instead of posting the team switc
 
   renderSelect();
   const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[2]);
+  // Sorted A to Z by displayed name: goal, then "session-abc12345", then
+  // "session-b5129c7b" — the new row lands between the other two, not last.
+  fireEvent.click(rows[1]);
 
   expect(assign).toHaveBeenCalledWith('/s/abc12345');
   expect(fetchMock).not.toHaveBeenCalledWith('/api/teams/abc12345/select', expect.anything());
@@ -537,15 +543,54 @@ it('drops hidden sessions from the list and from the header count', async () => 
   expect(screen.getByTestId('session-count').textContent).toBe(String(rows.length));
 });
 
-// Hiding the last row would otherwise be a one-way door: an empty list with no
-// control left in it to undo the hiding.
-it('keeps a way back in the menu once anything is hidden', async () => {
-  const showHidden = vi.fn();
-  renderSelect({}, { hidden: new Set(['session-b5129c7b']), showHidden });
-  const back = await screen.findByTestId('show-hidden-rows');
-  expect(back.textContent).toContain('1 not shown');
-  fireEvent.click(back);
-  expect(showHidden).toHaveBeenCalled();
+// Hiding the last row would otherwise be a one-way door: a group left in the
+// menu to undo the hiding from, collapsed so it does not reopen every time the
+// picker does.
+it('keeps a way back in the menu once anything is hidden, collapsed by default', async () => {
+  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
+  const toggle = await screen.findByTestId('show-hidden-rows');
+  expect(toggle.textContent).toBe('▸ 1 hidden');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByTestId('row-unhide')).toBeNull();
+});
+
+it('expands into the hidden rows A to Z, dimmed, on a click', async () => {
+  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']) });
+  const toggle = await screen.findByTestId('show-hidden-rows');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.textContent).toBe('▾ 2 hidden');
+
+  // Both rows are hidden, so the main list is empty — every `team-title` left
+  // is one of these, in display-name order.
+  const titles = screen.getAllByTestId('team-title');
+  expect(titles.map((t) => t.textContent)).toEqual([
+    'agents-team-console-design',
+    'session-b5129c7b',
+  ]);
+  expect(titles[0].style.color).toBe('var(--color-neutral-600)');
+});
+
+it('unhides one row at a time, leaving the rest hidden', async () => {
+  const unhideSession = vi.fn();
+  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']), unhideSession });
+  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
+
+  const unhideButtons = screen.getAllByTestId('row-unhide');
+  expect(unhideButtons).toHaveLength(2);
+  fireEvent.click(unhideButtons[1]);
+  expect(unhideSession).toHaveBeenCalledWith('session-b5129c7b');
+  expect(unhideSession).not.toHaveBeenCalledWith('session-98b0b4a7');
+});
+
+it('still selects a hidden row on a click, once its group is expanded', async () => {
+  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
+  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
+
+  const rows = await screen.findAllByRole('option');
+  expect(rows).toHaveLength(2);
+  fireEvent.click(rows[1]);
+  expect(fetchMock).toHaveBeenLastCalledWith(...SWITCH_TO_B5);
 });
 
 it('says the list is empty when every row has been hidden', async () => {
@@ -621,6 +666,39 @@ const selectPosts = () =>
   (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
     .map((c) => c[0] as string)
     .filter((p) => p.includes('/select'));
+
+// The server's order — current first, then live — is not the picker's order.
+// The picker re-sorts A to Z by what each row actually shows, case-insensitive,
+// and a goal governs that sort ahead of the directory name underneath it.
+it("sorts rows A to Z by displayed name, case-insensitive, ignoring the server's order", async () => {
+  const [current, other] = sampleTeams();
+  listOf([
+    { ...current, goal: 'Bravo Goal', state: 'live' as const },
+    { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
+    { ...other, name: 'session-11110000', goal: 'alpha task', current: false, live: false, state: 'idle' as const },
+  ]);
+  renderSelect();
+  const rows = await screen.findAllByRole('option');
+  expect(rows.map((r) => within(r).getByTestId('team-title').textContent)).toEqual([
+    'alpha task',
+    'Bravo Goal',
+    'session-9999zzz',
+  ]);
+});
+
+// Wherever the current row lands in the re-sorted list, the keyboard cursor
+// has to start there, not on the server's index for it.
+it('starts the cursor on the current row wherever it sorts', async () => {
+  const [current, other] = sampleTeams();
+  listOf([
+    { ...current, goal: 'Zulu Goal', state: 'live' as const },
+    { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
+  ]);
+  renderSelect();
+  await screen.findAllByRole('option');
+  const list = screen.getByRole('listbox', { name: 'teams' });
+  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
+});
 
 // A workflow's agents never enter members[], so the session running one has a
 // roster of 1 and is indistinguishable from an empty window on every other
@@ -767,10 +845,9 @@ it('draws the menu at the width its rows were designed for, with an edge', async
   expect(menu.style.border).toBe('1px solid var(--color-neutral-800)');
 });
 
-// The in-world team name is decoration and lives HERE and nowhere else: the
-// session id it sits beside is the real one, in the trigger, the URL and every
-// call the picker makes.
-it('wears the film\'s team name as a chip on the trigger, and only there', () => {
+// The in-world team name is decoration and no longer drawn anywhere: the
+// session id in the trigger, the URL and every call the picker makes stay real.
+it('wears no chip even with a cast theme active, and keeps the goal capped', () => {
   render(
     <CastContext.Provider value={buildCast([], 'lotr')}>
       <WatchContext.Provider value={WATCH}>
@@ -784,28 +861,8 @@ it('wears the film\'s team name as a chip on the trigger, and only there', () =>
       </WatchContext.Provider>
     </CastContext.Provider>,
   );
-  const chip = screen.getByTestId('team-chip');
-  expect(chip.textContent).toBe('the fellowship');
-  // It bleeds rather than wraps, and it never squeezes the session name out.
-  expect(chip.style.flex).toBe('0 0 auto'); // jsdom's serialisation of `none`
-  expect(chip.style.whiteSpace).toBe('nowrap');
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console');
-  expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
-});
-
-it('wears no chip with no theme, and keeps the goal capped', () => {
-  render(
-    <WatchContext.Provider value={WATCH}>
-      <TeamSelect
-        current="session-98b0b4a7"
-        sessionName="agents-team-console"
-        open={false}
-        onOpenChange={vi.fn()}
-        now={FIXTURE_NOW}
-      />
-    </WatchContext.Provider>,
-  );
   expect(screen.queryByTestId('team-chip')).toBeNull();
+  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console');
   expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
 });
 

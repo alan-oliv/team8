@@ -4535,16 +4535,16 @@ function createPermits() {
       held.set(id, {
         permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
         timer,
-        settle: (decision, reason) => settle({ decision, reason })
+        settle: (decision, reason, updatedInput) => settle({ decision, reason, updatedInput })
       });
       return { id, promise };
     },
-    resolve(id, decision, reason) {
+    resolve(id, decision, reason, updatedInput) {
       const entry = held.get(id);
       if (!entry) return false;
       clearTimeout(entry.timer);
       held.delete(id);
-      entry.settle(decision, reason);
+      entry.settle(decision, reason, updatedInput);
       return true;
     },
     list() {
@@ -4614,6 +4614,7 @@ function createHookHandlers(deps) {
         if (deps.readOnly) return { status: 200, body: {} };
         const timeoutMs = num2(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
         const held = permits.hold(agent, toolName ?? "unknown", b.tool_input, timeoutMs);
+        const questions = toolName === "AskUserQuestion" && Array.isArray(bagOf2(b.tool_input).questions) ? bagOf2(b.tool_input).questions : void 0;
         store.append(
           "needsyou",
           {
@@ -4621,8 +4622,9 @@ function createHookHandlers(deps) {
             kind: "permission",
             agent,
             reason: "permission",
-            detail: `${toolName ?? "unknown"} \u2014 awaiting your decision`,
-            expiresAt: Date.now() + holdMsFor(timeoutMs)
+            detail: questions ? `AskUserQuestion \u2014 ${questions.length} question(s) for you` : `${toolName ?? "unknown"} \u2014 awaiting your decision`,
+            expiresAt: Date.now() + holdMsFor(timeoutMs),
+            ...questions ? { questions } : {}
           },
           agent
         );
@@ -4633,8 +4635,7 @@ function createHookHandlers(deps) {
           body: {
             hookSpecificOutput: {
               hookEventName: "PermissionRequest",
-              permissionDecision: decided.decision,
-              permissionDecisionReason: decided.reason ?? ""
+              decision: decided.decision === "allow" ? { behavior: "allow", ...decided.updatedInput ? { updatedInput: decided.updatedInput } : {} } : { behavior: "deny", message: decided.reason ?? "" }
             }
           }
         };
@@ -5131,6 +5132,18 @@ function json(res, status, body) {
   res.end(payload);
 }
 var str4 = (v) => typeof v === "string" ? v : void 0;
+var isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+function answersFor(heldInput, rawAnswers) {
+  if (!isPlainObject(heldInput) || !Array.isArray(heldInput.questions) || !isPlainObject(rawAnswers)) return void 0;
+  const questionTexts = new Set(
+    heldInput.questions.map((q) => isPlainObject(q) ? str4(q.question) : void 0).filter((q) => q !== void 0)
+  );
+  const answers = {};
+  for (const [key, value] of Object.entries(rawAnswers)) {
+    if (typeof value === "string" && questionTexts.has(key)) answers[key] = value;
+  }
+  return Object.keys(answers).length > 0 ? answers : void 0;
+}
 function createHttpServer(deps) {
   const leadName = deps.leadName ?? "team-lead";
   const webDist = deps.webDist ?? DEFAULT_WEB_DIST;
@@ -5355,7 +5368,13 @@ function createHttpServer(deps) {
             return;
           }
           const decision = permitMatch[2] === "allow" ? "allow" : "deny";
-          const ok = deps.permits.resolve(id, decision, str4(body.reason));
+          let updatedInput;
+          if (decision === "allow") {
+            const held = deps.permits.list().find((p) => p.id === id);
+            const answers = held?.toolName === "AskUserQuestion" ? answersFor(held.input, body.answers) : void 0;
+            if (answers) updatedInput = { ...held.input, answers };
+          }
+          const ok = deps.permits.resolve(id, decision, str4(body.reason), updatedInput);
           if (!ok) {
             json(res, 404, { error: "not found", message: `no held permit ${id}` });
             return;

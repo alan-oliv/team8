@@ -1,6 +1,7 @@
 import type { Store } from '../store';
 import { holdMsFor, type Permits } from '../control/permits';
 import { debug, logError, logInfo } from '../log';
+import type { AskQuestion } from '../../shared/domain';
 
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 600_000;
 const SUBAGENT_ID = /^a(.+)-[0-9a-f]{16}$/;
@@ -125,6 +126,10 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
 
         const timeoutMs = num(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
         const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
+        const questions =
+          toolName === 'AskUserQuestion' && Array.isArray(bagOf(b.tool_input).questions)
+            ? (bagOf(b.tool_input).questions as AskQuestion[])
+            : undefined;
         store.append(
           'needsyou',
           {
@@ -132,8 +137,11 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
             kind: 'permission',
             agent,
             reason: 'permission',
-            detail: `${toolName ?? 'unknown'} — awaiting your decision`,
+            detail: questions
+              ? `AskUserQuestion — ${questions.length} question(s) for you`
+              : `${toolName ?? 'unknown'} — awaiting your decision`,
             expiresAt: Date.now() + holdMsFor(timeoutMs),
+            ...(questions ? { questions } : {}),
           },
           agent,
         );
@@ -145,8 +153,10 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           body: {
             hookSpecificOutput: {
               hookEventName: 'PermissionRequest',
-              permissionDecision: decided.decision,
-              permissionDecisionReason: decided.reason ?? '',
+              decision:
+                decided.decision === 'allow'
+                  ? { behavior: 'allow', ...(decided.updatedInput ? { updatedInput: decided.updatedInput } : {}) }
+                  : { behavior: 'deny', message: decided.reason ?? '' },
             },
           },
         };

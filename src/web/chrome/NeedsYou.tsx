@@ -1,4 +1,5 @@
-import type { NeedsYouItem } from '../../shared/domain';
+import { useState } from 'react';
+import type { AskQuestion, NeedsYouItem } from '../../shared/domain';
 import { postJson } from '../api';
 import { useCast } from '../state/useCast';
 
@@ -23,18 +24,27 @@ function Action({
   tone,
   readOnly,
   onClick,
+  title,
+  pressed,
+  disabled = false,
 }: {
   label: string;
   tone: 'accent' | 'neutral';
   readOnly: boolean;
   onClick(): void;
+  title?: string;
+  pressed?: boolean;
+  disabled?: boolean;
 }) {
   const accent = tone === 'accent';
+  const off = readOnly || disabled;
   return (
     <button
       type="button"
       className={accent ? 'btn-approve' : 'btn-neutral'}
-      disabled={readOnly}
+      disabled={off}
+      title={title}
+      aria-pressed={pressed}
       onClick={onClick}
       style={{
         border: `1px solid var(--color-${accent ? 'accent-700' : 'neutral-800'})`,
@@ -43,8 +53,12 @@ function Action({
         padding: '1px 8px',
         fontSize: 10.5,
         whiteSpace: 'nowrap',
-        opacity: readOnly ? 0.45 : 1,
-        cursor: readOnly ? 'not-allowed' : 'pointer',
+        flexShrink: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        opacity: off ? 0.45 : 1,
+        cursor: off ? 'not-allowed' : 'pointer',
       }}
     >
       {label}
@@ -56,6 +70,8 @@ function Card({ item, readOnly, now }: { item: NeedsYouItem; readOnly: boolean; 
   // The card names the agent to the operator, so it names the character. Every
   // answer below is posted on the item's own id and is untouched by the theme.
   const who = useCast().asChar(item.agent).display;
+  // Per question: the option labels picked, or the text typed into `other`.
+  const [answers, setAnswers] = useState<Record<string, string[] | string>>({});
 
   if (item.kind === 'failure') {
     return (
@@ -78,11 +94,25 @@ function Card({ item, readOnly, now }: { item: NeedsYouItem; readOnly: boolean; 
   }
 
   const permission = item.kind === 'permission';
-  return (
-    <div
-      data-testid={permission ? 'card-permission' : 'card-plan'}
-      style={{ ...CARD_BASE, flex: 1, minWidth: 0, border: '1px solid var(--warn-edge)' }}
-    >
+  const questions = permission ? (item.questions ?? []) : [];
+  const answerOf = (q: AskQuestion) => {
+    const a = answers[q.question] ?? [];
+    if (typeof a === 'string') return a;
+    return q.options.filter((o) => a.includes(o.label)).map((o) => o.label).join(', ');
+  };
+  const pick = (q: AskQuestion, label: string) => {
+    const a = answers[q.question];
+    const picked = Array.isArray(a) ? a : [];
+    const next = !q.multiSelect
+      ? [label]
+      : picked.includes(label)
+        ? picked.filter((l) => l !== label)
+        : [...picked, label];
+    setAnswers({ ...answers, [q.question]: next });
+  };
+
+  const head = (
+    <>
       <span style={{ color: 'var(--warn)', fontSize: 11, whiteSpace: 'nowrap' }}>
         {`${who} · ${item.reason}`}
       </span>
@@ -98,12 +128,26 @@ function Card({ item, readOnly, now }: { item: NeedsYouItem; readOnly: boolean; 
       )}
       {permission ? (
         <>
-          <Action
-            label="allow"
-            tone="accent"
-            readOnly={readOnly}
-            onClick={() => void postJson(`/api/permits/${item.id}/allow`)}
-          />
+          {questions.length ? (
+            <Action
+              label="submit"
+              tone="accent"
+              readOnly={readOnly}
+              disabled={!questions.every(answerOf)}
+              onClick={() =>
+                void postJson(`/api/permits/${item.id}/allow`, {
+                  answers: Object.fromEntries(questions.map((q) => [q.question, answerOf(q)])),
+                })
+              }
+            />
+          ) : (
+            <Action
+              label="allow"
+              tone="accent"
+              readOnly={readOnly}
+              onClick={() => void postJson(`/api/permits/${item.id}/allow`)}
+            />
+          )}
           <Action
             label="deny with reason"
             tone="neutral"
@@ -135,6 +179,70 @@ function Card({ item, readOnly, now }: { item: NeedsYouItem; readOnly: boolean; 
           />
         </>
       )}
+    </>
+  );
+
+  const card = { ...CARD_BASE, flex: 1, minWidth: 0, border: '1px solid var(--warn-edge)' } as const;
+  if (!questions.length) {
+    return (
+      <div data-testid={permission ? 'card-permission' : 'card-plan'} style={card}>
+        {head}
+      </div>
+    );
+  }
+
+  // The strip is one line; a question card grows downward instead: the usual
+  // header row, then one wrapping row per question so it stays usable narrow.
+  return (
+    <div data-testid="card-permission" style={{ ...card, flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>{head}</div>
+      {questions.map((q) => {
+        const a = answers[q.question];
+        const typed = typeof a === 'string' ? a : undefined;
+        return (
+          <div key={q.question} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            <span
+              style={{
+                border: '1px solid var(--color-neutral-800)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0 5px',
+                fontSize: 10,
+                color: 'var(--color-neutral-500)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {q.header}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}>{q.question}</span>
+            {q.options.map((o) => {
+              const on = Array.isArray(a) && a.includes(o.label);
+              return (
+                <Action
+                  key={o.label}
+                  label={o.label}
+                  title={o.description}
+                  tone={on ? 'accent' : 'neutral'}
+                  pressed={on}
+                  readOnly={readOnly}
+                  onClick={() => pick(q, o.label)}
+                />
+              );
+            })}
+            <Action
+              label={typed === undefined ? 'other' : `other: ${typed}`}
+              title={typed}
+              tone={typed === undefined ? 'neutral' : 'accent'}
+              pressed={typed !== undefined}
+              readOnly={readOnly}
+              onClick={() => {
+                const text = window.prompt(q.question);
+                if (!text) return;
+                setAnswers({ ...answers, [q.question]: text });
+              }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

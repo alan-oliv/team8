@@ -37,6 +37,8 @@ export function parseHidden(raw: string | null): ReadonlySet<string> {
 export interface HiddenSessions {
   hidden: ReadonlySet<string>;
   hide(name: string): void;
+  /** Puts one hidden session back, leaving the rest hidden. */
+  unhide(name: string): void;
   /**
    * Unhide everything. Held here rather than inside the picker so the empty
    * screen can offer the same control — hiding the last row must never be a
@@ -75,7 +77,16 @@ export function useHiddenSessions(): HiddenSessions {
     [hidden, persist],
   );
 
+  const unhide = useCallback(
+    (name: string) => {
+      const next = new Set(hidden);
+      next.delete(name);
+      persist(next);
+    },
+    [hidden, persist],
+  );
+
   const showAll = useCallback(() => persist(new Set()), [persist]);
 
-  return { hidden, hide, showAll };
+  return { hidden, hide, unhide, showAll };
 }

@@ -53,4 +53,12 @@ describe('createPermits', () => {
   it('states the exact auto-deny reason', () => {
     expect(autoDenyReason(600000)).toBe('auto-denied after 540000ms with no operator response');
   });
+
+  it('carries updatedInput through an allow resolution', async () => {
+    const permits = createPermits();
+    const held = permits.hold('probe-alpha', 'AskUserQuestion', { questions: [] }, 600000);
+    const updatedInput = { questions: [], answers: { 'pick one': 'yes' } };
+    expect(permits.resolve(held.id, 'allow', undefined, updatedInput)).toBe(true);
+    expect(await held.promise).toEqual({ decision: 'allow', reason: undefined, updatedInput });
+  });
 });

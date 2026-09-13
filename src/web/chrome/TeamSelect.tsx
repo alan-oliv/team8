@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { FolderSummary, TeamSummary, TeamsResponse } from '../../shared/domain';
 import { postJson } from '../api';
 import { diffStat, formatElapsed, shortPath } from '../format';
-import { useCast } from '../state/useCast';
 import { useWatch } from '../state/useWatch';
 
 // Derived, not chosen: 2 border + 12 padding + 120.03 ("session-" + 8 hex at the
@@ -111,6 +110,13 @@ function displayName(team: TeamSummary): string {
   return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
 }
 
+export function byDisplayName(a: TeamSummary, b: TeamSummary): number {
+  return (
+    displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' }) ||
+    (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  );
+}
+
 function matchesQuery(team: TeamSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -136,9 +142,6 @@ export interface TeamSelectProps {
 }
 
 export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now }: TeamSelectProps) {
-  // The in-world team name, and the only place it appears: the session id below
-  // it, the listing, the URL and every select call stay real.
-  const inWorld = useCast().theme.team;
   const watch = useWatch();
   const [teams, setTeams] = useState<TeamSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -154,6 +157,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   const [scope, setScope] = useState('');
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [foldersOpen, setFoldersOpen] = useState(false);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -173,7 +177,8 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         setTeams(payload.teams);
         setScope(payload.folder ?? '');
         setFolders(payload.folders ?? []);
-        setCursor(Math.max(0, payload.teams.findIndex((t) => t.name === current)));
+        const sorted = payload.teams.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
+        setCursor(Math.max(0, sorted.findIndex((t) => t.name === current)));
         setLoading(false);
       })
       .catch(() => {
@@ -268,11 +273,15 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // The `✕` stays: taking a row out is an operator's choice, not a rule.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
   const listed = teams ?? [];
-  const rows = listed.filter((t) => !watch.hidden.has(t.name));
+  const rows = listed.filter((t) => !watch.hidden.has(t.name)).sort(byDisplayName);
   const hiddenCount = listed.length - rows.length;
   const filteredRows = rows.filter((t) => matchesQuery(t, query));
   const teamCount = rows.length;
   const cursorTeam = filteredRows[Math.min(cursor, filteredRows.length - 1)];
+  const hiddenRows = listed
+    .filter((t) => watch.hidden.has(t.name))
+    .filter((t) => matchesQuery(t, query))
+    .sort(byDisplayName);
 
   // The chip and the note count SESSIONS ON DISK, which is what the folder menu
   // beside them counts; the header count above the list counts ROWS, because it
@@ -285,6 +294,281 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
       (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
     : '';
+
+  // Shared by the main list and the collapsed hidden group below it: same row
+  // anatomy either way, just dimmed and with `unhide` where `hide` sits.
+  function renderRow(team: TeamSummary, dimmed = false) {
+    const isCurrent = team.name === current;
+    // A dismissed session is still the current one server-side — just
+    // not rendered — so its checkmark would contradict the "not
+    // watching" text sitting right below it. Drop the mark instead.
+    const notWatching = isCurrent && watch.dismissed;
+    const run = runOf(team);
+    const rowMark = mark?.team === team.name ? mark.kind : isCurrent && !notWatching ? 'current' : null;
+    const state = team.state ?? (team.live ? 'live' : 'done');
+    return (
+      <div
+        key={team.name}
+        id={`team-option-${team.name}`}
+        role="option"
+        aria-selected={isCurrent}
+        onClick={() => select(team.name, team.sessionOnly, team.leadSessionId)}
+        style={{
+          padding: '8px 10px',
+          borderRadius: 'var(--radius-sm)',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3px',
+          background: isCurrent ? 'var(--color-bg)' : 'transparent',
+          borderLeft: `2px solid ${isCurrent ? 'var(--color-accent-600)' : 'transparent'}`,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+          <span
+            aria-hidden="true"
+            style={{ fontSize: '10px', color: STATE_COLOR[state] }}
+          >
+            {STATE_GLYPH[state]}
+          </span>
+          {/* Canvas: every row leads with its kind, then the goal —
+              it is how the list tells the four shapes apart without
+              the operator having to read the counts on the line
+              below. Smaller than the trigger's badge (9px / 0 6px),
+              which is the canvas's own pair of sizes. */}
+          <span
+            data-testid="team-kind"
+            style={{
+              color: KIND_STYLE[kindOf(team)].color,
+              fontSize: '9px',
+              border: `1px solid ${KIND_STYLE[kindOf(team)].edge}`,
+              borderRadius: 8,
+              padding: '0 6px',
+              whiteSpace: 'nowrap',
+              flex: 'none',
+            }}
+          >
+            {kindOf(team)}
+          </span>
+          {/* The name the operator gave the session, not the id the
+              directory happens to carry. Falls back to the id when a
+              session was never named, so the row is never blank. */}
+          <span
+            data-testid="team-title"
+            style={{
+              color: dimmed ? 'var(--color-neutral-600)' : 'var(--color-text)',
+              fontSize: '12px',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {displayName(team)}
+          </span>
+          <span style={{ flex: 1 }} />
+          {rowMark && (
+            <span
+              data-testid="team-mark"
+              style={{
+                fontSize: '10.5px',
+                flex: 'none',
+                color:
+                  rowMark === 'current'
+                    ? 'var(--color-accent-400)'
+                    : MARK_COLOR[rowMark],
+              }}
+            >
+              {rowMark === 'current' ? '✓' : MARK_TEXT[rowMark]}
+            </span>
+          )}
+          {isCurrent && !watch.dismissed && (
+            <button
+              type="button"
+              data-testid="row-stop-watching"
+              onClick={(e) => {
+                e.stopPropagation();
+                watch.requestStopWatching();
+              }}
+              style={{
+                fontSize: '10px',
+                color: 'var(--color-neutral-600)',
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                flex: 'none',
+              }}
+            >
+              stop watching
+            </button>
+          )}
+          {dimmed ? (
+            // The hidden group's own control: puts just this row back,
+            // leaving the rest of the group hidden.
+            <button
+              type="button"
+              data-testid="row-unhide"
+              aria-label={`unhide ${displayName(team)}`}
+              title="put back in this picker"
+              onClick={(e) => {
+                e.stopPropagation();
+                watch.unhideSession(team.name);
+              }}
+              style={{
+                fontSize: '11px',
+                lineHeight: 1,
+                color: 'var(--color-neutral-600)',
+                background: 'transparent',
+                border: 'none',
+                padding: '0 2px',
+                cursor: 'pointer',
+                flex: 'none',
+              }}
+            >
+              {'↺'}
+            </button>
+          ) : (
+            /* Removes the row from this browser's picker. Deliberately
+               offered on every row including the current one — the
+               sessions worth clearing are usually the stale ones you
+               are looking at. Hiding the current session empties the
+               body to `NoSessions`, which carries the way back. */
+            <button
+              type="button"
+              data-testid="row-hide"
+              aria-label={`hide ${displayName(team)}`}
+              title="hide from this picker · nothing is stopped"
+              onClick={(e) => {
+                e.stopPropagation();
+                watch.hideSession(team.name);
+              }}
+              style={{
+                fontSize: '11px',
+                lineHeight: 1,
+                color: 'var(--color-neutral-600)',
+                background: 'transparent',
+                border: 'none',
+                padding: '0 2px',
+                cursor: 'pointer',
+                flex: 'none',
+              }}
+            >
+              {'✕'}
+            </button>
+          )}
+        </div>
+        <div
+          data-testid="team-meta"
+          style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}
+        >
+          {team.goal && (
+            <span
+              data-testid="team-id"
+              style={{
+                color: 'var(--color-neutral-600)',
+                fontSize: '10.5px',
+                whiteSpace: 'nowrap',
+                flex: 'none',
+              }}
+            >
+              {team.name}
+            </span>
+          )}
+          {/* The run's own name lands with its snapshot, which is
+              written at termination — so a live run has only its id,
+              and that is what the row says rather than a placeholder
+              that would read like a name. */}
+          {run && (
+            <span
+              data-testid="team-run"
+              style={{
+                color: 'var(--color-neutral-600)',
+                fontSize: '10.5px',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {run.name ?? run.runId}
+            </span>
+          )}
+          {team.branch && (
+            <span
+              data-testid="team-branch"
+              style={{
+                color: 'var(--color-neutral-600)',
+                fontSize: '10.5px',
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {team.branch}
+            </span>
+          )}
+          {/* The design pairs this with the branch. It reads the
+              narrowest thing a local console can know for certain —
+              which is not self-evident from `+14 −2`, so the row says
+              so rather than leaving it to be assumed. */}
+          {team.diffstat && (
+            <span
+              data-testid="team-diffstat"
+              title="uncommitted in the working tree, against HEAD"
+              style={{
+                color: 'var(--color-neutral-600)',
+                fontSize: '10.5px',
+                whiteSpace: 'nowrap',
+                flex: 'none',
+              }}
+            >
+              {diffStat(team.diffstat.added, team.diffstat.removed)}
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          <span
+            style={{
+              color: 'var(--color-neutral-600)',
+              fontSize: '10px',
+              whiteSpace: 'nowrap',
+              flex: 'none',
+            }}
+          >
+            {agentCount(team)}
+          </span>
+          <span
+            style={{
+              color: 'var(--color-neutral-600)',
+              fontSize: '10px',
+              whiteSpace: 'nowrap',
+              flex: 'none',
+            }}
+          >
+            {/* The kind pill above says WHAT this is, so this cell
+                says what it is DOING — the canvas's own split, whose
+                state column reads `4 working` / `6 subagents` /
+                `9 of 10 slots`. It used to repeat the kind here
+                (`solo · 4 subagents`) because nothing else carried
+                it. A finished session's age wins over either: `ended
+                6h ago` is what the operator picks between rows on. */}
+            {notWatching
+              ? 'running · not watching'
+              : state === 'done'
+                ? stateText(team, now)
+                : run
+                  ? run.live
+                    ? 'running'
+                    : 'ended'
+                  : team.members < 2 && team.subagents
+                    ? `${team.subagents} subagent${team.subagents === 1 ? '' : 's'}`
+                    : stateText(team, now)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'ArrowDown') {
@@ -376,22 +660,6 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         >
           {watch.dismissed ? 'no session selected' : (sessionName ?? current)}
         </span>
-        {inWorld && !watch.dismissed && (
-          <span
-            data-testid="team-chip"
-            style={{
-              color: 'var(--color-accent-300)',
-              fontSize: 10,
-              border: '1px solid var(--color-accent-700)',
-              borderRadius: 8,
-              padding: '0 7px',
-              whiteSpace: 'nowrap',
-              flex: 'none',
-            }}
-          >
-            {inWorld}
-          </span>
-        )}
         <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: 10 }}>
           ▾
         </span>
@@ -607,251 +875,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               padding: '0 8px 8px',
             }}
           >
-            {filteredRows.map((team) => {
-              const isCurrent = team.name === current;
-              // A dismissed session is still the current one server-side — just
-              // not rendered — so its checkmark would contradict the "not
-              // watching" text sitting right below it. Drop the mark instead.
-              const notWatching = isCurrent && watch.dismissed;
-              const run = runOf(team);
-              const rowMark = mark?.team === team.name ? mark.kind : isCurrent && !notWatching ? 'current' : null;
-              const state = team.state ?? (team.live ? 'live' : 'done');
-              return (
-                <div
-                  key={team.name}
-                  id={`team-option-${team.name}`}
-                  role="option"
-                  aria-selected={isCurrent}
-                  onClick={() => select(team.name, team.sessionOnly, team.leadSessionId)}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '3px',
-                    background: isCurrent ? 'var(--color-bg)' : 'transparent',
-                    borderLeft: `2px solid ${isCurrent ? 'var(--color-accent-600)' : 'transparent'}`,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                    <span
-                      aria-hidden="true"
-                      style={{ fontSize: '10px', color: STATE_COLOR[state] }}
-                    >
-                      {STATE_GLYPH[state]}
-                    </span>
-                    {/* Canvas: every row leads with its kind, then the goal —
-                        it is how the list tells the four shapes apart without
-                        the operator having to read the counts on the line
-                        below. Smaller than the trigger's badge (9px / 0 6px),
-                        which is the canvas's own pair of sizes. */}
-                    <span
-                      data-testid="team-kind"
-                      style={{
-                        color: KIND_STYLE[kindOf(team)].color,
-                        fontSize: '9px',
-                        border: `1px solid ${KIND_STYLE[kindOf(team)].edge}`,
-                        borderRadius: 8,
-                        padding: '0 6px',
-                        whiteSpace: 'nowrap',
-                        flex: 'none',
-                      }}
-                    >
-                      {kindOf(team)}
-                    </span>
-                    {/* The name the operator gave the session, not the id the
-                        directory happens to carry. Falls back to the id when a
-                        session was never named, so the row is never blank. */}
-                    <span
-                      data-testid="team-title"
-                      style={{
-                        color: 'var(--color-text)',
-                        fontSize: '12px',
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {displayName(team)}
-                    </span>
-                    <span style={{ flex: 1 }} />
-                    {rowMark && (
-                      <span
-                        data-testid="team-mark"
-                        style={{
-                          fontSize: '10.5px',
-                          flex: 'none',
-                          color:
-                            rowMark === 'current'
-                              ? 'var(--color-accent-400)'
-                              : MARK_COLOR[rowMark],
-                        }}
-                      >
-                        {rowMark === 'current' ? '\u2713' : MARK_TEXT[rowMark]}
-                      </span>
-                    )}
-                    {isCurrent && !watch.dismissed && (
-                      <button
-                        type="button"
-                        data-testid="row-stop-watching"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          watch.requestStopWatching();
-                        }}
-                        style={{
-                          fontSize: '10px',
-                          color: 'var(--color-neutral-600)',
-                          background: 'transparent',
-                          border: 'none',
-                          padding: 0,
-                          cursor: 'pointer',
-                          flex: 'none',
-                        }}
-                      >
-                        stop watching
-                      </button>
-                    )}
-                    {/* Removes the row from this browser's picker. Deliberately
-                        offered on every row including the current one — the
-                        sessions worth clearing are usually the stale ones you
-                        are looking at. Hiding the current session empties the
-                        body to `NoSessions`, which carries the way back. */}
-                    <button
-                      type="button"
-                      data-testid="row-hide"
-                      aria-label={`hide ${displayName(team)}`}
-                      title="hide from this picker · nothing is stopped"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        watch.hideSession(team.name);
-                      }}
-                      style={{
-                        fontSize: '11px',
-                        lineHeight: 1,
-                        color: 'var(--color-neutral-600)',
-                        background: 'transparent',
-                        border: 'none',
-                        padding: '0 2px',
-                        cursor: 'pointer',
-                        flex: 'none',
-                      }}
-                    >
-                      {'✕'}
-                    </button>
-                  </div>
-                  <div
-                    data-testid="team-meta"
-                    style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}
-                  >
-                    {team.goal && (
-                      <span
-                        data-testid="team-id"
-                        style={{
-                          color: 'var(--color-neutral-600)',
-                          fontSize: '10.5px',
-                          whiteSpace: 'nowrap',
-                          flex: 'none',
-                        }}
-                      >
-                        {team.name}
-                      </span>
-                    )}
-                    {/* The run's own name lands with its snapshot, which is
-                        written at termination — so a live run has only its id,
-                        and that is what the row says rather than a placeholder
-                        that would read like a name. */}
-                    {run && (
-                      <span
-                        data-testid="team-run"
-                        style={{
-                          color: 'var(--color-neutral-600)',
-                          fontSize: '10.5px',
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {run.name ?? run.runId}
-                      </span>
-                    )}
-                    {team.branch && (
-                      <span
-                        data-testid="team-branch"
-                        style={{
-                          color: 'var(--color-neutral-600)',
-                          fontSize: '10.5px',
-                          minWidth: 0,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {team.branch}
-                      </span>
-                    )}
-                    {/* The design pairs this with the branch. It reads the
-                        narrowest thing a local console can know for certain —
-                        which is not self-evident from `+14 −2`, so the row says
-                        so rather than leaving it to be assumed. */}
-                    {team.diffstat && (
-                      <span
-                        data-testid="team-diffstat"
-                        title="uncommitted in the working tree, against HEAD"
-                        style={{
-                          color: 'var(--color-neutral-600)',
-                          fontSize: '10.5px',
-                          whiteSpace: 'nowrap',
-                          flex: 'none',
-                        }}
-                      >
-                        {diffStat(team.diffstat.added, team.diffstat.removed)}
-                      </span>
-                    )}
-                    <span style={{ flex: 1 }} />
-                    <span
-                      style={{
-                        color: 'var(--color-neutral-600)',
-                        fontSize: '10px',
-                        whiteSpace: 'nowrap',
-                        flex: 'none',
-                      }}
-                    >
-                      {agentCount(team)}
-                    </span>
-                    <span
-                      style={{
-                        color: 'var(--color-neutral-600)',
-                        fontSize: '10px',
-                        whiteSpace: 'nowrap',
-                        flex: 'none',
-                      }}
-                    >
-                      {/* The kind pill above says WHAT this is, so this cell
-                          says what it is DOING — the canvas's own split, whose
-                          state column reads `4 working` / `6 subagents` /
-                          `9 of 10 slots`. It used to repeat the kind here
-                          (`solo · 4 subagents`) because nothing else carried
-                          it. A finished session's age wins over either: `ended
-                          6h ago` is what the operator picks between rows on. */}
-                      {notWatching
-                        ? 'running · not watching'
-                        : state === 'done'
-                          ? stateText(team, now)
-                          : run
-                            ? run.live
-                              ? 'running'
-                              : 'ended'
-                            : team.members < 2 && team.subagents
-                              ? `${team.subagents} subagent${team.subagents === 1 ? '' : 's'}`
-                              : stateText(team, now)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+            {filteredRows.map((team) => renderRow(team))}
 
             {filteredRows.length === 0 && (
               <div
@@ -873,15 +897,15 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
 
             {/* The way back, in the picker itself as well as on the empty
                 screen — hiding the last row otherwise leaves a list with no
-                control in it at all. */}
+                control in it at all. Collapsed by default: a group of rows
+                the operator already chose to get out of the way should not
+                reappear open every time the menu does. */}
             {hiddenCount > 0 && (
               <button
                 type="button"
                 data-testid="show-hidden-rows"
-                onClick={() => {
-                  watch.showHidden();
-                  setCursor(0);
-                }}
+                aria-expanded={hiddenOpen}
+                onClick={() => setHiddenOpen((o) => !o)}
                 style={{
                   margin: '2px 2px 0',
                   padding: '6px 8px',
@@ -894,9 +918,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   textAlign: 'left',
                 }}
               >
-                {`${hiddenCount} not shown · show ${hiddenCount === 1 ? 'it' : 'them'}`}
+                {`${hiddenOpen ? '▾' : '▸'} ${hiddenCount} hidden`}
               </button>
             )}
+            {hiddenOpen && hiddenRows.map((team) => renderRow(team, true))}
           </div>
 
           <div

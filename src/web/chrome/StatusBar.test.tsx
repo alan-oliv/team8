@@ -399,10 +399,10 @@ it('spends no bar width on a diffstat', () => {
 
 // The design says to measure the bar in the LONGEST team-name state rather than
 // the default. jsdom reports every width as 0, so the fitting itself cannot run
-// here — what is pinnable is that the chip cannot make the bar wrap: it is
-// unshrinkable and nowrap like every other child, so overflow goes to
-// METRIC_RANK's shedding and never to a second line.
-it('carries the longest in-world team name without letting the bar wrap', () => {
+// here — what is pinnable is that the longest film theme still leaves the bar
+// unwrapped and the trigger capped at its fixed width, rather than growing to
+// fit the name (the chip that used to draw that name is gone — task #5).
+it('keeps the bar on one line under the longest film theme', () => {
   const longest = MOVIE_THEMES.reduce((a, b) => (b.team.length > a.team.length ? b : a));
   expect(longest.team).toBe('the fellowship');
 
@@ -423,11 +423,6 @@ it('carries the longest in-world team name without letting the bar wrap', () => 
 
   const bar = screen.getByTestId('bar-wordmark').parentElement!;
   expect(bar.style.flexWrap).toBe('nowrap');
-  const chip = screen.getByTestId('team-chip');
-  expect(chip.textContent).toBe('the fellowship');
-  expect(chip.style.whiteSpace).toBe('nowrap');
-  expect(chip.style.flex).toBe('0 0 auto');
-  // The chip widens the trigger instead of evicting the session id from it.
   expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
   expect(screen.getByTestId('team-trigger-name').style.textOverflow).toBe('ellipsis');
 });
