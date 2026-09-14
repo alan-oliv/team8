@@ -1,25 +1,26 @@
 ---
 name: plan
-description: Use when a feature, subsystem or multi-step change needs a design and an implementation plan before anyone writes code — "plan this", "let's design X", "plan it with the team", "plan and then run it". Brainstorms the design with the user into a spec, then a planner teammate writes the plan while a reviewer teammate checks it as it takes shape, the tasks land on the shared list, and the user approves before team8:run executes.
+description: Use when a feature, subsystem or multi-step change needs a design and an implementation plan before anyone writes code — "plan this", "let's design X", "plan it with the team", "plan and then run it". Brainstorms the design with the user into a spec, then the lead writes the plan in the same session a task at a time, the tasks land on the shared list, and the user approves before team8:run executes.
 ---
 
 # Plan
 
 ## Overview
 
-Three phases. Phases 1 and the plan-writing half of 2 are superpowers'
+Three phases. Phase 1 and the plan-writing half of 2 are superpowers'
 brainstorming and writing-plans, verbatim. team8 begins where the plan
-becomes tasks: a reviewer teammate on the plan, tracks and a task list, a
-run log, and the user's approval before anything runs.
+becomes tasks: tracks and a task list, a run log, and the user's approval
+before anything runs.
 
 1. **Brainstorm** — the lead turns the idea into an approved spec, in dialogue with the user.
-2. **Plan** — a planner teammate writes the plan from this skill's `writing-plans.md` and creates the tasks; a reviewer teammate checks the skeleton, then the full plan; they iterate between themselves.
+2. **Plan** — the lead writes the plan from this skill's `writing-plans.md` in the same session, skeleton first and then one task at a time, and creates the tasks through `team8:tasks`.
 3. **Approve** — the lead shows the task table and asks: adjust, or run. Nothing runs before the user says so.
 
-**Core principle: the lead's context is for the user, not for the plan.** A plan
-that executes across context-free teammates is the largest document in the flow.
-It is written by a teammate, reviewed by a different teammate, and reaches the
-lead as a task table and a file path.
+**Core principle: the plan is written where the user can see it.** The lead
+that brainstormed with the user writes the plan in the same session, a task
+at a time, with a progress line after each. A separate planner starts without
+the conversation, and every question it has becomes a relay round the user
+waits on.
 
 **Every batch leaves a run log** at `docs/team8/runs/YYYY-MM-DD-<topic>.md`:
 who ran, on what model, how many rounds, what it was estimated at, what it
@@ -122,7 +123,7 @@ your path and complete them in order.
 6. **Write design doc** — save to `docs/team8/specs/YYYY-MM-DD-<topic>-design.md` and commit
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
 8. **User reviews written spec** — ask user to review the spec file before proceeding
-9. **Transition to Phase 2** — dispatch planner and reviewer
+9. **Transition to Phase 2** — the lead writes the plan
 
 ### Process Flow
 
@@ -143,7 +144,7 @@ digraph brainstorming {
     "Write design doc" [shape=box];
     "Spec self-review\n(fix inline)" [shape=box];
     "User reviews spec?" [shape=diamond];
-    "Phase 2: dispatch planner + reviewer" [shape=doublecircle];
+    "Phase 2: the lead writes the plan" [shape=doublecircle];
     "Hidden complexity? Upgrade path" [shape=box];
 
     "Classify: spike / bounded / architectural" -> "Present question + probe (2-3 sentences)" [label="spike"];
@@ -164,7 +165,7 @@ digraph brainstorming {
     "Write design doc" -> "Spec self-review\n(fix inline)";
     "Spec self-review\n(fix inline)" -> "User reviews spec?";
     "User reviews spec?" -> "Write design doc" [label="changes requested"];
-    "User reviews spec?" -> "Phase 2: dispatch planner + reviewer" [label="approved"];
+    "User reviews spec?" -> "Phase 2: the lead writes the plan" [label="approved"];
 }
 ```
 
@@ -248,7 +249,7 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 **Implementation:**
 
-- Go to Phase 2. Do NOT invoke any other skill; the planner teammate writes the plan.
+- Go to Phase 2. Do NOT invoke any other skill; the lead writes the plan with this skill's `writing-plans.md`.
 
 ### Visual Companion
 
@@ -271,91 +272,33 @@ this skill's `visual-companion.md` (beside this file; its `scripts/` sit next to
 
 ## Phase 2: Plan
 
-**Before dispatching:** cut the batch branch — `git checkout -b <topic>` — so
+The lead writes the plan in this session. Planning is solo: nothing is
+spawned — no teammate, no subagent — until the user approves the task table
+in Phase 3.
+
+**Before writing:** cut the batch branch — `git checkout -b <topic>` — so
 the plan and the tasks land on it and `team8:run` finds it checked out. Open
 the run log from the template below, fill the Brainstorm section, and commit
 it on the branch.
 
-Spawn both teammates in one message. Never pass `isolation: "worktree"` — it
-spawns a subagent, not a teammate, and a subagent has no task tools and no
-mailbox. Verify both names in `~/.claude/teams/<team>/config.json` right after:
-`jq -r '.members[].name' ~/.claude/teams/<team>/config.json`.
+Read this skill's `writing-plans.md` top to bottom, then write the plan
+exactly as it says:
 
-Both run on the top tier at high effort. The plan is the contract every
-downstream task consumes, and the review is what everything downstream builds
-on. This is not the place to save a model tier.
+1. **Skeleton, one Write:** header, Global Constraints, file structure, and
+   every task's `### Task N: <title>` heading with its `Files` and
+   `Interfaces` blocks. No steps yet. Tell the user
+   `Plan ░░░░░░░ 0/7 · skeleton written`, one cell per task.
+2. **One Edit per task, in order,** adding that task's steps. After each, one
+   line to the user: `Plan ▓▓▓░░░░ 3/7 · Task 3: <title>`. The console's plan
+   tab counts the same thing from the file.
+3. **Self-review inline:** writing-plans' three checks, fixed in place. No
+   subagent.
+4. **Tasks through `team8:tasks`,** as writing-plans' "Create the Tasks" says,
+   including the two checks `team8:tasks` runs before its closing.
 
-Both dispatches name this skill's `writing-plans.md` by absolute path. Resolve
-it from this skill's directory before composing the prompts.
-
-### The planner's dispatch
-
-> You are **planner**. Read `<absolute path to writing-plans.md>` first, top to
-> bottom — it is how the plan gets written, and it ends with the two
-> checkpoints with reviewer and how the tasks get created. Then read
-> `<spec path>` — it is the authority; the plan argues from it. Write the plan
-> exactly as that file says. Save the skeleton and message **reviewer**
-> (checkpoint 1); finish the steps, run the self-review, create the tasks, and
-> message reviewer again with the task count (checkpoint 2). Do not implement
-> anything. Do not spawn subagents. Do not commit. Files you own: the plan
-> file only. The branch `<branch>` is already checked out; do not run
-> `git checkout -b`.
-
-### The reviewer's dispatch
-
-> You are **reviewer**. Read `<absolute path to writing-plans.md>` first — it
-> is the format and the rules the plan has to meet. You are read-only: touch no
-> file. Do not spawn subagents. Do not implement.
->
-> **Checkpoint 1 — the skeleton.** When **planner** messages you a plan path,
-> read the spec and the plan. Run checks 1 and 3 below on what is there, and
-> check the file structure against the code: open the files the plan names
-> and confirm the paths, the line ranges and the patterns it says it copies.
-> Message planner the findings now; a wrong decomposition is cheap to fix
-> before the task steps exist and expensive after.
->
-> **Checkpoint 2 — the full plan.** When planner messages the task count,
-> read the plan again and the task list (`TaskList`, then `TaskGet` on each).
-> Run every check, and write the result of each even when clean:
->
-> 1. **Spec coverage.** Every requirement in the spec → the task that implements
->    it. A requirement with no task is Blocking.
-> 2. **Placeholders.** Every pattern in the No Placeholders section. Each is
->    Blocking.
-> 3. **Interface consistency.** A table: every pair of tasks where one consumes
->    what the other produces — the two tasks, the produced name and type, the
->    consumed name and type, match or mismatch. A mismatch is Blocking.
-> 4. **Tracks.** A table: every pair of tasks that touch the same file — same
->    track or different tracks, read from the task descriptions. Different
->    tracks sharing a file is Blocking: they will run in parallel in one
->    checkout. A task whose description names no track is Blocking.
-> 5. **Blockers.** Every `blockedBy` names something the blocked task reads. Every
->    consumes/produces pair from check 3 has a blocker. A blocker with no read is
->    Minor; a missing blocker is Blocking.
-> 6. **Sizing.** Model matches the description's verbs per `team8:tasks`:
->    mechanical → haiku, standard → sonnet, judgment → opus. A judgment task on
->    haiku is Blocking; the rest is Minor.
-> 7. **Standalone descriptions.** No task description points at a conversation.
->    Every one names its plan section, its track and its owned files. Missing is
->    Blocking.
-> 8. **One to one.** Task count and subjects match the plan.
-> 9. **Right-sizing.** A task a reviewer could not reject on its own, or a step
->    that is more than one action, is Minor.
->
-> Message planner the findings, each labelled Blocking or Minor with the task
-> number and the fix. Re-check after each revision, scoped to the findings and
-> the changelog line. Three rounds maximum after checkpoint 2. When no Blocking
-> finding remains, or after round three, message the lead: `APPROVED` or
-> `RESIDUALS`, the plan path, the task count, the tracks, and any open finding
-> with both sides in one line each.
-
-### While they run
-
-Stay free. Relay one line per checkpoint and per round to the user. If planner
-asks a question only the spec's author can answer, answer it from the spec or
-ask the user — never guess on their behalf. If the reviewer reports
-`RESIDUALS`, rule on each open finding yourself: apply it via planner, or
-state why the plan stands. Do not edit the plan in the lead session.
+**Code in the plan is written, not run.** No builds, prototypes or scratch
+code while planning. If a step rests on something unproven, ask the user;
+settling it is a spike in Phase 1, not work in Phase 2.
 
 ## Phase 3: Approve
 
@@ -364,22 +307,19 @@ Nothing executes until the user has read the task table and said start. An
 approved plan is not an approved run.
 </HARD-GATE>
 
-1. **Ask both teammates to stop.** The plan file is the memory. Executors are
-   fresh teammates that `team8:run` dispatches.
-2. **Fill the Plan section of the run log** — agents, checkpoint findings,
-   rounds, residuals, task and track counts, the estimate total — and
-   **commit the plan and the log** on the batch branch, so every executor can
-   read them.
-3. **Close with the `team8:tasks` ending**: the plan path, the table (task,
+1. **Fill the Plan section of the run log** — self-review fixes, task and
+   track counts, the estimate total — and **commit the plan and the log** on
+   the batch branch, so every executor can read them.
+2. **Close with the `team8:tasks` ending**: the plan path, the table (task,
    blocked by, model, estimate) with its total, the notes (the mode and its
    reason per `team8:tasks` Mode, tracks, what starts now, sizing you were
    unsure about, any residual ruling), and the one ask —
    adjust models, adjust tasks, or start the work. `AskUserQuestion` where
    available, multiSelect on. Adjusting a model re-prices its row; show the
    new total.
-4. **Adjust** edits the task list and, where it changes the plan, the plan
+3. **Adjust** edits the task list and, where it changes the plan, the plan
    file. Show the table again and ask again.
-5. On **start the work**, invoke `team8:run` in the stated mode. The tasks and
+4. On **start the work**, invoke `team8:run` in the stated mode. The tasks and
    the branch exist; `run` skips its own task creation and branch cut.
 
 ## The run log
@@ -404,8 +344,7 @@ pr: <url, at close>
 - spec rounds with the user: <n>
 
 ## Plan
-- planner: opus · high · reviewer: opus · high
-- checkpoint 1: <n> findings · checkpoint 2: <n>/3 rounds · residuals: <n> (<one line each>)
+- plan: written by the lead · self-review fixes: <n> (a batch that skipped this skill: `plan: none · tasks from <Jira | Linear | the user> via team8:tasks`)
 - tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: solo | subagents | teammates | workflow — <reason>
 - estimate: ≈$<total> (per task in the plan's table)
 
@@ -421,14 +360,12 @@ pr: <url, at close>
 
 | Mistake | Fix |
 |---|---|
-| Lead writes the plan itself "to save a spawn" | The plan is the biggest document in the flow. It goes to planner |
-| Planner and reviewer as subagents | Subagents cannot message each other; every round would pass through the lead. Teammates |
-| Dispatching planner before the user approved the spec | The hard gate is the approval, not the spec's length |
-| Invoking `run` because the reviewer said APPROVED | The reviewer approves the plan. Only the user approves the run |
-| Planner writes all task steps before reviewer sees the skeleton | Checkpoint 1 exists so decomposition errors cost minutes, not the whole plan |
-| Reviewer told what not to flag | Let it flag; rule on it in the residuals |
+| Dispatching a planner or reviewer teammate | The lead writes the plan in this session. A separate planner starts without the conversation, and every question becomes a relay round the user waits on |
+| The whole plan in one Write | Skeleton first, then one Edit per task, so the user and the console see it fill in |
+| Building or running the plan's code "to be sure" | Code in the plan is written, not run. Unproven means ask the user; it's a Phase 1 spike |
+| A review subagent on the plan | Self-review inline. Superpowers measured subagent plan review: twice the time, same quality |
+| Writing the plan before the user approved the spec | The hard gate is the approval, not the spec's length |
+| Invoking `run` because the plan looks done | Only the user approves the run |
 | Plan sections that say "similar to Task N" | Repeat the code. Implementers read one section, out of order |
 | Tracks decided in `run` | They are decided when the tasks are created, with file ownership. `run` counts them |
-| Planner keeps running as "plan owner" during execution | The plan file answers executor questions. Stop both teammates before `run` |
-| Dispatch prompts say "read writing-plans.md" without a path | A teammate cannot find this skill's directory. Absolute path |
 | Run log left for "after" | After is when the numbers are gone. Fill each section in the phase that has them |

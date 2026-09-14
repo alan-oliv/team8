@@ -145,24 +145,27 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
-## Checkpoints With the Reviewer
+## Writing in Pieces
 
 Everything above is how the plan is written. This is where team8 deviates:
-the plan is reviewed by a teammate as it takes shape, and it ends as tasks on
-the shared list, not as an execution choice.
+the plan is written where the user can watch it, and it ends as tasks on the
+shared list, not as an execution choice.
 
-**Checkpoint 1 — skeleton.** Save the plan as soon as the header, Global
-Constraints, the file structure, and every task's `Files` and `Interfaces`
-blocks exist, with no steps yet. Message **reviewer**: the plan path and the
-spec path. Keep writing the steps while reviewer reads; fold its findings in
-as they arrive.
+**Skeleton first, in one Write.** The header, Global Constraints, the file
+structure, and every task's `### Task N: <title>` heading with its `Files`
+and `Interfaces` blocks, with no steps yet. Tell the user
+`Plan ░░░░░░░ 0/7 · skeleton written`, one cell per task.
 
-**Checkpoint 2 — full plan.** When every step is written, the self-review is
-done, and the tasks exist (below), message reviewer the task count. Reviewer
-sends findings labelled Blocking or Minor. Fix every Blocking one in both the
-plan and the task list, take or leave the Minor ones, append one line to the
-bottom of the plan — `Round N: <what changed, what was left and why>` — and
-message reviewer again. Three rounds at most; after that the lead rules.
+**Then one Edit per task, in order,** adding that task's steps. After each,
+one line to the user: `Plan ▓▓▓░░░░ 3/7 · Task 3: <title>`. The console
+counts written tasks from the file — a task is written once its section has a
+`- [ ] **Step` line — so keep the heading and the checkbox shape exactly as
+the template above has them.
+
+**Code in the plan is written, not run.** No builds, prototypes or scratch
+code. If a step rests on something unproven, stop and ask the user.
+
+The self-review runs after the last task; the tasks come after it.
 
 ## Create the Tasks
 
@@ -204,3 +207,6 @@ Then `TaskUpdate` each task's `blockedBy` — real dependencies only, the blocke
 task reads something the blocker produces — and its `metadata`
 `{ complexity, model, effort, why }`, sized by decisions required, not lines
 changed. A task missing `metadata` is not created.
+
+Then run the two checks `team8:tasks` runs before its closing: no file owned
+by two tracks, and every consumer blocked on its producer.
