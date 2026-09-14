@@ -58,8 +58,10 @@ it('opens a task\'s section on click and closes it on a second click', async () 
     expect(screen.getByTestId('plan-section').textContent).toBe('### Task 2: Serve it\n\n**Files:**'),
   );
   expect(fetchMock).toHaveBeenCalledWith('/api/plan-task?n=2');
+  expect(screen.getAllByTestId('plan-row')[1].getAttribute('aria-expanded')).toBe('true');
   fireEvent.click(screen.getAllByTestId('plan-row')[1]);
   expect(screen.queryByTestId('plan-section')).toBeNull();
+  expect(screen.getAllByTestId('plan-row')[1].getAttribute('aria-expanded')).toBe('false');
 });
 
 it('fetches an open section again when the plan file changes', async () => {

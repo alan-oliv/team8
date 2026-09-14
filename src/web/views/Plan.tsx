@@ -106,6 +106,7 @@ export function Plan({ plan }: { plan: PlanProgress }) {
               type="button"
               data-testid="plan-row"
               style={ROW}
+              aria-expanded={open === task.n}
               onClick={() => setOpen((o) => (o === task.n ? null : task.n))}
             >
               <span style={{ width: '44px', color: 'var(--color-neutral-600)' }}>{task.n}</span>
