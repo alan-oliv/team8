@@ -65,6 +65,24 @@ Names are tiers — cheapest capable, mid, top. Substitute current names as mode
 - **A decision task blocks whatever the decision changes.** Model an open question as its own task rather than burying it in an implementation task.
 - **Leave parallel work unblocked.** Every needless blocker is serialized time.
 
+## Before the closing: two checks
+
+Tracks run in parallel in one checkout, so two mistakes break a run wherever
+the tasks came from — a plan, a Jira or Linear list, or the user. Check both
+on the finished list, before writing the closing. Both fixes touch the task
+list only, never a plan.
+
+1. **No file belongs to two tracks.** List each task's owned files by track.
+   A file under two tracks: move both tasks into one track, in order, so one
+   teammate does them one after the other, and correct the track line in
+   their descriptions with `TaskUpdate`.
+2. **Every consumer waits on its producer.** A task that reads a type, field,
+   route, file or decision another task produces has that task in its
+   `blockedBy`. Missing: `TaskUpdate` with `addBlockedBy`.
+
+Say the result in the notes: `checks: tracks disjoint · blockers complete`,
+or what was fixed.
+
 ## After creating: the mode, the table, the notes, the ask
 
 The closing message has four parts, in this order. A message that stops after part 3 leaves the contract unsigned — part 4 is what turns the list into a decision.

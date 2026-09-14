@@ -4,7 +4,7 @@ export type AgentStatus = 'working' | 'idle' | 'plan_pending' | 'failed' | 'bloc
 export type TaskState = 'pending' | 'in_progress' | 'completed' | 'plan_pending' | 'failed' | 'blocked';
 // `trace` is offered only on a solo session (decision 24); the id exists for
 // every mode so a URL carrying it survives a reload on any session.
-export type ViewId = 'wall' | 'overview' | 'comms' | 'tasks' | 'rail' | 'grid' | 'usage' | 'trace';
+export type ViewId = 'wall' | 'overview' | 'comms' | 'tasks' | 'rail' | 'grid' | 'usage' | 'trace' | 'plan';
 // `✉` is beyond the design README's own list — sanctioned by the CHANGELOG
 // entry "Received messages carry attribution", which gives a delivered
 // teammate message a marker of its own.
@@ -300,6 +300,23 @@ export interface Brief {
   error?: string;
 }
 
+export interface PlanTask {
+  n: number;
+  title: string;
+  /** Its section has a `- [ ] **Step` line; until then the task is only outlined. */
+  written: boolean;
+}
+
+/**
+ * The plan the lead is writing, as the plan tab draws it. Section text stays
+ * off the frame — a plan runs about 60 KB — and comes from `GET /api/plan-task`.
+ */
+export interface PlanProgress {
+  path: string;
+  mtime: number;
+  tasks: PlanTask[];
+}
+
 export interface TeamState {
   teamName: string;
   /**
@@ -344,6 +361,8 @@ export interface TeamState {
    * — no session pays for a brief nobody has opened the overview to read.
    */
   brief?: Brief;
+  /** Absent until the lead writes a file under `docs/team8/plans/`. */
+  plan?: PlanProgress;
 }
 
 /**

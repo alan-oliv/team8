@@ -72,6 +72,29 @@ it('exposes the switcher as a tablist with the seven views', () => {
   expect(screen.getByRole('tab', { name: 'grid' }).getAttribute('aria-selected')).toBe('false');
 });
 
+function tabsWithPlan(solo: boolean): (string | null)[] {
+  render(
+    <StatusBar
+      state={{ ...sampleTeamState(), plan: { path: '/r/docs/team8/plans/p.md', mtime: 1, tasks: [] } }}
+      view="wall"
+      onViewChange={vi.fn()}
+      now={FIXTURE_NOW}
+      teamsOpen={false}
+      onTeamsOpenChange={vi.fn()}
+      onSelectRun={vi.fn()}
+      appearance={APPEARANCE}
+      solo={solo}
+    />,
+  );
+  return within(screen.getByRole('tablist')).getAllByRole('tab').map((t) => t.textContent);
+}
+
+it('offers plan second, in the team and the solo switcher, while there is a plan', () => {
+  expect(tabsWithPlan(false)).toEqual(['wall', 'plan', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage']);
+  cleanup();
+  expect(tabsWithPlan(true)).toEqual(['stream', 'plan', 'overview']);
+});
+
 it('fires the view change when a tab is clicked', () => {
   const onViewChange = renderBar();
   fireEvent.click(screen.getByRole('tab', { name: 'grid' }));

@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { TeamState, ViewId } from '../../shared/domain';
 import type { SettingsStore } from '../state/useSettings';
 import { formatCost, formatElapsed, formatTokens, meterCells } from '../format';
-import { soloViews, VIEW_IDS } from '../state/useTeamState';
+import { soloViews, VIEW_IDS, withPlan } from '../state/useTeamState';
 import { flattenSubagents } from '../../shared/subagents';
 import { Bar, METRIC } from './Bar';
 import { runOrder } from './RunSelect';
@@ -199,7 +199,7 @@ export function StatusBar({
           )}
         </>
       }
-      views={solo ? soloViews(hasSubagents) : VIEW_IDS}
+      views={withPlan(solo ? soloViews(hasSubagents) : VIEW_IDS, state.plan !== undefined)}
       view={view}
       onViewChange={onViewChange}
       labelOf={solo ? (id) => (id === 'wall' ? 'stream' : id) : undefined}

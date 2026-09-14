@@ -13,6 +13,7 @@ import { createBriefs } from './brief';
 import { createStream } from './stream';
 import { foldWorkflows, modeOf } from './workflow';
 import { createHttpServer, listen, type SelectTeamOutcome } from './http';
+import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
@@ -1221,11 +1222,13 @@ export async function main(argv: string[]): Promise<number> {
    * through it — one replay, one place where the two modes meet.
    */
   const briefs = createBriefs({ publish: () => hub.publish() });
+  const plans = createPlanReader();
 
   const publish = (): TeamState => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
     const workflows = foldWorkflows(events);
+    const lead = (team.agents.find((a) => a.isLead) ?? team.agents[0])?.name;
     // The re-run rule lives here because this is the only place the folded task
     // list exists. It is a signature comparison per frame and a no-op until
     // somebody has asked for a brief at all.
@@ -1239,6 +1242,9 @@ export async function main(argv: string[]): Promise<number> {
       mode: modeOf(team.agents.length, workflows),
       workflows,
       brief: briefs.current(),
+      // Keyed on the server's own lead session, not team.leadSessionId: a
+      // session with no team config projects that as '' for every session.
+      plan: lead ? plans.read(events, lead, leadSessionId ?? '') : undefined,
     };
   };
 
@@ -1466,6 +1472,7 @@ export async function main(argv: string[]): Promise<number> {
           ),
     history: (agent: string) => transcriptHistory(store.replay(), agent),
     lineText: (agent: string, id: string) => transcriptLineText(store.replay(), agent, id),
+    planTask: (n: number) => plans.task(n),
     // Only the lead session's own directory is searched: that is the session
     // the ingest scopes runs to, so a run on the frame is a run under it.
     workflowScript: async (runId: string) => {

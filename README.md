@@ -165,10 +165,10 @@ URL, and starts it if a team is live but the server is down.
 
 Three skills fire on their own, when the work calls for them.
 
-`team8:plan` takes an idea to an approved spec with you, then a planner
-teammate writes the plan and the task list while a reviewer teammate checks it
-as it takes shape. What comes back to you is the task table and a file path,
-and nothing runs until you say so.
+`team8:plan` takes an idea to an approved spec with you, then writes the plan
+in the same session, a task at a time, with a progress line after each and a
+`plan` tab in the console that fills in as it goes. What comes back to you is
+the task table and a file path, and nothing runs until you say so.
 
 `team8:tasks` sets the contract a task needs before it's handed off: a
 description that stands alone, real `blockedBy` dependencies, and a

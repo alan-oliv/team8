@@ -55,7 +55,7 @@ const EMPTY: CSSProperties = {
   fontSize: '11px',
 };
 
-const STRIP: CSSProperties = {
+export const STRIP: CSSProperties = {
   padding: '11px 16px 10px',
   borderBottom: '1px solid var(--color-neutral-900)',
   display: 'flex',
@@ -64,7 +64,7 @@ const STRIP: CSSProperties = {
   flex: 'none',
 };
 
-const BAR: CSSProperties = {
+export const BAR: CSSProperties = {
   display: 'flex',
   height: '7px',
   borderRadius: '4px',

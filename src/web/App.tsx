@@ -22,6 +22,7 @@ import { Grid } from './views/Grid';
 import { LeftSession } from './views/LeftSession';
 import { NoSessions } from './views/NoSessions';
 import { Overview } from './views/Overview';
+import { Plan } from './views/Plan';
 import { Rail } from './views/Rail';
 import { Tasks } from './views/Tasks';
 import { Trace } from './views/Trace';
@@ -76,7 +77,8 @@ export function App() {
   // rather than mounting a view with no tab above it.
   const hasSubagents = Object.values(state?.subagents ?? {}).some((list) => list.length > 0);
   const offersTrace = solo && hasSubagents;
-  const view = store.view === 'trace' && !offersTrace ? 'wall' : store.view;
+  const view =
+    (store.view === 'trace' && !offersTrace) || (store.view === 'plan' && !state?.plan) ? 'wall' : store.view;
   // Lives here, not in the view, so switching away from usage and back does
   // not restart the sampler — the same reason widths and hidden sessions live
   // above the views that read them.
@@ -436,6 +438,7 @@ export function App() {
           />
         )}
         {view === 'tasks' && <Tasks tasks={state.tasks} teamName={state.teamName} />}
+        {view === 'plan' && state.plan && <Plan plan={state.plan} />}
         {view === 'trace' && traceLead && (
           <Trace
             agent={traceLead.name}
