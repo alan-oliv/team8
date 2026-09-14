@@ -27,6 +27,10 @@ it presents the task table. The run's mode (solo, subagents, teammates or
 workflow) is then recommended from the task list by `team8:tasks` Mode, as
 today, and the user can override it.
 
+The other entry point is unchanged: a list of tasks from Jira, Linear or the
+user goes straight to `team8:tasks` with no plan, and from there to the same
+approval table and `team8:run`.
+
 ## Part 1: the plan skill
 
 Phase 1 (brainstorm) and Phase 3 (approve) keep their shape. Phase 2 changes:
@@ -41,12 +45,9 @@ Phase 1 (brainstorm) and Phase 3 (approve) keep their shape. Phase 2 changes:
      task.
 3. Self-review inline: superpowers' three checks (spec coverage, placeholder
    scan, type consistency), fixed in place.
-4. Tracks and `TaskCreate` at the end, as today, then two more checks before
-   the approval table, because tasks run in parallel in one checkout. Both
-   fixes touch the task list only, never the plan:
-   - two tracks own the same file → put both tasks in one track, in order;
-   - a task consumes another task's output without blocking on it → add the
-     blocker with `TaskUpdate addBlockedBy`.
+4. Tracks and `TaskCreate` at the end through `team8:tasks`, as today.
+   `team8:tasks` now runs two checks before its closing (Files, below), so a
+   plan and a Jira or Linear list get them alike.
 
 New rule, stated in both `SKILL.md` and `writing-plans.md`: **code in the plan
 is written, not run.** No builds, prototypes or scratch code. If a step rests
@@ -65,16 +66,24 @@ Files:
   plan in one Write and for running plan code).
 - `plugin/skills/plan/writing-plans.md`: "Checkpoints With the Reviewer"
   becomes "Writing in Pieces" (skeleton, then one Edit per task, the progress
-  line); the parallel checks and their fixes go at the end of "Create the
-  Tasks". The text copied from superpowers stays as it is.
+  line). The text copied from superpowers stays as it is.
+- `plugin/skills/tasks/SKILL.md`: two checks before the closing, because
+  tracks run in parallel in one checkout. Both fixes touch the task list only,
+  never a plan:
+  - two tracks own the same file → put both tasks in one track, in order;
+  - a task consumes another task's output without blocking on it → add the
+    blocker with `TaskUpdate addBlockedBy`.
 - `README.md`: the `team8:plan` paragraph.
 
 Run log template, Plan section:
 - `planner: opus · high · reviewer: opus · high` becomes
   `plan: written by the lead · self-review fixes: <n>`.
 - The checkpoint line is dropped.
+- A batch that came straight to `team8:tasks` writes
+  `plan: none · tasks from <Jira | Linear | the user> via team8:tasks`, which
+  is what `team8:run` fills in when it creates the log itself.
 
-Not changed: `team8:run`, `team8:tasks`.
+Not changed: `team8:run`.
 
 ## Part 2: the console plan tab
 
@@ -117,6 +126,9 @@ only after approval, when every task is written. `src/web/views/Plan.tsx`:
   written;
 - a plan with no task headings yet shows the strip at `0 of 0` and no rows.
 
+A batch that came straight to `team8:tasks` has no plan and so no tab; the
+Tasks view's progress strip is its progress, as today.
+
 ## Testing
 
 - **Plan reader** (unit): headings and titles; written versus outlined,
@@ -139,3 +151,6 @@ only after approval, when every task is written. `src/web/views/Plan.tsx`:
   - no code written outside the plan file;
   - no teammate or subagent spawned before the task table;
   - planning takes a fraction of 391's 54 minutes.
+- **The direct path**, in one `team8:tasks` run on a short Jira or Linear
+  list: the two task-list checks run before the closing, and no plan tab
+  appears.
