@@ -105,7 +105,8 @@ with a `ponytail:` comment.
 **Reading it.** A task is a line matching `^### Task (\d+): (.+)$`. Its section
 runs to the next such heading or the end of the file. It is *written* when its
 section has a line matching `^- \[[ x]\] \*\*Step`. Text before the first task
-is ignored.
+is ignored, and so is every line inside a fenced code block: a plan that
+quotes another plan's template must not grow tasks from it.
 
 **On the wire.** `TeamState.plan?: PlanProgress`, where
 `PlanProgress = { path: string; mtime: number; tasks: Array<{ n: number; title: string; written: boolean }> }`.

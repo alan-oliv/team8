@@ -16,7 +16,7 @@
 - Code in a plan is written, not run: no builds, prototypes or scratch code while planning (skill rule).
 - Progress line, one cell per task: `Plan ▓▓▓░░░░ 3/7 · Task 3: <title>`.
 - Plan path pattern: `/docs/team8/plans/[^/]+\.md$`, matched against the absolute `file_path` of the lead's own `Write` and `Edit` calls.
-- Task heading: `^### Task (\d+): (.+)$`. A task is written when its section has a line matching `^- \[[ x]\] \*\*Step`. Text before the first task is ignored.
+- Task heading: `^### Task (\d+): (.+)$`. A task is written when its section has a line matching `^- \[[ x]\] \*\*Step`. Text before the first task, and every line inside a fenced code block, is ignored.
 - `PlanProgress = { path: string; mtime: number; tasks: Array<{ n: number; title: string; written: boolean }> }`, on `TeamState.plan?`, absent when the lead has written no plan.
 - Endpoint: `GET /api/plan-task?n=<n>` → `200 { n, text }`; `400` without a numeric `n`; `404` when there is no plan or no such task.
 - The `plan` tab joins the solo and team switchers only while `state.plan` exists; never the workflow layout.
@@ -378,6 +378,10 @@ const PLAN = `# Thing Implementation Plan
 - [x] **Step 1: Done already**
 `;
 
+// A plan quoting another plan's template: four backticks around three.
+const QUOTED =
+  '### Task 1: Real\n\n````markdown\n### Task 9: Quoted\n\n```ts\nconst x = 1;\n```\n\n- [ ] **Step 1: A quoted step**\n````\n';
+
 function toolCall(agent: string, name: string, filePath: string, seq: number): StoredEvent {
   return {
     seq,
@@ -412,6 +416,10 @@ describe('parsePlan', () => {
   it('has no tasks before the first heading', () => {
     expect(parsePlan('# Just a header\n\n- [ ] **Step 1: stray**\n')).toEqual([]);
   });
+
+  it('ignores headings and steps quoted in fenced code', () => {
+    expect(parsePlan(QUOTED)).toEqual([{ n: 1, title: 'Real', written: false }]);
+  });
 });
 
 describe('sectionOf', () => {
@@ -428,6 +436,11 @@ describe('sectionOf', () => {
 
   it('knows no task that is not there', () => {
     expect(sectionOf(PLAN, 9)).toBeUndefined();
+  });
+
+  it('keeps a quoted heading inside the section that quotes it', () => {
+    expect(sectionOf(QUOTED, 1)).toBe(QUOTED.trimEnd());
+    expect(sectionOf(QUOTED, 9)).toBeUndefined();
   });
 });
 
@@ -528,6 +541,7 @@ import type { StoredEvent } from './store';
 const PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
 const TASK_HEADING = /^### Task (\d+): (.+)$/;
 const STEP = /^- \[[ x]\] \*\*Step/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 
 type ToolUse = { type?: string; name?: string; input?: { file_path?: unknown } };
 
@@ -551,21 +565,46 @@ export function planPathOf(events: StoredEvent[], lead: string): string | undefi
   return found;
 }
 
+/**
+ * Per line, whether it sits inside a fenced code block. A plan that quotes
+ * another plan — this repo's plans about the plan skill do — must not grow
+ * tasks from its examples. A fence closes only on a bare run of the same
+ * character at least as long, so ```` can wrap ```.
+ */
+function fencedLines(lines: string[]): boolean[] {
+  let open: string | null = null;
+  return lines.map((line) => {
+    const fence = FENCE.exec(line)?.[1];
+    if (open === null) {
+      if (!fence) return false;
+      open = fence;
+      return true;
+    }
+    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
+    return true;
+  });
+}
+
 export function parsePlan(text: string): PlanTask[] {
+  const lines = text.split('\n');
+  const fenced = fencedLines(lines);
   const tasks: PlanTask[] = [];
-  for (const line of text.split('\n')) {
+  lines.forEach((line, i) => {
+    if (fenced[i]) return;
     const heading = TASK_HEADING.exec(line);
     if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
     else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
-  }
+  });
   return tasks;
 }
 
 export function sectionOf(text: string, n: number): string | undefined {
   const lines = text.split('\n');
-  const start = lines.findIndex((line) => TASK_HEADING.exec(line)?.[1] === String(n));
+  const fenced = fencedLines(lines);
+  const headingAt = (i: number) => (fenced[i] ? null : TASK_HEADING.exec(lines[i]));
+  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
   if (start === -1) return undefined;
-  const next = lines.findIndex((line, i) => i > start && TASK_HEADING.test(line));
+  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
   return lines.slice(start, next === -1 ? lines.length : next).join('\n').trimEnd();
 }
 
@@ -619,7 +658,7 @@ export function createPlanReader(): PlanReader {
 - [ ] **Step 5: Run the tests to see them pass**
 
 Run: `npx vitest run src/server/plan.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 6: Typecheck**
 
