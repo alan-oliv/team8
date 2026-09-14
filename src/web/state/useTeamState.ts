@@ -33,8 +33,13 @@ export function soloViews(hasSubagents: boolean): readonly ViewId[] {
   return hasSubagents ? ['wall', 'overview', 'trace'] : ['wall', 'overview'];
 }
 
+/** `plan` rides second, after the stream or wall, while the lead has a plan on the frame. */
+export function withPlan(views: readonly ViewId[], hasPlan: boolean): readonly ViewId[] {
+  return hasPlan ? [views[0], 'plan', ...views.slice(1)] : views;
+}
+
 /** Every id a URL may carry, whatever mode the session turns out to be in. */
-const URL_VIEW_IDS: readonly ViewId[] = [...VIEW_IDS, 'trace'];
+const URL_VIEW_IDS: readonly ViewId[] = [...VIEW_IDS, 'trace', 'plan'];
 
 /**
  * `/s/<sessionId>` — the "no team required" route (task #4), reached without
