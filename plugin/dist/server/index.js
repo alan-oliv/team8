@@ -5220,6 +5220,20 @@ function createHttpServer(deps) {
           json(res, 200, { id, text });
           return;
         }
+        if (method === "GET" && route === "/api/plan-task" && deps.planTask) {
+          const n = Number(url.searchParams.get("n"));
+          if (!Number.isInteger(n) || n < 1) {
+            json(res, 400, { error: "bad request", message: "n must be a task number" });
+            return;
+          }
+          const text = deps.planTask(n);
+          if (text === void 0) {
+            json(res, 404, { error: "not found", message: "no plan, or no such task in it" });
+            return;
+          }
+          json(res, 200, { n, text });
+          return;
+        }
         if (method === "GET" && deps.workflowScript && WORKFLOW_SCRIPT_ROUTE.test(route)) {
           const runId = decodeSegment(WORKFLOW_SCRIPT_ROUTE.exec(route)[1]);
           if (!runId) {
@@ -5410,6 +5424,99 @@ function listen(server, port) {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", () => resolve(server.address().port));
   });
+}
+
+// src/server/plan.ts
+import { readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
+var PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
+var TASK_HEADING = /^### Task (\d+): (.+)$/;
+var STEP = /^- \[[ x]\] \*\*Step/;
+var FENCE = /^\s*(`{3,}|~{3,})/;
+function planPathOf(events, lead) {
+  let found;
+  for (const ev of events) {
+    if (ev.kind !== "transcript") continue;
+    const payload = ev.payload;
+    if (payload.agent !== lead) continue;
+    for (const rec of payload.records) {
+      const content = rec.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content) {
+        if (block.type !== "tool_use" || block.name !== "Write" && block.name !== "Edit") continue;
+        const file = block.input?.file_path;
+        if (typeof file === "string" && PLAN_PATH.test(file)) found = file;
+      }
+    }
+  }
+  return found;
+}
+function fencedLines(lines) {
+  let open = null;
+  return lines.map((line) => {
+    const fence = FENCE.exec(line)?.[1];
+    if (open === null) {
+      if (!fence) return false;
+      open = fence;
+      return true;
+    }
+    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
+    return true;
+  });
+}
+function parsePlan(text) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const tasks = [];
+  lines.forEach((line, i) => {
+    if (fenced[i]) return;
+    const heading = TASK_HEADING.exec(line);
+    if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
+    else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
+  });
+  return tasks;
+}
+function sectionOf(text, n) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const headingAt = (i) => fenced[i] ? null : TASK_HEADING.exec(lines[i]);
+  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
+  if (start === -1) return void 0;
+  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
+  return lines.slice(start, next === -1 ? lines.length : next).join("\n").trimEnd();
+}
+function textOf(file) {
+  try {
+    return readFileSync2(file, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function createPlanReader() {
+  const known = /* @__PURE__ */ new Map();
+  let last;
+  return {
+    read(events, lead, session) {
+      const seen = planPathOf(events, lead);
+      if (seen) known.set(session, seen);
+      const file = known.get(session);
+      if (!file) return last = void 0;
+      let mtime;
+      try {
+        mtime = statSync2(file).mtimeMs;
+      } catch {
+        return last = void 0;
+      }
+      if (last?.path === file && last.mtime === mtime) return last;
+      const text = textOf(file);
+      if (text === void 0) return last = void 0;
+      return last = { path: file, mtime, tasks: parsePlan(text) };
+    },
+    task(n) {
+      if (!last) return void 0;
+      const text = textOf(last.path);
+      return text === void 0 ? void 0 : sectionOf(text, n);
+    }
+  };
 }
 
 // src/server/setup.ts
@@ -6307,10 +6414,12 @@ async function main(argv) {
   const store = openStore(cli.dbPath, teamName ?? "");
   const permits = createPermits();
   const briefs = createBriefs({ publish: () => hub.publish() });
+  const plans = createPlanReader();
   const publish = () => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
     const workflows = foldWorkflows(events);
+    const lead = (team.agents.find((a) => a.isLead) ?? team.agents[0])?.name;
     briefs.observe({ agents: team.agents, tasks: team.tasks }, hub.clients > 0);
     return {
       ...team,
@@ -6320,7 +6429,10 @@ async function main(argv) {
       branch: team.branch ?? leadFacts.branch,
       mode: modeOf(team.agents.length, workflows),
       workflows,
-      brief: briefs.current()
+      brief: briefs.current(),
+      // Keyed on the server's own lead session, not team.leadSessionId: a
+      // session with no team config projects that as '' for every session.
+      plan: lead ? plans.read(events, lead, leadSessionId ?? "") : void 0
     };
   };
   const hub = createStream(publish);
@@ -6477,6 +6589,7 @@ async function main(argv) {
     ),
     history: (agent) => transcriptHistory(store.replay(), agent),
     lineText: (agent, id) => transcriptLineText(store.replay(), agent, id),
+    planTask: (n) => plans.task(n),
     // Only the lead session's own directory is searched: that is the session
     // the ingest scopes runs to, so a run on the frame is a run under it.
     workflowScript: async (runId) => {
