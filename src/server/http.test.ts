@@ -62,6 +62,8 @@ let workflowScripts: Record<string, { source: 'as-executed' | 'snapshot'; path: 
 let scriptCalls: string[];
 /** Session ids `/api/sessions/:id/brief` was asked for. */
 let briefCalls: string[];
+/** What `/api/plan-task` can resolve, keyed by task number. A miss is no plan or no such task. */
+let planTasks: Record<number, string>;
 
 
 async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Server; url: string }> {
@@ -92,6 +94,7 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
   workflowScripts = {};
   scriptCalls = [];
   briefCalls = [];
+  planTasks = {};
   hub = createStream(() => state, 50);
   const server = createHttpServer({
     permits,
@@ -101,6 +104,7 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
     readOnly,
     webDist,
     lineText: (agent: string, id: string) => lineTexts[`${agent}|${id}`],
+    planTask: (n: number) => planTasks[n],
     workflowScript: (runId: string) => {
       scriptCalls.push(runId);
       return Promise.resolve(workflowScripts[runId] ?? null);
@@ -772,6 +776,32 @@ describe('--read-only', () => {
     } finally {
       await shutdown(server);
     }
+  });
+});
+
+describe('GET /api/plan-task', () => {
+  let server: Server;
+  let url: string;
+
+  beforeEach(async () => {
+    ({ server, url } = await boot(false));
+  });
+  afterEach(() => shutdown(server));
+
+  it('serves one task\'s section of the plan', async () => {
+    planTasks[2] = '### Task 2: Serve it\n\n- [ ] **Step 1: Serve**';
+    const res = await fetch(`${url}/api/plan-task?n=2`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ n: 2, text: planTasks[2] });
+  });
+
+  it('requires a task number', async () => {
+    expect((await fetch(`${url}/api/plan-task`)).status).toBe(400);
+    expect((await fetch(`${url}/api/plan-task?n=two`)).status).toBe(400);
+  });
+
+  it('404s when there is no plan or no such task', async () => {
+    expect((await fetch(`${url}/api/plan-task?n=9`)).status).toBe(404);
   });
 });
 

@@ -120,6 +120,8 @@ export interface HttpDeps {
   /** Older transcript lines for one agent — the wall's scrollback. */
   history?: (agent: string) => TranscriptLine[];
   lineText?: (agent: string, id: string) => string | undefined;
+  /** One task's section of the plan the lead is writing, for a plan-tab row opened by hand. */
+  planTask?: (n: number) => string | undefined;
   /**
    * One run's script source, read from disk on demand — the other half of
    * `leanRun`, which strips it from every frame because it is 65% of the bytes.
@@ -316,6 +318,23 @@ export function createHttpServer(deps: HttpDeps): Server {
             return;
           }
           json(res, 200, { id, text });
+          return;
+        }
+
+        // Kept off the frame for the same reason as /api/line: a plan runs
+        // about 60 KB, and a section is opened by hand, one row at a time.
+        if (method === 'GET' && route === '/api/plan-task' && deps.planTask) {
+          const n = Number(url.searchParams.get('n'));
+          if (!Number.isInteger(n) || n < 1) {
+            json(res, 400, { error: 'bad request', message: 'n must be a task number' });
+            return;
+          }
+          const text = deps.planTask(n);
+          if (text === undefined) {
+            json(res, 404, { error: 'not found', message: 'no plan, or no such task in it' });
+            return;
+          }
+          json(res, 200, { n, text });
           return;
         }
 

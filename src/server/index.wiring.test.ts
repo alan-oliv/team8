@@ -601,3 +601,50 @@ describe('workflow mode on the wire', () => {
     expect(state.workflows).toHaveLength(1);
   }, 20_000);
 });
+
+describe('the plan on the wire', () => {
+  it('publishes the plan a session without a team is writing, and serves one task of it', async () => {
+    home = await layout();
+    const planFile = path.join(home, 'repo', 'docs', 'team8', 'plans', '2026-09-13-thing.md');
+    await fs.mkdir(path.dirname(planFile), { recursive: true });
+    await fs.writeFile(
+      planFile,
+      '# Thing\n\n### Task 1: Add the type\n\n- [ ] **Step 1: Test it**\n\n### Task 2: Serve it\n',
+    );
+    // A session with no config.json, as in the retarget test above: the lead
+    // planning alone is exactly this shape.
+    const solo = path.join(home, 'projects', SLUG, SOLO_SESSION);
+    await fs.mkdir(path.join(solo, 'subagents'), { recursive: true });
+    await fs.writeFile(
+      path.join(solo, `${SOLO_SESSION}.jsonl`),
+      `${JSON.stringify({
+        type: 'assistant',
+        uuid: '55555555-5555-5555-5555-555555555555',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'toolu_plan1', name: 'Write', input: { file_path: planFile, content: '' } }],
+        },
+      })}\n`,
+    );
+
+    const url = await boot(home);
+    expect((await selectSession(url, SOLO_SESSION)).status).toBe(200);
+
+    let state = await snapshot(url);
+    const deadline = Date.now() + 5_000;
+    while (!state.plan && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      state = await snapshot(url);
+    }
+
+    expect(state.plan?.path).toBe(planFile);
+    expect(state.plan?.tasks).toEqual([
+      { n: 1, title: 'Add the type', written: true },
+      { n: 2, title: 'Serve it', written: false },
+    ]);
+    const res = await fetch(`${url}/api/plan-task?n=1`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { text: string }).text.startsWith('### Task 1: Add the type')).toBe(true);
+  }, 20_000);
+});
