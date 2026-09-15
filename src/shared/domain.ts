@@ -363,6 +363,8 @@ export interface TeamState {
   brief?: Brief;
   /** Absent until the lead writes a file under `docs/team8/plans/`. */
   plan?: PlanProgress;
+  /** A session switch is reading its target in; the select routes answer 409 until it lands. */
+  switching?: boolean;
 }
 
 /**

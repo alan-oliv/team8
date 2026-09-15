@@ -113,6 +113,11 @@ it('falls back to the directory id when the session was never named', () => {
   expect(screen.getByTestId('team-trigger-name').textContent).toBe('session-98b0b4a7');
 });
 
+it('names a solo session by its short id when it has no name', () => {
+  renderSelect({ open: false, current: 'a074e8eb-fd02-4eb7-ba0f-339f927088fa', sessionName: '' });
+  expect(screen.getByTestId('team-trigger-name').textContent).toBe('session-a074e8eb');
+});
+
 it('heads the list with the folder it is scoped to and the row count', async () => {
   renderSelect();
   expect(await screen.findByText('SESSIONS ON')).toBeTruthy();
@@ -375,6 +380,12 @@ it('marks the row when the switch is refused', async () => {
   const mark = await within(rows[1]).findByText('switch failed');
   expect(mark.style.color).toBe('var(--fail)');
   expect(onOpenChange).not.toHaveBeenCalled();
+});
+
+it('shuts and disables the trigger while a session switch is loading', () => {
+  const { onOpenChange } = renderSelect({ switching: true });
+  expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect((screen.getByTestId('team-trigger') as HTMLButtonElement).disabled).toBe(true);
 });
 
 it('marks the row gone when the team vanished before the click', async () => {

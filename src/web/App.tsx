@@ -324,8 +324,9 @@ export function App() {
           onSelectRun={store.setRun}
           backToTeam={state.mode === 'team' ? (state.sessionName ?? state.teamName) : undefined}
           now={now}
-          teamName={state.teamName}
+          teamName={state.teamName || state.leadSessionId}
           sessionName={state.sessionName}
+          switching={state.switching}
           teamsOpen={teamsOpen}
           onTeamsOpenChange={setTeamsOpen}
           appearance={appearance}

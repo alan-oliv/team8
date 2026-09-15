@@ -882,7 +882,7 @@ export async function listFolders(projectsRoot: string): Promise<FolderSummary[]
  * unchanged. Each row carries its folder's name, since a mixed list otherwise
  * cannot say where a `session-…` row lives.
  */
-// ponytail: re-lists every folder on each open; fine at tens of folders, cache per folder if it drags
+// ponytail: re-lists every folder on each open, concurrently; cache per folder if it drags
 export async function listAllFolders(
   teamsRoot: string,
   sessionsRoot: string,
@@ -890,11 +890,17 @@ export async function listAllFolders(
   projectsRoot: string,
 ): Promise<TeamsResponse> {
   const folders = await listFolders(projectsRoot);
-  const teams: TeamSummary[] = [];
-  for (const f of folders) {
-    const one = await listTeamSummaries(teamsRoot, sessionsRoot, current, projectsRoot, f.path);
-    teams.push(...one.teams.map((t) => ({ ...t, folder: f.name })));
-  }
+  // Walked once and shared: every team on the machine is read the same way
+  // whichever folder is in scope, and re-reading them per folder was most of
+  // this listing's time.
+  const walk = await walkTeams(teamsRoot, sessionsRoot, current, projectsRoot);
+  // Concurrent, not one folder after another: 26 folders in series took 1.8s.
+  const listings = await Promise.all(
+    folders.map((f) =>
+      listTeamSummaries(teamsRoot, sessionsRoot, current, projectsRoot, f.path, { folders, walk }),
+    ),
+  );
+  const teams = listings.flatMap((one, i) => one.teams.map((t) => ({ ...t, folder: folders[i].name })));
   return { current, teams, folder: ALL_FOLDERS, folders };
 }
 
@@ -930,7 +936,88 @@ export async function listTeamSummaries(
   current: string,
   projectsRoot?: string,
   cwd?: string,
+  shared?: { folders: FolderSummary[]; walk: TeamWalk },
 ): Promise<TeamsResponse> {
+  const walk = shared?.walk ?? (await walkTeams(teamsRoot, sessionsRoot, current, projectsRoot));
+  const { sessions, now, leadSessions, needsDiffstat, adopted } = walk;
+  // A copy: the scope below splices it, and the all-folders listing hands one
+  // walk to every folder.
+  const teams = [...walk.teams];
+  // One git invocation per DIRECTORY, not per team: two sessions open on the
+  // same repo report the same tree, and the listing runs on the request thread.
+  const diffstats = new Map<string, TeamSummary['diffstat']>();
+
+  const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : undefined;
+  if (scoped) {
+    // A team whose lead ran somewhere else belongs to that folder's picker, not
+    // this one, the session on screen included. The header trigger still names
+    // it, and switching the picker back to its folder lists it again.
+    //
+    // Scoped by the session actually driving the team, not the row's own
+    // leadSessionId: that field is config.leadSessionId, which a re-keyed team
+    // leaves pointing at whatever session first started it.
+    const here = new Set(scoped);
+    for (let i = teams.length - 1; i >= 0; i--) {
+      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
+      if (!here.has(driver)) teams.splice(i, 1);
+    }
+  }
+
+  // After scoping, not in the walk: the walk covers every team on the machine,
+  // so a git spawn there ran for teams this folder then drops. Rows are
+  // replaced rather than mutated, since the walk's rows can be shared.
+  for (let i = 0; i < teams.length; i++) {
+    const tree = needsDiffstat.get(teams[i].name);
+    if (tree === undefined) continue;
+    if (!diffstats.has(tree)) diffstats.set(tree, await diffstatOf(tree));
+    const diffstat = diffstats.get(tree);
+    if (diffstat) teams[i] = { ...teams[i], diffstat };
+  }
+
+  if (projectsRoot) {
+    // Only teams that made it into `teams`: a sidecar still names its team after
+    // teams/<name>/ is reaped, and covering its session then hid it entirely.
+    const covered = new Set([
+      ...teams.map((t) => t.leadSessionId),
+      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
+      ...adopted,
+    ]);
+    // Scoped: every session this folder holds, so a finished team whose
+    // `teams/` directory was reaped still lists. Unscoped: the old rule, live
+    // sessions only, since there is no folder to enumerate.
+    const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
+    teams.push(...(await sessionRows(projectsRoot, ids, cwd ?? '', sessions, covered, diffstats, now)));
+  }
+
+  teams.sort(
+    (a, b) =>
+      Number(b.current) - Number(a.current) ||
+      Number(b.live) - Number(a.live) ||
+      b.lastActivityAt - a.lastActivityAt ||
+      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  );
+  // Only when there is a folder to be scoped to: a machine-wide listing has no
+  // chip to draw, and the menu would be offering to leave a scope it is not in.
+  const folders = projectsRoot && cwd ? (shared?.folders ?? (await listFolders(projectsRoot))) : undefined;
+  return { current, teams, ...(folders ? { folder: cwd, folders } : {}) };
+}
+
+/** The part of a listing that does not depend on the folder in scope. */
+interface TeamWalk {
+  sessions: SessionFacts;
+  now: number;
+  teams: TeamSummary[];
+  leadSessions: Map<string, string>;
+  needsDiffstat: Map<string, string>;
+  adopted: Set<string>;
+}
+
+async function walkTeams(
+  teamsRoot: string,
+  sessionsRoot: string,
+  current: string,
+  projectsRoot?: string,
+): Promise<TeamWalk> {
   let entries: string[] = [];
   try {
     entries = await fs.readdir(teamsRoot);
@@ -953,9 +1040,9 @@ export async function listTeamSummaries(
   // for the folder scope: config.leadSessionId is stale once a team is
   // re-keyed and would attribute the team to the folder it merely started in.
   const leadSessions = new Map<string, string>();
-  // One git invocation per DIRECTORY, not per team: two sessions open on the
-  // same repo report the same tree, and the listing runs on the request thread.
-  const diffstats = new Map<string, TeamSummary['diffstat']>();
+  // Team directory -> the tree to diffstat, read only once the listing's scope
+  // has dropped the teams that belong to other folders.
+  const needsDiffstat = new Map<string, string>();
   for (const name of entries) {
     const teamDir = path.join(teamsRoot, name);
     let configMtimeMs: number;
@@ -997,7 +1084,7 @@ export async function listTeamSummaries(
     // right now, which is not what that session did. Only a live or idle
     // row, whose tree the session might still touch, earns the read.
     const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
-    if (state !== 'done' && !diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    if (state !== 'done') needsDiffstat.set(name, leadCwd);
     const leadTranscript =
       projectsRoot && leadSession
         ? await transcriptMeta(
@@ -1030,56 +1117,13 @@ export async function listTeamSummaries(
       state,
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
-      ...(state !== 'done' && diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}),
     });
   }
 
   // Runs first: a session it hands a team to is represented by that team's row
-  // and must not also appear below as a bare session.
+  // and must not also appear in a listing as a bare session.
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
-
-  const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : undefined;
-  if (scoped) {
-    // A team whose lead ran somewhere else belongs to that folder's picker, not
-    // this one, the session on screen included. The header trigger still names
-    // it, and switching the picker back to its folder lists it again.
-    //
-    // Scoped by the session actually driving the team, not the row's own
-    // leadSessionId: that field is config.leadSessionId, which a re-keyed team
-    // leaves pointing at whatever session first started it.
-    const here = new Set(scoped);
-    for (let i = teams.length - 1; i >= 0; i--) {
-      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver)) teams.splice(i, 1);
-    }
-  }
-
-  if (projectsRoot) {
-    // Only teams that made it into `teams`: a sidecar still names its team after
-    // teams/<name>/ is reaped, and covering its session then hid it entirely.
-    const covered = new Set([
-      ...teams.map((t) => t.leadSessionId),
-      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
-      ...adopted,
-    ]);
-    // Scoped: every session this folder holds, so a finished team whose
-    // `teams/` directory was reaped still lists. Unscoped: the old rule, live
-    // sessions only, since there is no folder to enumerate.
-    const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
-    teams.push(...(await sessionRows(projectsRoot, ids, cwd ?? '', sessions, covered, diffstats, now)));
-  }
-
-  teams.sort(
-    (a, b) =>
-      Number(b.current) - Number(a.current) ||
-      Number(b.live) - Number(a.live) ||
-      b.lastActivityAt - a.lastActivityAt ||
-      (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
-  );
-  // Only when there is a folder to be scoped to: a machine-wide listing has no
-  // chip to draw, and the menu would be offering to leave a scope it is not in.
-  const folders = projectsRoot && cwd ? await listFolders(projectsRoot) : undefined;
-  return { current, teams, ...(folders ? { folder: cwd, folders } : {}) };
+  return { sessions, now, teams, leadSessions, needsDiffstat, adopted };
 }
 
 /**
@@ -1224,6 +1268,10 @@ export async function main(argv: string[]): Promise<number> {
   const briefs = createBriefs({ publish: () => hub.publish() });
   const plans = createPlanReader();
 
+  // A switch is reading its target in, and the select routes answer 409 until
+  // it lands. Declared ahead of `publish`, which the boot sweep already calls.
+  let switching = false;
+
   const publish = (): TeamState => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
@@ -1239,7 +1287,11 @@ export async function main(argv: string[]): Promise<number> {
       // header is right whether or not the status line is installed.
       sessionName: team.sessionName ?? leadFacts.sessionName,
       branch: team.branch ?? leadFacts.branch,
+      // A session with no team config projects '' here; the picker needs the id
+      // to name and mark the session on screen.
+      leadSessionId: team.leadSessionId || (leadSessionId ?? ''),
       mode: modeOf(team.agents.length, workflows),
+      switching,
       workflows,
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
@@ -1304,7 +1356,6 @@ export async function main(argv: string[]): Promise<number> {
   let ingest = startIngest(generation, teamName, leadSessionId);
   await ingest.sweep();
 
-  let switching = false;
   // Set the moment the operator picks a team themselves. The follower below
   // only ever corrects the console's OWN guess — once a human has chosen, a
   // team appearing elsewhere must not yank them off what they are reading.
@@ -1324,6 +1375,9 @@ export async function main(argv: string[]): Promise<number> {
    * already-seen, and the sweep would skip it forever.
    */
   const retarget = async (team: string, lead: string): Promise<void> => {
+    // Tells the picker a switch is loading, so it shuts instead of offering a
+    // pick the select route would refuse.
+    hub.publish();
     const gen = ++generation;
     ingest.close();
     store.setTeam(team);
@@ -1383,6 +1437,7 @@ export async function main(argv: string[]): Promise<number> {
     } finally {
       // In a finally, so a throw cannot wedge the console into permanent 409s.
       switching = false;
+      hub.publish();
     }
   };
 
@@ -1396,6 +1451,7 @@ export async function main(argv: string[]): Promise<number> {
    * the idle reaper exit the console out from under the operator.
    */
   const retargetSession = async (sessionId: string): Promise<void> => {
+    hub.publish();
     const gen = ++generation;
     ingest.close();
     store.setTeam(sessionId);
@@ -1430,6 +1486,7 @@ export async function main(argv: string[]): Promise<number> {
       return { ok: true, changed: true };
     } finally {
       switching = false;
+      hub.publish();
     }
   };
 
@@ -1532,7 +1589,8 @@ export async function main(argv: string[]): Promise<number> {
     // `statusLine` key — an optional install step — so on most machines the
     // header fell back to the directory id while the picker row two lines
     // below it showed the real name.
-    const mine = teams.find((t) => t.name === currentTeam);
+    // A solo session's row is named by its session id, and `currentTeam` is ''.
+    const mine = teams.find((t) => t.name === (currentTeam || currentSession));
     leadFacts = { sessionName: mine?.goal, branch: mine?.branch };
 
     if (pinned || gen !== generation) return;
@@ -1549,6 +1607,7 @@ export async function main(argv: string[]): Promise<number> {
       logError('follow', err);
     } finally {
       switching = false;
+      hub.publish();
     }
   };
 

@@ -118,6 +118,14 @@ function rowId(team: TeamSummary): string {
   return team.sessionOnly ? `session-${team.name.slice(0, 8)}` : team.name;
 }
 
+// A solo session has no team directory, so the caller hands `current` over as
+// the raw session uuid — the same thing a `sessionOnly` row's `name` holds.
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/;
+
+function triggerName(current: string): string {
+  return SESSION_UUID.test(current) ? `session-${current.slice(0, 8)}` : current;
+}
+
 /** The row's title when the operator never named the session. */
 function displayName(team: TeamSummary): string {
   return team.goal || rowId(team);
@@ -152,9 +160,11 @@ export interface TeamSelectProps {
   open: boolean;
   onOpenChange(open: boolean): void;
   now: number;
+  /** A session switch is loading on the server, which refuses another until it lands. */
+  switching?: boolean;
 }
 
-export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now }: TeamSelectProps) {
+export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now, switching }: TeamSelectProps) {
   const watch = useWatch();
   const [teams, setTeams] = useState<TeamSummary[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -223,6 +233,12 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   useEffect(() => {
     if (open) search.current?.focus();
   }, [open]);
+
+  // Shut for the length of a switch: any pick made meanwhile would be refused.
+  // Covers `⌘K` and the `t` key too, which open without going through the trigger.
+  useEffect(() => {
+    if (switching && open) close();
+  }, [switching, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -645,8 +661,12 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         aria-expanded={open}
         aria-controls="team-list"
         aria-labelledby="team-wordmark team-trigger-name"
+        disabled={switching}
+        title={switching ? 'switching session…' : undefined}
         onClick={() => (open ? close() : onOpenChange(true))}
         style={{
+          opacity: switching ? 0.5 : 1,
+          cursor: switching ? 'wait' : undefined,
           display: 'flex',
           alignItems: 'baseline',
           gap: 7,
@@ -691,7 +711,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
             whiteSpace: 'nowrap',
           }}
         >
-          {watch.dismissed ? 'no session selected' : (sessionName ?? current)}
+          {watch.dismissed ? 'no session selected' : (sessionName || triggerName(current))}
         </span>
         <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: 10 }}>
           ▾

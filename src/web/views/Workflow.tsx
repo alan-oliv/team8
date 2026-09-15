@@ -48,6 +48,7 @@ export interface WorkflowProps {
   /** The session the run belongs to — what the picker switches away from. */
   teamName: string;
   sessionName?: string;
+  switching?: boolean;
   teamsOpen: boolean;
   onTeamsOpenChange(open: boolean): void;
   appearance: SettingsStore;
@@ -62,7 +63,7 @@ export interface WorkflowProps {
  * and a theme they cannot reach from it, is a mode with no way out.
  */
 export function Workflow({
-  run, runs, onSelectRun, backToTeam, now, teamName, sessionName, teamsOpen, onTeamsOpenChange,
+  run, runs, onSelectRun, backToTeam, now, teamName, sessionName, switching, teamsOpen, onTeamsOpenChange,
   appearance, subagents,
 }: WorkflowProps) {
   const allSubagents = Object.values(subagents ?? {}).flatMap(flattenSubagents);
@@ -97,6 +98,7 @@ export function Workflow({
             <TeamSelect
               current={teamName}
               sessionName={sessionName}
+              switching={switching}
               mode="workflow"
               open={teamsOpen}
               onOpenChange={onTeamsOpenChange}
