@@ -339,7 +339,6 @@ const Column = memo(function Column({
         agent={agent.name}
         working={agent.status === 'working'}
         subagents={subagents}
-        expandLatest={!soloStream}
       />
 
       {/* One slot, two readings (canvas `4a`): the lead's says what the shared
