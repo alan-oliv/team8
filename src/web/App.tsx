@@ -210,9 +210,15 @@ export function App() {
   useEffect(() => {
     if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state) return;
     autoResumed.current = true;
+    // Guards the async continuation, not just re-invocation: without it, a
+    // manual pick or a late announce that lands while this GET is in flight
+    // would still get clobbered by a stale POST once it resolves — the same
+    // problem the `elsewhere` effect above solves with the same pattern.
+    let live = true;
     fetch('/api/teams?folder=*')
       .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
       .then((payload) => {
+        if (!live) return;
         const target = payload.teams.find((t) => t.state === 'live') ?? payload.teams.find((t) => t.state === 'idle');
         // Same comparison TeamSelect's own `isCurrent` makes.
         if (!target || target.name === (state.teamName || state.leadSessionId)) return;
@@ -223,6 +229,9 @@ export function App() {
         );
       })
       .catch(() => {});
+    return () => {
+      live = false;
+    };
   }, [state, store.announcedTeam, store.sessionRoute]);
 
   // The wall pins the lead leftmost then departed last, so column navigation

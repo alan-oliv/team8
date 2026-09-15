@@ -424,6 +424,42 @@ it('does not fetch the listing when a /s/:sessionId route is on the URL', () => 
   expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
 });
 
+it('drops the listing fetch if the app unmounts before it resolves, never posting a stale select', async () => {
+  window.history.replaceState(null, '', '/');
+  let resolveListing!: (res: Response) => void;
+  const fetchMock = vi.fn((path: string) =>
+    path === '/api/teams?folder=*'
+      ? new Promise<Response>((resolve) => {
+          resolveListing = resolve;
+        })
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const { unmount } = render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  // A manual switch (or an announce) landing while the listing GET is still in
+  // flight unmounts this App and mounts a fresh one for the new team — the
+  // stale continuation must not fire a select once its GET finally resolves.
+  unmount();
+  resolveListing(
+    new Response(
+      JSON.stringify({
+        current: 'session-98b0b4a7',
+        teams: [
+          { ...sampleTeams()[0], state: 'done' as const, current: true },
+          { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'live' as const, current: false },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+});
+
 it('opens the comms view straight from the URL and keeps it there', () => {
   window.history.replaceState(null, '', '/?view=comms');
   render(<App />);
