@@ -4599,18 +4599,21 @@ function createHookHandlers(deps) {
       try {
         const b = bagOf2(body);
         const event = str3(b.hook_event_name) ?? "";
+        const sid = str3(b.session_id);
+        const lead = deps.leadSessionId?.();
+        if (!str3(b.agent_id) && lead && sid && sid !== lead && event !== "SessionEnd") {
+          return { status: 200, body: {} };
+        }
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str3(b.tool_name);
         const text = str3(b.message) ?? str3(b.prompt);
         store.append("hook", { event, agent, toolName, text }, agent);
         touched(agent);
         if (event === "SessionEnd") {
-          const ending = str3(b.session_id);
-          const lead = deps.leadSessionId?.();
-          if (lead && ending === lead) {
+          if (lead && sid === lead) {
             setTimeout(shutdown, 250);
           } else {
-            debug("hook", `SessionEnd for ${ending ?? "an unknown session"} is not the lead's`);
+            debug("hook", `SessionEnd for ${sid ?? "an unknown session"} is not the lead's`);
           }
         }
         if (event !== "PermissionRequest") return { status: 200, body: {} };
@@ -5833,7 +5836,7 @@ async function discoverTeam(teamsRoot2, sessionsRoot, explicitTeam) {
   return best ? toDiscovered(best) : null;
 }
 async function readSessions(sessionsRoot) {
-  const facts = { live: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Map(), cwds: /* @__PURE__ */ new Map() };
+  const facts = { live: /* @__PURE__ */ new Set(), busy: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Map(), cwds: /* @__PURE__ */ new Map() };
   let entries;
   try {
     entries = await fs8.readdir(sessionsRoot);
@@ -5845,7 +5848,7 @@ async function readSessions(sessionsRoot) {
     if (!entry.endsWith(".json")) continue;
     const doc = await readJsonSafe(path10.join(sessionsRoot, entry));
     if (typeof doc?.sessionId !== "string") continue;
-    docs.push({ sessionId: doc.sessionId, pid: doc.pid, name: doc.name, cwd: doc.cwd });
+    docs.push({ sessionId: doc.sessionId, pid: doc.pid, name: doc.name, cwd: doc.cwd, status: doc.status });
   }
   const spares = await recycledSpares(
     docs.map((d) => d.pid).filter((p) => typeof p === "number")
@@ -5854,6 +5857,7 @@ async function readSessions(sessionsRoot) {
     if (typeof doc.pid === "number" && isPidAlive(doc.pid) && !spares.has(doc.pid)) {
       facts.live.add(doc.sessionId);
     }
+    if (doc.status !== "idle") facts.busy.add(doc.sessionId);
     if (typeof doc.name === "string" && doc.name !== "") facts.names.set(doc.sessionId, doc.name);
     if (typeof doc.cwd === "string" && doc.cwd !== "") facts.cwds.set(doc.sessionId, doc.cwd);
   }
@@ -6155,7 +6159,7 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
     if (transcript.entrypoint === "sdk-cli") continue;
     const leadAlive = sessions.live.has(sessionId);
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
-    const state = leadAlive ? "live" : recent ? "idle" : "done";
+    const state = leadAlive && sessions.busy.has(sessionId) ? "live" : leadAlive || recent ? "idle" : "done";
     if (state !== "done" && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
     rows.push({
       // The SESSION id, not a team directory: `sessionOnly` below is what tells
@@ -6338,7 +6342,7 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
     const workflow = projectsRoot ? await workflowOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession, now) : void 0;
     const subagents = projectsRoot ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession) : 0;
     const leadCwd = lead?.cwd ?? "";
-    const state = leadAlive ? "live" : recent ? "idle" : "done";
+    const state = leadAlive && sessions.busy.has(leadSession) ? "live" : leadAlive || recent ? "idle" : "done";
     if (state !== "done") needsDiffstat.set(name, leadCwd);
     const leadTranscript = projectsRoot && leadSession ? await transcriptMeta(
       path10.join(
