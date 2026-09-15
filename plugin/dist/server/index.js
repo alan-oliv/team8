@@ -6229,11 +6229,13 @@ async function listFolders(projectsRoot) {
 }
 async function listAllFolders(teamsRoot2, sessionsRoot, current, projectsRoot) {
   const folders = await listFolders(projectsRoot);
-  const teams = [];
-  for (const f of folders) {
-    const one = await listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, f.path);
-    teams.push(...one.teams.map((t) => ({ ...t, folder: f.name })));
-  }
+  const walk2 = await walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot);
+  const listings = await Promise.all(
+    folders.map(
+      (f) => listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, f.path, { folders, walk: walk2 })
+    )
+  );
+  const teams = listings.flatMap((one, i) => one.teams.map((t) => ({ ...t, folder: folders[i].name })));
   return { current, teams, folder: ALL_FOLDERS, folders };
 }
 async function folderScope(projectsRoot, fallback, folder) {
@@ -6241,7 +6243,42 @@ async function folderScope(projectsRoot, fallback, folder) {
   const known = await listFolders(projectsRoot);
   return known.some((f) => f.path === folder) ? folder : fallback;
 }
-async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, cwd) {
+async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, cwd, shared) {
+  const walk2 = shared?.walk ?? await walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot);
+  const { sessions, now, leadSessions, needsDiffstat, adopted } = walk2;
+  const teams = [...walk2.teams];
+  const diffstats = /* @__PURE__ */ new Map();
+  const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : void 0;
+  if (scoped) {
+    const here = new Set(scoped);
+    for (let i = teams.length - 1; i >= 0; i--) {
+      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
+      if (!here.has(driver)) teams.splice(i, 1);
+    }
+  }
+  for (let i = 0; i < teams.length; i++) {
+    const tree = needsDiffstat.get(teams[i].name);
+    if (tree === void 0) continue;
+    if (!diffstats.has(tree)) diffstats.set(tree, await diffstatOf(tree));
+    const diffstat = diffstats.get(tree);
+    if (diffstat) teams[i] = { ...teams[i], diffstat };
+  }
+  if (projectsRoot) {
+    const covered = /* @__PURE__ */ new Set([
+      ...teams.map((t) => t.leadSessionId),
+      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
+      ...adopted
+    ]);
+    const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
+    teams.push(...await sessionRows(projectsRoot, ids, cwd ?? "", sessions, covered, diffstats, now));
+  }
+  teams.sort(
+    (a, b) => Number(b.current) - Number(a.current) || Number(b.live) - Number(a.live) || b.lastActivityAt - a.lastActivityAt || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  );
+  const folders = projectsRoot && cwd ? shared?.folders ?? await listFolders(projectsRoot) : void 0;
+  return { current, teams, ...folders ? { folder: cwd, folders } : {} };
+}
+async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   let entries = [];
   try {
     entries = await fs8.readdir(teamsRoot2);
@@ -6253,7 +6290,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
   const teams = [];
   const leadCwds = /* @__PURE__ */ new Map();
   const leadSessions = /* @__PURE__ */ new Map();
-  const diffstats = /* @__PURE__ */ new Map();
+  const needsDiffstat = /* @__PURE__ */ new Map();
   for (const name of entries) {
     const teamDir = path10.join(teamsRoot2, name);
     let configMtimeMs;
@@ -6278,7 +6315,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
     const subagents = projectsRoot ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? "", leadSession) : 0;
     const leadCwd = lead?.cwd ?? "";
     const state = leadAlive ? "live" : recent ? "idle" : "done";
-    if (state !== "done" && !diffstats.has(leadCwd)) diffstats.set(leadCwd, await diffstatOf(leadCwd));
+    if (state !== "done") needsDiffstat.set(name, leadCwd);
     const leadTranscript = projectsRoot && leadSession ? await transcriptMeta(
       path10.join(
         projectsRoot,
@@ -6307,33 +6344,11 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
       // recently — it can still be paged back into; `done` is finished.
       state,
       ...workflow ? { workflow } : {},
-      ...subagents > 0 ? { subagents } : {},
-      ...state !== "done" && diffstats.get(leadCwd) ? { diffstat: diffstats.get(leadCwd) } : {}
+      ...subagents > 0 ? { subagents } : {}
     });
   }
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
-  const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : void 0;
-  if (scoped) {
-    const here = new Set(scoped);
-    for (let i = teams.length - 1; i >= 0; i--) {
-      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver)) teams.splice(i, 1);
-    }
-  }
-  if (projectsRoot) {
-    const covered = /* @__PURE__ */ new Set([
-      ...teams.map((t) => t.leadSessionId),
-      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
-      ...adopted
-    ]);
-    const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
-    teams.push(...await sessionRows(projectsRoot, ids, cwd ?? "", sessions, covered, diffstats, now));
-  }
-  teams.sort(
-    (a, b) => Number(b.current) - Number(a.current) || Number(b.live) - Number(a.live) || b.lastActivityAt - a.lastActivityAt || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-  );
-  const folders = projectsRoot && cwd ? await listFolders(projectsRoot) : void 0;
-  return { current, teams, ...folders ? { folder: cwd, folders } : {} };
+  return { sessions, now, teams, leadSessions, needsDiffstat, adopted };
 }
 function adoptByCwd(teams, leadCwds, leadSessions, sessions, now) {
   const adopted = /* @__PURE__ */ new Set();
@@ -6415,6 +6430,7 @@ async function main(argv) {
   const permits = createPermits();
   const briefs = createBriefs({ publish: () => hub.publish() });
   const plans = createPlanReader();
+  let switching = false;
   const publish = () => {
     const events = store.replay();
     const team = project(events, cli.readOnly);
@@ -6427,7 +6443,11 @@ async function main(argv) {
       // header is right whether or not the status line is installed.
       sessionName: team.sessionName ?? leadFacts.sessionName,
       branch: team.branch ?? leadFacts.branch,
+      // A session with no team config projects '' here; the picker needs the id
+      // to name and mark the session on screen.
+      leadSessionId: team.leadSessionId || (leadSessionId ?? ""),
       mode: modeOf(team.agents.length, workflows),
+      switching,
       workflows,
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
@@ -6471,10 +6491,10 @@ async function main(argv) {
   });
   let ingest = startIngest(generation, teamName, leadSessionId);
   await ingest.sweep();
-  let switching = false;
   let pinned = false;
   let leadFacts = {};
   const retarget = async (team, lead) => {
+    hub.publish();
     const gen = ++generation;
     ingest.close();
     store.setTeam(team);
@@ -6516,9 +6536,11 @@ async function main(argv) {
       return { ok: true, changed: true };
     } finally {
       switching = false;
+      hub.publish();
     }
   };
   const retargetSession = async (sessionId) => {
+    hub.publish();
     const gen = ++generation;
     ingest.close();
     store.setTeam(sessionId);
@@ -6552,6 +6574,7 @@ async function main(argv) {
       return { ok: true, changed: true };
     } finally {
       switching = false;
+      hub.publish();
     }
   };
   let reaper = null;
@@ -6623,7 +6646,7 @@ async function main(argv) {
       projectsRoot,
       cli.cwd
     );
-    const mine = teams.find((t) => t.name === currentTeam);
+    const mine = teams.find((t) => t.name === (currentTeam || currentSession));
     leadFacts = { sessionName: mine?.goal, branch: mine?.branch };
     if (pinned || gen !== generation) return;
     if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
@@ -6637,6 +6660,7 @@ async function main(argv) {
       logError("follow", err);
     } finally {
       switching = false;
+      hub.publish();
     }
   };
   const follower = setInterval(() => void followRealTeam(), FOLLOW_INTERVAL_MS);
