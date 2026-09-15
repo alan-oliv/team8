@@ -850,7 +850,7 @@ it('tells a workflow session apart from a bare one by its kind pill', async () =
   expect(rows).toHaveLength(2);
   expect(screen.getByTestId('session-count').textContent).toBe('2');
   expect(within(rows[0]).getByTestId('team-kind').textContent).toBe('workflow');
-  expect(within(rows[1]).getByTestId('team-kind').textContent).toBe('solo');
+  expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
   expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('running');
   expect(within(rows[1]).getByTestId('team-meta').textContent).toContain('live');
 });
@@ -942,7 +942,10 @@ it('leads each row with its kind, coloured per the canvas KIND table', async () 
   expect(kinds[1].style.color).toBe('var(--warn)');
 });
 
-it('calls a roster of one with a tree subagents, and a bare one solo', async () => {
+// A bare window is not `solo` — solo is a mode a batch decides, and a session
+// with no subagents, no roster and no run has shown no evidence of any mode
+// yet. The row waits, as the trigger's badge does.
+it('calls a roster of one with a tree subagents, and gives a bare one no pill', async () => {
   const [team, other] = sampleTeams();
   listOf([
     { ...team, members: 1, state: 'live' as const, subagents: 6 },
@@ -951,10 +954,8 @@ it('calls a roster of one with a tree subagents, and a bare one solo', async () 
   renderSelect();
 
   const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => within(r).getByTestId('team-kind').textContent)).toEqual([
-    'subagents',
-    'solo',
-  ]);
+  expect(within(rows[0]).getByTestId('team-kind').textContent).toBe('subagents');
+  expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
 });
 
 // The folder menu — the chip in the header opens a second, narrower list of

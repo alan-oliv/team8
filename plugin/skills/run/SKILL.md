@@ -141,14 +141,13 @@ tasks and not the number of tracks overall:
 | A task nothing else touches | Its own teammate, dispatched now |
 | A task that is small and easy | Still a teammate in this mode. Never keep it for yourself |
 
-**workflow.** Same-shape fan-out or a fixed pipeline. It needs the user's
-opt-in in their own words ("use a workflow"): the notes recommended it, so
-ask once — "run these <n> as a workflow?" — and on yes load the
-`workflow-authoring` skill and write the script: one `agent()` per task with
-its model, `pipeline` over the dependency edges, a review stage per task
-with the Track Review rubric, results to files. On no, fall back to the next
-mode down the table. The console shows a workflow in its own mode; agents in
-it never join the roster.
+**workflow.** Same-shape fan-out or a fixed pipeline. The mode came from the
+table and the user approved the table, and this skill's instruction is the
+opt-in the Workflow tool requires — do not ask "run these as a workflow?".
+Load the `workflow-authoring` skill and write the script: one `agent()` per
+task with its model, `pipeline` over the dependency edges, a review stage per
+task with the Track Review rubric, results to files. The console shows a
+workflow in its own mode; agents in it never join the roster.
 
 ### Teammates share one checkout
 

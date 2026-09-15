@@ -1,11 +1,11 @@
 # Test checklist
 
-One small project per mode, each in its own repo. Every scenario starts with
-`/team8:plan` and a request written the way a user would ask, with no hint about
-modes, specs or plans. The plugin decides all of that: `team8:plan` picks the
-path, `team8:tasks` reads the mode off the task graph, and `team8:run` executes
-it. So every run tests two things: that the plugin chose the expected mode, and
-that the console shows it.
+One small project per mode, each in its own empty folder. Every scenario starts
+with `/team8:plan` and a request written the way a user would ask, with no hint
+about modes, specs or plans. The plugin decides all of that: `team8:plan` picks
+the path, `team8:tasks` reads the mode off the task graph, and `team8:run`
+executes it. The point of this pass is to watch the console UI and the run
+logs, and to notice anything slow — not to check git hygiene.
 
 A different mode than expected is a finding. Compare the closing's first line
 and the run log's `mode:` line against the mode table in
@@ -15,11 +15,9 @@ and the run log's `mode:` line against the mode table in
 
 - [ ] `/team8:setup` done and Claude Code restarted
 - [ ] `/team8:console` run, so the console serves the installed build, and `http://127.0.0.1:4823` open
-- [ ] Each lab is its own git repo with a first commit, and each scenario runs in a fresh session inside it
+- [ ] Each lab is its own empty folder, and each scenario runs in a fresh session inside it
 
-Each scenario cuts a branch and commits to it, and scenarios 2 to 4 spend real
-money on implementers and reviews. Reset a lab to its first commit to run it
-again.
+Scenarios 2 to 4 spend real money on implementers and reviews.
 
 The plan tab only appears when the lead writes a file under
 `docs/team8/plans/`, and `team8:plan` only writes one when it judges the work
@@ -27,36 +25,31 @@ architectural. The prompts don't ask for one, so note whether each scenario got
 a plan file: that is the plugin's call, and part of what is being tested.
 
 Keep for the report: the closing message (mode line, waves, task table), the
-run log from the lab's `docs/team8/runs/`, and which tabs appeared or stayed
-empty.
+run log from the lab's `docs/team8/runs/`, which tabs appeared or stayed empty,
+and anything that felt slow (which view, roughly how long).
 
 ## 1. Solo: `solo-lab`
 
-**Seed:** `price.js` exporting `formatPrice(n)`, which returns `String(n)`, so
-`formatPrice(1234.5)` is `"1234.5"`, and `price.test.js` with one passing test
-for the current behavior.
-
 ```
-/team8:plan Prices on the page show up like "1234.5". They should look like "$1,234.50": a dollar sign, commas for thousands and always two decimals.
+/team8:plan I need a small formatPrice function for a Node project. Given 1234.5 it should return "$1,234.50": a dollar sign, commas for thousands and always two decimals. Include a test.
 ```
 
+- [ ] The lead never offers to skip the pipeline, and "no git" only skips the branch and commits
 - [ ] No spec or plan file: small work goes straight to tasks
-- [ ] Closing says `mode: solo`: one task, one file
+- [ ] Closing says `mode: solo`: one mechanical task, one file
 - [ ] The approval question shows as a `NEEDS YOU` card, answerable from the console
-- [ ] The lead fixes it itself, test first, one commit, no roster
+- [ ] The lead fixes it itself, test first, no roster
+- [ ] The picker row and the trigger show no kind pill for this bare session
 - [ ] Console offers `stream` and `overview` only
 - [ ] `overview` shows a brief of this one session
 
 ## 2. Subagents: `kv-lab`
 
-**Seed:** `store.js` with an in-memory `get`, `set` and `delete`, and
-`store.test.js` covering them.
-
 ```
-/team8:plan Right now the store loses everything when the process restarts. I need it saved to disk and loaded back on startup, and it shouldn't corrupt the file if the machine dies in the middle of a write.
+/team8:plan I need a tiny key-value store for Node with get, set and delete. It has to be saved to disk and loaded back on startup, and it shouldn't corrupt the file if the machine dies in the middle of a write.
 ```
 
-- [ ] Closing says `mode: subagents`: one decision (file format, atomic write) and then save, load and a crash test, all in `store.js`, so one serial track with a peak of 1
+- [ ] Closing says `mode: subagents`: a peak of 1 with at least one standard task. One task is enough — a single standard task is subagents, not solo
 - [ ] Whether it wrote a spec and plan. If it did: `plan` appears as the second tab once the skeleton is written, rows fill in one per Edit, matching the `Plan ▓▓░░ n/N` lines in the terminal, and opening a row shows that task's section
 - [ ] After "start the work", `trace` appears with one lane per implementer and reviewer
 - [ ] Never two implementers at the same time in `trace`
@@ -64,19 +57,30 @@ for the current behavior.
 
 ## 3. Workflow: `pdf-lab`
 
-**Seed:** a script that generates invoice PDFs in `invoices/` in 4 different
-layouts (table, letter, receipt, two columns), each with an invoice number,
-date, vendor and total, plus one blank PDF on purpose. Start with 20 and go up
-to 100 once the run works. The layouts differ so the job needs a model, not
-`pdftotext` and a regex.
+The batch test needs the PDFs to already exist, so this scenario is two steps.
+Asking for generation and extraction in one prompt would give the plan a
+one-off generator task ahead of the batches, which is not what this checks.
+
+**Step 1** — a plain session, no `/team8:plan`, just to produce the input:
 
 ```
-/team8:plan I have about 100 invoices as PDFs in invoices/, and they come from different vendors so they all look different. For each one I need the invoice number, date, vendor and total pulled out into a JSON file, and then one CSV with everything so I can open it in a spreadsheet.
+Write and run a script that creates 20 sample invoice PDFs in invoices/, using 4 different layouts (a table, a letter, a receipt and a two-column layout). Each one should have an invoice number, a date, a vendor and a total. Also add one blank PDF on purpose.
 ```
 
+The layouts differ so the job needs a model, not `pdftotext` and a regex. Start
+with 20 and go up to 100 once the run works.
+
+**Step 2** — a fresh session:
+
+```
+/team8:plan I have about 20 invoices as PDFs in invoices/, and they come from different vendors so they all look different. For each one I need the invoice number, date, vendor and total pulled out into a JSON file, and then one CSV with everything so I can open it in a spreadsheet.
+```
+
+- [ ] The lead does not offer a regex-versus-model choice: the agents are the extractor, and the design is batches plus a verify step
+- [ ] If `invoices/` is empty, the lead stops and asks for the PDFs instead of planning against nothing
 - [ ] Tasks are batches (about 10 PDFs each), not one task per PDF. 100 tasks is a bug in `team8:tasks`
-- [ ] Closing recommends `workflow`: same-shape batches, no judgment between them
-- [ ] `team8:run` asks whether to run it as a workflow; answer "yes, use a workflow"
+- [ ] Closing says `mode: workflow`: same-shape batches, no judgment between them
+- [ ] `team8:run` does not ask whether to run it as a workflow; it just does
 - [ ] If it wrote a plan, the plan tab fills in while planning and goes away once the workflow starts
 - [ ] `run`: agents grouped by phase, extract and verify
 - [ ] `output`: the workflow's return value, laid out as sections
@@ -87,8 +91,6 @@ to 100 once the run works. The layouts differ so the job needs a model, not
 - [ ] Run log records the mode and its reason
 
 ## 4. Teammates: `todo-lab`
-
-**Seed:** an empty repo with a README.
 
 ```
 /team8:plan I want a simple todo app I can run locally: a small Node API that saves to a file, a React page to add, check off and delete todos, and a command-line client for when I'm in the terminal. It should come with a test that goes through the whole thing end to end.

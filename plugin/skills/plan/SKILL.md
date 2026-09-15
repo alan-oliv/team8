@@ -83,6 +83,14 @@ it and get approval. "Simple" tasks are where unexamined assumptions
 cause the most wasted work. What scales with simplicity is the
 artifact, never the approval.
 
+**Never offer to skip this skill.** "This is small enough that the
+pipeline is overkill, want me to just write it?" is not a question to
+ask — the user invoked `team8:plan`, and a small task is the solo mode
+with a two-line design, not a reason to bypass the tasks, the table, the
+approval and the run. The same holds when the folder is not a git repo:
+say so once, skip the branch cut and every commit, and do everything
+else exactly as written.
+
 ### Red Flags
 
 | Thought | Reality |
@@ -94,6 +102,9 @@ artifact, never the approval.
 | "The spike works, so I'll keep the code" | A spike's output is an answer. Keeping the code is a new request — classify it. |
 | "It grew, but I'm almost done — no need to re-classify" | Hidden complexity upgrades the path mid-task. Stop and say so. |
 | "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
+| "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means `mode: solo`, never no tasks and no approval. |
+| "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table, approval and run do not. |
+| "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
 
 ### Checklist
 
@@ -188,6 +199,7 @@ is the whole process.
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
+- **The same job over many inputs is a fan-out, not a script.** "For each of these N items, produce X" (N of five or more, no decision between items) is workflow-shaped, per the table in `team8:tasks` Mode: the orchestration is the repeatable thing, and it scales to dozens of agents where a lead would improvise the same dispatch by hand. Design it as batches of inputs handled by agents, each returning its result, a verify step over the results, and one aggregation task at the end. The agents do the per-item work — do not offer a choice between agents and a hand-written parser, and do not collapse the job into one script the lead writes. Say the shape out loud in the design so `team8:tasks` reads `workflow` off the graph. If the inputs do not exist yet, stop and ask for them before designing: a fan-out sized on an empty directory is a guess.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
 - Prefer multiple choice questions when possible, but open-ended is fine too
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
@@ -279,7 +291,9 @@ in Phase 3.
 **Before writing:** cut the batch branch — `git checkout -b <topic>` — so
 the plan and the tasks land on it and `team8:run` finds it checked out. Open
 the run log from the template below, fill the Brainstorm section, and commit
-it on the branch.
+it on the branch. **Not a git repo?** Say so in one line, write the run log
+and plan as files anyway, and skip the branch and every commit from here to
+the close — nothing else in Phases 2 and 3 changes.
 
 Read this skill's `writing-plans.md` top to bottom, then write the plan
 exactly as it says:

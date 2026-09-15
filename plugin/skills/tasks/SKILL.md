@@ -112,20 +112,34 @@ matching the console's: solo, subagents, teammates, workflow. Derive it from
 the tracks and the task shapes, state it with its reason in the notes, and let
 the user override it in the ask. `team8:run` executes whichever was chosen.
 
+The four modes are Claude Code's own four ways of running work, and they
+differ on five things. This is the knowledge the mode is read against:
+
+| | solo | subagents | teammates | workflow |
+|---|---|---|---|---|
+| What it is | The lead does it | A worker the lead spawns | A lead supervising peer sessions | A script the runtime executes |
+| Who decides what runs next | The lead | The lead, turn by turn | The lead, turn by turn | The script |
+| Where intermediate results live | The lead's context | The lead's context | A shared task list | Script variables |
+| What's repeatable | Nothing | The worker definition | The team definition | The orchestration itself |
+| Scale | A couple of tool calls | A few delegated tasks per turn | A handful of long-running peers | Dozens to hundreds of agents per run |
+| Interruption | — | Restarts the turn | Teammates keep running | Resumable in the same session |
+
 A track is a group of tasks whose files no other group touches. Count them
-first.
+first, then read the graph against the table:
 
-| The graph says | Mode | Why |
+| The graph says | Mode | Why, per the table |
 |---|---|---|
-| One task, or two you would finish in the next few tool calls | **solo** | Spawning costs more than the work. The lead does it, TDD, one commit |
-| A peak of 1 — one track, or several that never share a wave — and at least one task is judgment or needs the lead's answers mid-way | **subagents** | Nothing runs in parallel and nobody needs a mailbox. A fresh subagent per task, the lead reviews each diff, keeps control and its own context |
-| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. That is what a team is |
-| Five or more tasks of the same shape — same mechanical edit across files, a review per PR, a fan-out with a verify step — with no judgment call between them | **workflow** | Deterministic fan-out and pipeline beat a lead improvising the same dispatch nine times. Needs the user's opt-in in their own words; recommend it, do not assume it |
+| At most two tasks, every one of them **mechanical** (Sizing above) — work the lead finishes in the next few tool calls | **solo** | Nothing is worth repeating and nothing is worth a worker. Spawning costs more than the work; the lead does it, TDD, one commit |
+| A peak of 1 — one track, or several that never share a wave — and any task is **standard** or **judgment**, even when it is the only task | **subagents** | A few delegated tasks, the lead deciding what runs next after each one, results back in the lead's context for review. Nothing runs in parallel and nobody needs a mailbox |
+| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Peers that run long at the same time and coordinate through the shared task list. Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review |
+| Five or more tasks of the same shape — the same job over many inputs, a review per PR, a fan-out with a verify step — with no decision between them | **workflow** | The orchestration itself is the repeatable thing: the script decides what runs next, results live in its variables, and it scales to dozens or hundreds of agents where a lead would improvise the same dispatch by hand. This skill's instruction is the opt-in the Workflow tool requires: state it, do not ask the user to choose it |
 
-Ties break upward: solo before subagents, subagents before teammates, unless
-the graph has two tracks that genuinely run at once. Teammates before
-workflow whenever a task needs judgment between steps. A batch that mixes
-shapes takes the mode of its hardest part.
+A single standard task is subagents, not solo: one file of real work is
+still work the lead should review rather than write. Solo is for the rename,
+the flag, the field — the rows Sizing calls mechanical. Ties break upward:
+subagents before teammates, unless the graph has two tracks that genuinely
+run at once. Teammates before workflow whenever a task needs judgment between
+steps. A batch that mixes shapes takes the mode of its hardest part.
 
 **Tracks are not parallelism.** A track is who owns which files; a wave is
 who is running at the same time. Wave 1 is every track whose first task has

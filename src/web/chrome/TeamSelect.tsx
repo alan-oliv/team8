@@ -375,7 +375,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               it is how the list tells the four shapes apart without
               the operator having to read the counts on the line
               below. Smaller than the trigger's badge (9px / 0 6px),
-              which is the canvas's own pair of sizes. */}
+              which is the canvas's own pair of sizes. A bare session
+              gets no pill, same as the trigger: `solo` is a mode the
+              batch decides, not what a window with no evidence is. */}
+          {kindOf(team) !== 'solo' && (
           <span
             data-testid="team-kind"
             style={{
@@ -390,6 +393,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
           >
             {kindOf(team)}
           </span>
+          )}
           {/* The name the operator gave the session, not the id the
               directory happens to carry. Falls back to the id when a
               session was never named, so the row is never blank. */}
