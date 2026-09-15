@@ -200,6 +200,12 @@ export async function discoverTeam(
  */
 interface SessionFacts {
   live: Set<string>;
+  /**
+   * sessionId -> mid-turn, read from the sidecar's `status` field. A sidecar
+   * with no `status` (older Claude Code) is treated as busy, so those
+   * sessions keep today's behaviour: live for as long as the pid answers.
+   */
+  busy: Set<string>;
   /** sessionId -> the conversation name `/branch` writes, used as the row's goal. */
   names: Map<string, string>;
   /** sessionId -> its cwd, for finding the subagents directory it writes into. */
@@ -207,14 +213,14 @@ interface SessionFacts {
 }
 
 async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
-  const facts: SessionFacts = { live: new Set(), names: new Map(), cwds: new Map() };
+  const facts: SessionFacts = { live: new Set(), busy: new Set(), names: new Map(), cwds: new Map() };
   let entries: string[];
   try {
     entries = await fs.readdir(sessionsRoot);
   } catch {
     return facts;
   }
-  const docs: { sessionId: string; pid?: number; name?: string; cwd?: string }[] = [];
+  const docs: { sessionId: string; pid?: number; name?: string; cwd?: string; status?: string }[] = [];
   for (const entry of entries) {
     if (!entry.endsWith('.json')) continue;
     const doc = await readJsonSafe<{
@@ -222,9 +228,10 @@ async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
       pid?: number;
       name?: string;
       cwd?: string;
+      status?: string;
     }>(path.join(sessionsRoot, entry));
     if (typeof doc?.sessionId !== 'string') continue;
-    docs.push({ sessionId: doc.sessionId, pid: doc.pid, name: doc.name, cwd: doc.cwd });
+    docs.push({ sessionId: doc.sessionId, pid: doc.pid, name: doc.name, cwd: doc.cwd, status: doc.status });
   }
 
   // A pid that answers is not proof the session behind it is still there:
@@ -238,6 +245,7 @@ async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
     if (typeof doc.pid === 'number' && isPidAlive(doc.pid) && !spares.has(doc.pid)) {
       facts.live.add(doc.sessionId);
     }
+    if (doc.status !== 'idle') facts.busy.add(doc.sessionId);
     if (typeof doc.name === 'string' && doc.name !== '') facts.names.set(doc.sessionId, doc.name);
     if (typeof doc.cwd === 'string' && doc.cwd !== '') facts.cwds.set(doc.sessionId, doc.cwd);
   }
@@ -762,7 +770,8 @@ async function sessionRows(
     const recent = now - lastActivityAt < IDLE_GRACE_MS;
     // See the team loop above: an ended row gets no diffstat, so no read is
     // spent on a folder holding only ended sessions.
-    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    const state: TeamSummary['state'] =
+      leadAlive && sessions.busy.has(sessionId) ? 'live' : leadAlive || recent ? 'idle' : 'done';
     if (state !== 'done' && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
     rows.push({
       // The SESSION id, not a team directory: `sessionOnly` below is what tells
@@ -1124,7 +1133,8 @@ async function walkTeams(
     // looking at the row — this is just whatever the folder's tree holds
     // right now, which is not what that session did. Only a live or idle
     // row, whose tree the session might still touch, earns the read.
-    const state: TeamSummary['state'] = leadAlive ? 'live' : recent ? 'idle' : 'done';
+    const state: TeamSummary['state'] =
+      leadAlive && sessions.busy.has(leadSession) ? 'live' : leadAlive || recent ? 'idle' : 'done';
     if (state !== 'done') needsDiffstat.set(name, leadCwd);
     const leadTranscript =
       projectsRoot && leadSession

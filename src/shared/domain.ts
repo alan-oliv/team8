@@ -394,6 +394,8 @@ export interface TeamSummary {
   branch?: string;           // read from <cwd>/.git/HEAD, not the statusline hook
   folder?: string;           // the folder's name, only on a listing across every folder
   goal?: string;             // the lead session's name (`/branch` sets it)
+  // live = process alive and mid-turn (sidecar status "busy"); idle = alive
+  // but parked at its prompt, or gone within IDLE_GRACE_MS; done = gone longer.
   state: 'live' | 'idle' | 'done';
   /**
    * The mode `team8:tasks` decided for this session's batch, read off the run

@@ -284,9 +284,12 @@ describe('listTeamSummaries', () => {
   // The REAL on-disk layout: the file is named for the PID and carries the
   // session id inside. isSessionLive reads sessions/<sessionId>.json, a path
   // that does not exist on a real machine — see the report's open question Q1.
-  async function writeSession(pid: number, sessionId: string) {
+  async function writeSession(pid: number, sessionId: string, status?: 'busy' | 'idle') {
     await fs.mkdir(sessions(), { recursive: true });
-    await fs.writeFile(path.join(sessions(), `${pid}.json`), JSON.stringify({ pid, sessionId }));
+    await fs.writeFile(
+      path.join(sessions(), `${pid}.json`),
+      JSON.stringify({ pid, sessionId, ...(status ? { status } : {}) }),
+    );
   }
 
   const sessionDirOf = (projects: string, cwd: string, sessionId: string) =>
@@ -509,12 +512,22 @@ describe('listTeamSummaries', () => {
     const CWD = '/Users/someone/code/solo';
     const SOLO = '8f2a1c00-9d4e-4f1b-8a77-0c2e6b5d4a31';
 
-    async function liveSessionWithSubagents(sessionId: string, count: number): Promise<string> {
+    async function liveSessionWithSubagents(
+      sessionId: string,
+      count: number,
+      status?: 'busy' | 'idle',
+    ): Promise<string> {
       const projects = path.join(dir, 'projects');
       await fs.mkdir(sessions(), { recursive: true });
       await fs.writeFile(
         path.join(sessions(), `${process.pid}.json`),
-        JSON.stringify({ pid: process.pid, sessionId, cwd: CWD, name: 'a solo session' }),
+        JSON.stringify({
+          pid: process.pid,
+          sessionId,
+          cwd: CWD,
+          name: 'a solo session',
+          ...(status ? { status } : {}),
+        }),
       );
       const subagents = path.join(sessionDirOf(projects, CWD, sessionId), 'subagents');
       await fs.mkdir(subagents, { recursive: true });
@@ -585,6 +598,28 @@ describe('listTeamSummaries', () => {
       expect(row?.workflow).toEqual({ runId: 'wf_reaped1', live: true });
     });
 
+    it('reads a bare session row live only while its sidecar says busy', async () => {
+      const projects = await liveSessionWithSubagents(SOLO, 0, 'busy');
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), '', projects)).teams;
+      expect(row.state).toBe('live');
+    });
+
+    it('reads a bare session row idle, though alive, once its sidecar says idle', async () => {
+      const projects = await liveSessionWithSubagents(SOLO, 0, 'idle');
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), '', projects)).teams;
+      expect(row.state).toBe('idle');
+      expect(row.leadAlive).toBe(true);
+    });
+
+    it('reads a bare session row live when its sidecar carries no status at all', async () => {
+      const projects = await liveSessionWithSubagents(SOLO, 0);
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), '', projects)).teams;
+      expect(row.state).toBe('live');
+    });
+
     // The config-less machine: no teams directory has ever been created.
     it('still lists the session when there is no teams directory at all', async () => {
       const projects = await liveSessionWithSubagents(SOLO, 1);
@@ -606,6 +641,32 @@ describe('listTeamSummaries', () => {
     const byName = new Map(listed.teams.map((t) => [t.name, t]));
     expect(byName.get('session-live0001')!.leadAlive).toBe(true);
     expect(byName.get('session-dead0002')!.leadAlive).toBe(false);
+  });
+
+  it('calls a team live while its sidecar says busy', async () => {
+    await writeConfig('session-busyteam1', team('session-busyteam1', { createdAt: 10, leadSessionId: 'busyteam1-x', members: 2 }));
+    await writeSession(process.pid, 'busyteam1-x', 'busy');
+
+    const [row] = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    expect(row.state).toBe('live');
+  });
+
+  it('calls a team idle at the prompt though its pid still answers, once its sidecar says idle', async () => {
+    await writeConfig('session-idleteam1', team('session-idleteam1', { createdAt: 20, leadSessionId: 'idleteam1-x', members: 2 }));
+    await writeSession(process.pid, 'idleteam1-x', 'idle');
+
+    const [row] = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    expect(row.state).toBe('idle');
+    expect(row.leadAlive).toBe(true);
+  });
+
+  it('calls a team live when its sidecar carries no status field at all', async () => {
+    // Older Claude Code versions omit `status`; unknown reads as busy, today's behaviour.
+    await writeConfig('session-nostatus1', team('session-nostatus1', { createdAt: 30, leadSessionId: 'nostatus1-x', members: 2 }));
+    await writeSession(process.pid, 'nostatus1-x');
+
+    const [row] = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    expect(row.state).toBe('live');
   });
 
   it('calls a team with a dead lead live while it is still recent, and a stale one dead', async () => {
