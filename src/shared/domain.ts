@@ -365,7 +365,12 @@ export interface TeamState {
   plan?: PlanProgress;
   /** A session switch is reading its target in; the select routes answer 409 until it lands. */
   switching?: boolean;
+  /** See {@link TeamSummary.mode}: the batch's decided mode, for the trigger's badge. */
+  decidedMode?: DecidedMode;
 }
+
+/** The four ways `team8:tasks` can decide a batch runs — the console's four pills. */
+export type DecidedMode = 'solo' | 'subagents' | 'teammates' | 'workflow';
 
 /**
  * One entry of `GET /api/teams`. Deliberately metadata only: folding a team's
@@ -390,6 +395,12 @@ export interface TeamSummary {
   folder?: string;           // the folder's name, only on a listing across every folder
   goal?: string;             // the lead session's name (`/branch` sets it)
   state: 'live' | 'idle' | 'done';
+  /**
+   * The mode `team8:tasks` decided for this session's batch, read off the run
+   * log the lead wrote. Absent until a batch decides one: the row's pill then
+   * comes from evidence (a roster, a subagent tree, a run) or is left blank.
+   */
+  mode?: DecidedMode;
   /**
    * A live session with no team of its own — a row the picker can still offer,
    * but one that `/api/teams/<name>/select` knows nothing about: `name` is a

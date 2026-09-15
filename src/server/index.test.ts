@@ -898,6 +898,28 @@ describe('listTeamSummaries', () => {
       expect((await rowOf(ID))?.goal).toBe('second');
     });
 
+    // The pill reads the batch's own decision, never a guess: the lead's write
+    // of the run log carries `mode: <x> — <reason>`. The skill text quoting the
+    // same line arrives as a user record, and the unfilled template has no dash
+    // after `solo`, so neither decides anything.
+    it('reads the decided mode off the run log the lead wrote', async () => {
+      const runLog = (content: string) => ({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'Write', input: { file_path: `${cwd}/docs/team8/runs/2026-09-15-kv.md`, content } }],
+        },
+      });
+      await write(ID, [
+        { type: 'user', cwd },
+        { type: 'user', cwd, message: { content: 'mode: teammates — 4 tracks; log at docs/team8/runs/x.md' } },
+        runLog('## Plan\n- tasks: <n> · mode: solo | subagents | teammates | workflow — <reason>\n'),
+      ]);
+      expect((await rowOf(ID))?.mode).toBeUndefined();
+
+      await fs.appendFile(file(ID), JSON.stringify(runLog('## Plan\n- tasks: 1 · mode: subagents — one standard task\n')) + '\n');
+      expect((await rowOf(ID))?.mode).toBe('subagents');
+    });
+
     it('ignores a title that is only quoted inside a message', async () => {
       await write(ID, [{ type: 'user', cwd, message: { content: '{"type":"custom-title","customTitle":"fake"}' } }]);
       expect((await rowOf(ID))?.goal).toBeUndefined();

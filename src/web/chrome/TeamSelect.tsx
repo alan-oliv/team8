@@ -60,6 +60,8 @@ export const KIND_STYLE: Record<string, { color: string; edge: string }> = {
 
 /** What KIND a picker row is, by the same bar the console classifies on. */
 export function kindOf(team: TeamSummary): string {
+  // A decided mode beats the evidence: it is the batch saying what it is.
+  if (team.mode) return team.mode;
   if (team.members >= 2) return 'teammates';
   if (team.workflow) return 'workflow';
   return team.subagents ? 'subagents' : 'solo';
@@ -378,7 +380,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               which is the canvas's own pair of sizes. A bare session
               gets no pill, same as the trigger: `solo` is a mode the
               batch decides, not what a window with no evidence is. */}
-          {kindOf(team) !== 'solo' && (
+          {(team.mode || kindOf(team) !== 'solo') && (
           <span
             data-testid="team-kind"
             style={{

@@ -175,7 +175,7 @@ export function StatusBar({
             current={state.teamName || state.leadSessionId}
             sessionName={state.sessionName}
             switching={state.switching}
-            mode={solo ? (hasSubagents ? 'subagents' : undefined) : 'teammates'}
+            mode={state.decidedMode ?? (solo ? (hasSubagents ? 'subagents' : undefined) : 'teammates')}
             open={teamsOpen}
             onOpenChange={onTeamsOpenChange}
             now={now}

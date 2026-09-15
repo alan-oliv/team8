@@ -19,7 +19,7 @@ import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
-import type { FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
+import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
 import { ALL_FOLDERS } from '../shared/domain';
 
 const execFileAsync = promisify(execFile);
@@ -265,7 +265,13 @@ async function readSessions(sessionsRoot: string): Promise<SessionFacts> {
  * records inside a message is stored escaped, so the markers only match real
  * records; a stray unescaped one on some other record is skipped by type.
  */
-interface TranscriptFacts { customTitle?: string; aiTitle?: string; branch?: string; entrypoint?: string }
+interface TranscriptFacts {
+  customTitle?: string;
+  aiTitle?: string;
+  branch?: string;
+  entrypoint?: string;
+  mode?: DecidedMode;
+}
 const transcriptFacts = new Map<string, { offset: number; facts: TranscriptFacts }>();
 
 function lastRecordField(buf: Buffer, type: string, key: string): string | undefined {
@@ -308,8 +314,36 @@ function lastBranch(buf: Buffer): string | null | undefined {
   return branch === 'HEAD' ? null : branch;
 }
 
+/**
+ * The mode `team8:tasks` decided, read off the lead's own write of the run
+ * log: the `mode: <x> — <reason>` line of `docs/team8/runs/<batch>.md`. Only a
+ * tool_use record counts — the skill text arrives as a user record and quotes
+ * the same line as an example — and the template's `mode: solo | subagents …`
+ * has no dash after the first word, so an unfilled log decides nothing.
+ */
+const DECIDED_MODE = /mode: (solo|subagents|teammates|workflow) —/g;
+
+function lastDecidedMode(buf: Buffer): DecidedMode | undefined {
+  const marker = 'docs/team8/runs/';
+  let at = buf.lastIndexOf(marker);
+  while (at >= 0) {
+    const start = buf.lastIndexOf(0x0a, at) + 1;
+    const end = buf.indexOf(0x0a, at);
+    const line = buf.subarray(start, end < 0 ? buf.length : end).toString('utf8');
+    if (line.includes('"tool_use"')) {
+      let found: DecidedMode | undefined;
+      for (const m of line.matchAll(DECIDED_MODE)) found = m[1] as DecidedMode;
+      if (found) return found;
+    }
+    at = start > 0 ? buf.lastIndexOf(marker, start - 1) : -1;
+  }
+  return undefined;
+}
+
 // ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
-async function transcriptMeta(file: string): Promise<{ title?: string; branch?: string; entrypoint?: string }> {
+async function transcriptMeta(
+  file: string,
+): Promise<{ title?: string; branch?: string; entrypoint?: string; mode?: DecidedMode }> {
   let size: number;
   try {
     size = (await fs.stat(file)).size;
@@ -330,6 +364,7 @@ async function transcriptMeta(file: string): Promise<{ title?: string; branch?: 
       facts.aiTitle = lastRecordField(whole, 'ai-title', 'aiTitle') ?? facts.aiTitle;
       const foundBranch = lastBranch(whole);
       facts.branch = foundBranch === null ? undefined : (foundBranch ?? facts.branch);
+      facts.mode = lastDecidedMode(whole) ?? facts.mode;
       // Written on the first record, so only the read from the top can see it.
       if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
@@ -337,7 +372,12 @@ async function transcriptMeta(file: string): Promise<{ title?: string; branch?: 
       await handle.close();
     }
   }
-  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch, entrypoint: facts.entrypoint };
+  return {
+    title: facts.customTitle ?? facts.aiTitle,
+    branch: facts.branch,
+    entrypoint: facts.entrypoint,
+    mode: facts.mode,
+  };
 }
 
 async function branchOf(cwd: string | undefined): Promise<string | undefined> {
@@ -739,6 +779,7 @@ async function sessionRows(
       branch: transcript.branch ?? (await branchOf(cwd)),
       goal: sessions.names.get(sessionId) ?? transcript.title,
       state,
+      ...(transcript.mode ? { mode: transcript.mode } : {}),
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
       ...(state !== 'done' && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}),
@@ -1115,6 +1156,7 @@ async function walkTeams(
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
       state,
+      ...(leadTranscript.mode ? { mode: leadTranscript.mode } : {}),
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
     });
@@ -1291,6 +1333,7 @@ export async function main(argv: string[]): Promise<number> {
       // to name and mark the session on screen.
       leadSessionId: team.leadSessionId || (leadSessionId ?? ''),
       mode: modeOf(team.agents.length, workflows),
+      decidedMode: leadFacts.mode,
       switching,
       workflows,
       brief: briefs.current(),
@@ -1364,7 +1407,7 @@ export async function main(argv: string[]): Promise<number> {
    * Session name and branch read off disk for the CURRENT team, refreshed by
    * the follower. A floor under the `statusline` hook, which is optional.
    */
-  let leadFacts: { sessionName?: string; branch?: string } = {};
+  let leadFacts: { sessionName?: string; branch?: string; mode?: DecidedMode } = {};
 
   /**
    * Only the ingest is rebuilt. The store is RE-POINTED: setTeam already clears
@@ -1591,7 +1634,7 @@ export async function main(argv: string[]): Promise<number> {
     // below it showed the real name.
     // A solo session's row is named by its session id, and `currentTeam` is ''.
     const mine = teams.find((t) => t.name === (currentTeam || currentSession));
-    leadFacts = { sessionName: mine?.goal, branch: mine?.branch };
+    leadFacts = { sessionName: mine?.goal, branch: mine?.branch, mode: mine?.mode };
 
     if (pinned || gen !== generation) return;
     if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;

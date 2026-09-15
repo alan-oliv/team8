@@ -958,6 +958,21 @@ it('calls a roster of one with a tree subagents, and gives a bare one no pill', 
   expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
 });
 
+// Once the batch has decided, the row says so — `solo` included, which is the
+// one kind no evidence could otherwise show — and the decision beats the
+// evidence a roster or tree would suggest.
+it('shows the decided mode as the pill, solo included', async () => {
+  const [team, other] = sampleTeams();
+  listOf([
+    { ...team, members: 1, state: 'done' as const, mode: 'solo' as const },
+    { ...other, members: 5, state: 'live' as const, mode: 'workflow' as const },
+  ]);
+  renderSelect();
+
+  const rows = await screen.findAllByRole('option');
+  expect(rows.map((r) => within(r).getByTestId('team-kind').textContent)).toEqual(['solo', 'workflow']);
+});
+
 // The folder menu — the chip in the header opens a second, narrower list of
 // every folder the machine has sessions in, and picking one rescopes the
 // session list under it.
