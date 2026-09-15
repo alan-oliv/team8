@@ -253,6 +253,71 @@ describe('--read-only', () => {
   });
 });
 
+describe('hooks from a foreign session with no agent_id', () => {
+  it('is not appended and does not touch the agent, when the session differs from the lead', async () => {
+    const touched: string[] = [];
+    const withLead = createHookHandlers({
+      store,
+      permits,
+      leadSessionId: () => 'lead-session-id',
+      onAgentActivity: (a) => touched.push(a),
+    });
+
+    const res = await withLead.hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      session_id: 'some-other-session',
+    });
+
+    expect(res).toEqual({ status: 200, body: {} });
+    expect(of(store.replay(), 'hook')).toHaveLength(0);
+    expect(touched).toEqual([]);
+  });
+
+  it('is appended as team-lead when the session matches the lead', async () => {
+    const withLead = createHookHandlers({ store, permits, leadSessionId: () => 'lead-session-id' });
+
+    await withLead.hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      session_id: 'lead-session-id',
+    });
+
+    const events = of(store.replay(), 'hook');
+    expect(events).toHaveLength(1);
+    expect(events[0].agent).toBe('team-lead');
+  });
+
+  it('is still appended under the teammate name when the hook carries an agent_id', async () => {
+    const withLead = createHookHandlers({ store, permits, leadSessionId: () => 'lead-session-id' });
+
+    await withLead.hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      session_id: 'some-other-session',
+      agent_id: 'aprobe-alpha-84fd551b27de6433',
+    });
+
+    const events = of(store.replay(), 'hook');
+    expect(events).toHaveLength(1);
+    expect(events[0].agent).toBe('probe-alpha');
+  });
+
+  it('is appended when the lead session is unknown', async () => {
+    const noLead = createHookHandlers({ store, permits });
+
+    await noLead.hook({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      session_id: 'some-other-session',
+    });
+
+    const events = of(store.replay(), 'hook');
+    expect(events).toHaveLength(1);
+    expect(events[0].agent).toBe('team-lead');
+  });
+});
+
 describe('SessionEnd', () => {
   it('exits only for the lead session', async () => {
     // The hooks live in ~/.claude/settings.json — user scope — so every session

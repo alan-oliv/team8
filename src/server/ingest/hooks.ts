@@ -93,6 +93,13 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
       try {
         const b = bagOf(body);
         const event = str(b.hook_event_name) ?? '';
+        const sid = str(b.session_id);
+        const lead = deps.leadSessionId?.();
+        // Hooks are user-scope, so every Claude Code session on the machine posts
+        // here. A hook with no agent_id is either the lead's or a foreign
+        // session's own lead-shaped hooks — only the former belongs to this
+        // console. Teammates always carry an agent_id (see agentNameFrom below).
+        if (!b.agent_id && lead && sid && sid !== lead) return { status: 200, body: {} };
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str(b.tool_name);
         const text = str(b.message) ?? str(b.prompt);
