@@ -377,8 +377,7 @@ it('does not switch when the most recently live session is already on screen', a
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
 });
 
@@ -401,8 +400,7 @@ it('does not switch on a bare open when every session is done', async () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
 });
 
@@ -424,7 +422,11 @@ it('does not fetch the listing when a /s/:sessionId route is on the URL', () => 
   expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
 });
 
-it('drops the listing fetch if the app unmounts before it resolves, never posting a stale select', async () => {
+it('drops a listing fetch left pending by a switch that lands before it resolves', async () => {
+  // The app is never unmounted for a team switch — main.tsx renders it once,
+  // and a manual pick or an announce just pushes a new `state` frame into the
+  // same instance. So the race this guards against is that frame landing
+  // *before* the listing GET this effect kicked off has resolved.
   window.history.replaceState(null, '', '/');
   let resolveListing!: (res: Response) => void;
   const fetchMock = vi.fn((path: string) =>
@@ -435,13 +437,19 @@ it('drops the listing fetch if the app unmounts before it resolves, never postin
       : Promise.resolve(new Response('{}', { status: 200 })),
   );
   vi.stubGlobal('fetch', fetchMock);
-  const { unmount } = render(<App />);
+  render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
-  // A manual switch (or an announce) landing while the listing GET is still in
-  // flight unmounts this App and mounts a fresh one for the new team — the
-  // stale continuation must not fire a select once its GET finally resolves.
-  unmount();
+  // The switch's own SSE update lands first, changing `state` — which reruns
+  // the effect: its cleanup must retire the pending fetch above, and the ref
+  // guard must stop it firing a second one.
+  act(() =>
+    MockEventSource.last().emit('snapshot', { ...sampleTeamState(), teamName: 'session-b5129c7b' }),
+  );
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/teams?folder=*')).toHaveLength(1);
+
+  // The stale GET now resolves, naming a third, still different team — this
+  // must not fire a select for it.
   resolveListing(
     new Response(
       JSON.stringify({
@@ -454,8 +462,7 @@ it('drops the listing fetch if the app unmounts before it resolves, never postin
       { status: 200 },
     ),
   );
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
 });
