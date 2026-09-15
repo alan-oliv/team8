@@ -83,6 +83,12 @@ const FEED: Record<FeedSize, FeedStyle> = {
 
 const MARKER_COLOR = 'var(--color-accent-500)';
 
+// U+23FA is in no default text font on macOS (only STIX Two Math and the
+// emoji font), so Chrome falls back to .LastResort's boxed `?`. U+25CF is in
+// every monospace fallback (macOS, Windows, Linux). The data still carries
+// '⏺' everywhere — only the gutter draws it as '●'.
+const glyphOf = (marker: TranscriptLine['marker']): string => (marker === '⏺' ? '●' : marker);
+
 // The live frame already carries only PROJECTED_TRANSCRIPT_LINES per agent, so
 // this bounds the merged list once scrollback has been pulled in.
 const RENDER_LIMIT = 1_200;
@@ -248,7 +254,7 @@ function SubagentRow({
           data-testid="transcript-marker"
           style={{ color: MARKER_COLOR, width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
         >
-          ⏺
+          {glyphOf('⏺')}
         </span>
         <span
           data-testid="transcript-text"
@@ -329,7 +335,7 @@ function SubagentRow({
           data-testid="transcript-marker"
           style={{ color: 'var(--color-accent-400)', width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
         >
-          ⏺
+          {glyphOf('⏺')}
         </span>
         <span
           data-testid="transcript-text"
@@ -455,7 +461,7 @@ function FanOutRow({ group, s, opacity }: { group: Subagent[]; s: FeedStyle; opa
           data-testid="transcript-marker"
           style={{ color: MARKER_COLOR, width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
         >
-          ⏺
+          {glyphOf('⏺')}
         </span>
         <span
           data-testid="fanout-header"
@@ -1094,7 +1100,7 @@ export function TranscriptFeed({
                 data-testid="transcript-marker"
                 style={{ color: MARKER_COLOR, width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
               >
-                {line.marker}
+                {glyphOf(line.marker)}
               </span>
               <span
                 data-testid="transcript-text"
@@ -1163,7 +1169,7 @@ export function TranscriptFeed({
                     fontSize: s.markerSize,
                   }}
                 >
-                  {line.marker}
+                  {glyphOf(line.marker)}
                 </span>
                 {line.sender && <Sender name={line.sender} size={s.markerSize} />}
                 <span
@@ -1297,7 +1303,7 @@ export function TranscriptFeed({
                     fontSize: s.markerSize,
                   }}
                 >
-                  {line.marker}
+                  {glyphOf(line.marker)}
                 </span>
                 {line.sender && <Sender name={line.sender} size={s.markerSize} />}
                 <span
@@ -1411,7 +1417,7 @@ export function TranscriptFeed({
               data-testid="transcript-marker"
               style={{ color: MARKER_COLOR, width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
             >
-              {line.marker}
+              {glyphOf(line.marker)}
             </span>
             {line.sender && <Sender name={line.sender} size={s.markerSize} />}
             <span

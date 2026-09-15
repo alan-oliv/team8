@@ -118,6 +118,16 @@ describe('TranscriptFeed', () => {
     expect(screen.getAllByTestId('transcript-text')[1].style.fontSize).toBe('11.5px');
   });
 
+  // U+23FA renders as a boxed `?` in Chrome on macOS — no default text font
+  // there has the glyph. The gutter draws marker '⏺' as '●' (U+25CF) instead,
+  // which every platform's monospace fallback covers; the data still carries
+  // '⏺'.
+  it('draws a ⏺ marker as ● in the gutter', () => {
+    render(<TranscriptFeed lines={LINES} size="wall" />);
+    const markers = screen.getAllByTestId('transcript-marker');
+    expect(markers[1].textContent).toBe('●');
+  });
+
   it('uses the overview marker column of 8px at 9.5px with 10px text', () => {
     render(<TranscriptFeed lines={LINES} size="overview" />);
     const marker = screen.getAllByTestId('transcript-marker')[0];
