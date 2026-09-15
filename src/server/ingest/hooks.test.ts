@@ -316,6 +316,22 @@ describe('hooks from a foreign session with no agent_id', () => {
     expect(events).toHaveLength(1);
     expect(events[0].agent).toBe('team-lead');
   });
+
+  it('is not dropped for a SessionEnd, so a foreign session end still reaches the SessionEnd branch', async () => {
+    const ended: string[] = [];
+    const withLead = createHookHandlers({
+      store,
+      permits,
+      leadSessionId: () => 'lead-session-id',
+      onShutdown: () => ended.push('shutdown'),
+    });
+
+    await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'some-other-session' });
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(ended).toEqual([]);
+    expect(of(store.replay(), 'hook')).toHaveLength(1);
+  });
 });
 
 describe('SessionEnd', () => {

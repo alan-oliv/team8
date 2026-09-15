@@ -99,7 +99,9 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         // here. A hook with no agent_id is either the lead's or a foreign
         // session's own lead-shaped hooks — only the former belongs to this
         // console. Teammates always carry an agent_id (see agentNameFrom below).
-        if (!b.agent_id && lead && sid && sid !== lead) return { status: 200, body: {} };
+        if (!str(b.agent_id) && lead && sid && sid !== lead && event !== 'SessionEnd') {
+          return { status: 200, body: {} };
+        }
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str(b.tool_name);
         const text = str(b.message) ?? str(b.prompt);
@@ -113,13 +115,11 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           // The hooks live in ~/.claude/settings.json — USER scope — so every
           // session on the machine posts SessionEnd here. Only the lead's ends
           // the console; the 10-minute idle reaper covers a crashed lead.
-          const ending = str(b.session_id);
-          const lead = deps.leadSessionId?.();
-          if (lead && ending === lead) {
+          if (lead && sid === lead) {
             // Respond first; a hook that never gets its 200 stalls the session's exit.
             setTimeout(shutdown, 250);
           } else {
-            debug('hook', `SessionEnd for ${ending ?? 'an unknown session'} is not the lead's`);
+            debug('hook', `SessionEnd for ${sid ?? 'an unknown session'} is not the lead's`);
           }
         }
 
