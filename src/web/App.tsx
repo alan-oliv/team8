@@ -200,6 +200,31 @@ export function App() {
     void postJson(`/api/select-session/${encodeURIComponent(target)}`);
   }, [store.sessionRoute]);
 
+  // A bare open — no `?team=` announce, no `/s/` route — otherwise lands on
+  // whatever the server happened to be showing at boot. The operator wants it
+  // to land on the most recently ACTIVE session instead: the first `live` row,
+  // else the first `idle` one, off the same listing the picker uses. Ref-guarded
+  // like the two effects above, so it runs once per page load and never fights
+  // a later manual switch; an announce or a route still wins outright.
+  const autoResumed = useRef(false);
+  useEffect(() => {
+    if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state) return;
+    autoResumed.current = true;
+    fetch('/api/teams?folder=*')
+      .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
+      .then((payload) => {
+        const target = payload.teams.find((t) => t.state === 'live') ?? payload.teams.find((t) => t.state === 'idle');
+        // Same comparison TeamSelect's own `isCurrent` makes.
+        if (!target || target.name === (state.teamName || state.leadSessionId)) return;
+        void postJson(
+          target.sessionOnly
+            ? `/api/select-session/${encodeURIComponent(target.leadSessionId ?? target.name)}`
+            : `/api/teams/${encodeURIComponent(target.name)}/select`,
+        );
+      })
+      .catch(() => {});
+  }, [state, store.announcedTeam, store.sessionRoute]);
+
   // The wall pins the lead leftmost then departed last, so column navigation
   // (h/l) walks the same order — App needs only the names, not the rendered
   // columns.

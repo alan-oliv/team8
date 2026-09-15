@@ -237,7 +237,7 @@ it('costs the dock no per-agent renders on an identical frame or a clock tick', 
 
 function stubTeamsFetch() {
   const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path === '/api/teams' || path === '/api/teams?folder=*'
       ? Promise.resolve(
           new Response(JSON.stringify({ current: 'session-98b0b4a7', teams: sampleTeams() }), {
             status: 200,
@@ -297,7 +297,131 @@ it('does not switch for a ?team= that came from a reload rather than the launche
   const fetchMock = stubTeamsFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+});
+
+// ————— landing a bare open on the most recently active session (task #5) —————
+
+it('switches to the most recently live session on a bare open', async () => {
+  window.history.replaceState(null, '', '/');
+  const fetchMock = vi.fn((path: string) =>
+    path === '/api/teams?folder=*'
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({
+              current: 'session-98b0b4a7',
+              teams: [
+                // The row on screen, current but gone quiet — not the most recently active.
+                { ...sampleTeams()[0], state: 'done' as const, current: true },
+                // Live — this is the one a bare open should land on instead.
+                { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'live' as const, current: false },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+  );
+
+  // Ref-guarded like `announced`: a later state frame must not fire it again.
+  const callsAfterFirst = fetchMock.mock.calls.length;
+  act(() => MockEventSource.last().emit('state', sampleTeamState()));
+  expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+});
+
+it('falls back to the most recently idle session when nothing is live', async () => {
+  window.history.replaceState(null, '', '/');
+  const fetchMock = vi.fn((path: string) =>
+    path === '/api/teams?folder=*'
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({
+              current: 'session-98b0b4a7',
+              teams: [
+                { ...sampleTeams()[0], state: 'done' as const, current: true },
+                { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'idle' as const, current: false },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState() }));
+
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+  );
+});
+
+it('does not switch when the most recently live session is already on screen', async () => {
+  window.history.replaceState(null, '', '/');
+  const fetchMock = stubTeamsFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+});
+
+it('does not switch on a bare open when every session is done', async () => {
+  window.history.replaceState(null, '', '/');
+  const fetchMock = vi.fn((path: string) =>
+    path === '/api/teams?folder=*'
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({
+              current: 'session-98b0b4a7',
+              teams: [{ ...sampleTeams()[0], state: 'done' as const, current: true }],
+            }),
+            { status: 200 },
+          ),
+        )
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+});
+
+it('does not fetch the listing when a ?team= announce is on the URL', () => {
+  window.history.replaceState(null, '', '/?team=session-b5129c7b');
+  const fetchMock = stubTeamsFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
+});
+
+it('does not fetch the listing when a /s/:sessionId route is on the URL', () => {
+  window.history.replaceState(null, '', '/s/abc12345');
+  const fetchMock = stubTeamsFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
 });
 
 it('opens the comms view straight from the URL and keeps it there', () => {
@@ -394,7 +518,7 @@ it('asks before stopping, and sends nothing until the operator confirms', () => 
   // probe-alpha is idle in this fixture, so #31's idle-last order seats
   // probe-bravo (the only working teammate) in the second column instead.
   expect(screen.getByTestId('stop-confirm-go').textContent).toBe('stop probe-bravo');
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/stop'))).toBe(false);
 });
 
 it('sends the stop only for the confirmed teammate', () => {
@@ -405,7 +529,9 @@ it('sends the stop only for the confirmed teammate', () => {
   fireEvent.click(stopButtons()[ALPHA]);
   fireEvent.click(screen.getByTestId('stop-confirm-go'));
 
-  expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/agents/probe-bravo/stop']);
+  // The bare-open listing fetch (task #5) is background traffic, not a stop.
+  const stopCalls = fetchMock.mock.calls.map((c) => c[0] as string).filter((p) => p.includes('/stop'));
+  expect(stopCalls).toEqual(['/api/agents/probe-bravo/stop']);
   expect(screen.queryByTestId('stop-confirm')).toBeNull();
 });
 
@@ -418,7 +544,7 @@ it('cancel closes the strip without sending anything', () => {
   fireEvent.click(screen.getByTestId('stop-confirm-cancel'));
 
   expect(screen.queryByTestId('stop-confirm')).toBeNull();
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/stop'))).toBe(false);
 });
 
 // Teammates run inside the lead's session, so ending it ends them. Each one is
@@ -434,7 +560,9 @@ it('ending the session asks every teammate to stop as well', () => {
   expect(screen.getByTestId('stop-confirm-why').textContent).toContain('every teammate');
   fireEvent.click(screen.getByTestId('stop-confirm-go'));
 
-  expect(fetchMock.mock.calls.map((c) => c[0]).sort()).toEqual([
+  // The bare-open listing fetch (task #5) is background traffic, not a stop.
+  const stopCalls = fetchMock.mock.calls.map((c) => c[0] as string).filter((p) => p.includes('/stop'));
+  expect(stopCalls.sort()).toEqual([
     '/api/agents/probe-alpha/stop',
     '/api/agents/probe-bravo/stop',
     '/api/agents/probe-charlie/stop',
@@ -453,7 +581,7 @@ it('x opens the same confirmation rather than stopping outright', () => {
 
   // probe-alpha is idle in this fixture, so #31 seats probe-bravo here instead.
   expect(screen.getByTestId('stop-confirm-go').textContent).toBe('stop probe-bravo');
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/stop'))).toBe(false);
 });
 
 // The row must not claim the agent is stopped: the request is only in its
@@ -481,7 +609,7 @@ it('a read-only console shows the control but will not arm it', () => {
   expect(button.disabled).toBe(true);
   fireEvent.click(button);
   expect(screen.queryByTestId('stop-confirm')).toBeNull();
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/stop'))).toBe(false);
 });
 
 // The diff modal reads the store's openDiff, which any view's TranscriptFeed
@@ -786,8 +914,9 @@ it('hiding writes nothing to the server', async () => {
   await openAndHideCurrent();
 
   // Reading the listing is the only traffic hiding may cause. Anything else —
-  // a select, a stop — would mean it had reached into the engine.
-  const paths = fetchMock.mock.calls.map((c) => c[0] as string);
+  // a select, a stop — would mean it had reached into the engine. The bare-open
+  // listing fetch (task #5) is background traffic of its own, not hiding's.
+  const paths = fetchMock.mock.calls.map((c) => c[0] as string).filter((p) => p !== '/api/teams?folder=*');
   expect([...new Set(paths)]).toEqual(['/api/teams']);
 });
 
