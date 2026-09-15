@@ -5891,6 +5891,23 @@ function lastBranch(buf) {
   const branch = end > from ? buf.subarray(from, end).toString("utf8") : void 0;
   return branch === "HEAD" ? null : branch;
 }
+var DECIDED_MODE = /mode: (solo|subagents|teammates|workflow) —/g;
+function lastDecidedMode(buf) {
+  const marker = "docs/team8/runs/";
+  let at = buf.lastIndexOf(marker);
+  while (at >= 0) {
+    const start = buf.lastIndexOf(10, at) + 1;
+    const end = buf.indexOf(10, at);
+    const line = buf.subarray(start, end < 0 ? buf.length : end).toString("utf8");
+    if (line.includes('"tool_use"')) {
+      let found;
+      for (const m of line.matchAll(DECIDED_MODE)) found = m[1];
+      if (found) return found;
+    }
+    at = start > 0 ? buf.lastIndexOf(marker, start - 1) : -1;
+  }
+  return void 0;
+}
 async function transcriptMeta(file) {
   let size;
   try {
@@ -5911,13 +5928,19 @@ async function transcriptMeta(file) {
       facts.aiTitle = lastRecordField(whole, "ai-title", "aiTitle") ?? facts.aiTitle;
       const foundBranch = lastBranch(whole);
       facts.branch = foundBranch === null ? void 0 : foundBranch ?? facts.branch;
+      facts.mode = lastDecidedMode(whole) ?? facts.mode;
       if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
     } finally {
       await handle.close();
     }
   }
-  return { title: facts.customTitle ?? facts.aiTitle, branch: facts.branch, entrypoint: facts.entrypoint };
+  return {
+    title: facts.customTitle ?? facts.aiTitle,
+    branch: facts.branch,
+    entrypoint: facts.entrypoint,
+    mode: facts.mode
+  };
 }
 async function branchOf(cwd) {
   if (!cwd) return void 0;
@@ -6149,6 +6172,7 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
       branch: transcript.branch ?? await branchOf(cwd),
       goal: sessions.names.get(sessionId) ?? transcript.title,
       state,
+      ...transcript.mode ? { mode: transcript.mode } : {},
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {},
       ...state !== "done" && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}
@@ -6343,6 +6367,7 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
       state,
+      ...leadTranscript.mode ? { mode: leadTranscript.mode } : {},
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {}
     });
@@ -6447,6 +6472,7 @@ async function main(argv) {
       // to name and mark the session on screen.
       leadSessionId: team.leadSessionId || (leadSessionId ?? ""),
       mode: modeOf(team.agents.length, workflows),
+      decidedMode: leadFacts.mode,
       switching,
       workflows,
       brief: briefs.current(),
@@ -6647,7 +6673,7 @@ async function main(argv) {
       cli.cwd
     );
     const mine = teams.find((t) => t.name === (currentTeam || currentSession));
-    leadFacts = { sessionName: mine?.goal, branch: mine?.branch };
+    leadFacts = { sessionName: mine?.goal, branch: mine?.branch, mode: mine?.mode };
     if (pinned || gen !== generation) return;
     if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
     const target = teams.find((t) => t.members >= 2 && t.live);
