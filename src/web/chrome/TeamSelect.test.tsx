@@ -120,11 +120,11 @@ it('names a solo session by its short id when it has no name', () => {
 
 it('heads the list with the folder it is scoped to and the row count', async () => {
   renderSelect();
-  expect(await screen.findByText('SESSIONS ON')).toBeTruthy();
+  expect(await screen.findByText('ACTIVE IN')).toBeTruthy();
   expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
   // The home prefix is the operator's own and buys nothing at 10px.
   expect(screen.getByTestId('folder-chip').textContent).toContain('~/code/octo');
-  expect(screen.getByTestId('session-count').textContent).toBe('2');
+  expect(screen.getByTestId('session-count').textContent).toBe('2 of 2');
   expect(screen.getByText('⌘K to search')).toBeTruthy();
 });
 
@@ -461,7 +461,7 @@ it('folds an ended session into the collapsed group, and says when it ended', as
   renderSelect();
   const rows = await screen.findAllByRole('option');
   expect(rows).toHaveLength(1);
-  expect(screen.getByTestId('session-count').textContent).toBe('1');
+  expect(screen.getByTestId('session-count').textContent).toBe('1 of 1');
 
   const toggle = screen.getByTestId('show-hidden-rows');
   expect(toggle.textContent).toBe('▸ 1 ended');
@@ -599,7 +599,7 @@ it('drops hidden sessions from the list and from the header count', async () => 
   renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
   const rows = await screen.findAllByRole('option');
   expect(rows.map((r) => r.id)).not.toContain('team-option-session-b5129c7b');
-  expect(screen.getByTestId('session-count').textContent).toBe(String(rows.length));
+  expect(screen.getByTestId('session-count').textContent).toBe(`${rows.length} of ${rows.length}`);
 });
 
 // Hiding the last row would otherwise be a one-way door: a group left in the
@@ -708,7 +708,7 @@ it('counts every listed session in the header', async () => {
   soloList();
   renderSelect();
   await screen.findAllByRole('option');
-  expect(screen.getByTestId('session-count').textContent).toBe('2');
+  expect(screen.getByTestId('session-count').textContent).toBe('2 of 2');
 });
 
 function listOf(teams: TeamSummary[]) {
@@ -848,7 +848,7 @@ it('tells a workflow session apart from a bare one by its kind pill', async () =
 
   const rows = await screen.findAllByRole('option');
   expect(rows).toHaveLength(2);
-  expect(screen.getByTestId('session-count').textContent).toBe('2');
+  expect(screen.getByTestId('session-count').textContent).toBe('2 of 2');
   expect(within(rows[0]).getByTestId('team-kind').textContent).toBe('workflow');
   expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
   expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('running');
@@ -984,60 +984,60 @@ it('opens the folder menu from the chip and lists every folder with its count', 
   fireEvent.click(screen.getByTestId('folder-chip'));
   const menu = screen.getByTestId('folder-menu');
   const rows = within(menu).getAllByRole('option');
-  expect(rows.map((r) => r.textContent)).toEqual(['allevery folder7', 'octo~/code/octo2', 'hatch~/code/hatch5']);
+  expect(rows.map((r) => r.textContent)).toEqual([
+    '·allevery folder7',
+    '✓octo~/code/octo2',
+    '·hatch~/code/hatch5',
+  ]);
   // The folder in scope is the marked one, so the menu says where you already are.
   expect(rows[0].getAttribute('aria-selected')).toBe('false');
   expect(rows[1].getAttribute('aria-selected')).toBe('true');
   expect(rows[2].getAttribute('aria-selected')).toBe('false');
 });
 
-it('refetches the list scoped to the folder that was picked, and closes the folder menu', async () => {
+it('asks for every folder once a scope is picked, and keeps both menus open', async () => {
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
   fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
 
-  expect(fetchMock).toHaveBeenLastCalledWith(
-    `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
-  );
-  // Only one menu is ever open: the session list stays up, since picking a
-  // folder is how you get to a session inside it.
-  expect(screen.queryByTestId('folder-menu')).toBeNull();
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
+  // A multi-select stays open across picks, and the session list stays up
+  // behind it — picking a folder is how you get to a session inside it.
+  expect(screen.getByTestId('folder-menu')).toBeTruthy();
   expect(screen.getByTestId('team-list')).toBeTruthy();
 });
 
 // The wall view and a workflow view each mount their own TeamSelect, sharing
 // no React state between them — without persisting the pick, navigating
 // between the two reset the operator back to every folder.
-it('remembers the picked folder across a remount, the way navigating between views does', async () => {
+it('remembers the picked folders across a remount, the way navigating between views does', async () => {
+  const spread = { ...LIST, teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? 'octo' : 'hatch' })) };
+  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(spread), { status: 200 })));
+  vi.stubGlobal('fetch', fetchMock);
+
   renderSelect();
   await screen.findAllByRole('option');
   fireEvent.click(screen.getByTestId('folder-chip'));
   fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
-  expect(fetchMock).toHaveBeenLastCalledWith(
-    `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
-  );
+  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
 
   cleanup();
   fetchMock.mockClear();
   renderSelect();
-  await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith(
-    `/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`,
-  );
+  const rows = await screen.findAllByRole('option');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
+  expect(rows.map((r) => r.id)).toEqual(['team-option-session-b5129c7b']);
 });
 
-// The scope is the folder the SERVER answered with, never the one that was
-// asked for: a folder it refuses would otherwise leave the chip naming a list
-// it is not showing.
-it('names the folder the server answered with, not the one requested', async () => {
+// Until the operator picks, the chip names what the SERVER scoped the listing
+// to — the folder the console was started in.
+it('names the folder the server answered with while nothing is picked', async () => {
   renderSelect();
   await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
-
-  await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
 });
 
 it('offers all as the first folder, and asks the server for every folder at once', async () => {
@@ -1091,6 +1091,199 @@ it('drops the switch-folders clause when every session is in this folder', async
   );
 });
 
+// The folder scope is a multi-select: the operator picks the folders the list
+// spans, and the panel asks for every folder once and narrows client-side.
+function servePayload(payload: unknown) {
+  fetchMock = vi.fn((path: string) =>
+    path.startsWith('/api/teams') && !path.includes('/select')
+      ? Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+}
+
+const HATCH = '/Users/dev/code/hatch';
+
+const FOLDERED = {
+  current: 'session-98b0b4a7',
+  folder: '*',
+  folders: [
+    { path: '/Users/dev/code/octo', name: 'octo', sessions: 2 },
+    { path: HATCH, name: 'hatch', sessions: 5 },
+    { path: '/Users/dev/code/zulu', name: 'zulu', sessions: 1 },
+  ],
+  teams: [
+    { ...sampleTeams()[0], folder: 'octo' },
+    { ...sampleTeams()[1], state: 'idle' as const, folder: 'hatch' },
+    {
+      ...sampleTeams()[1],
+      name: 'session-zzzz1111',
+      goal: 'zulu work',
+      state: 'idle' as const,
+      folder: 'zulu',
+    },
+  ],
+};
+
+const titles = () => screen.getAllByTestId('team-title').map((t) => t.textContent);
+const folderRows = () => within(screen.getByTestId('folder-menu')).getAllByRole('option');
+
+it('narrows the list to the union of the folders that were picked, without closing the menu', async () => {
+  servePayload(FOLDERED);
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+
+  fireEvent.click(folderRows()[1]);
+  fireEvent.click(folderRows()[3]);
+
+  // One request for every folder; the narrowing happens here, not on the server.
+  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
+  expect(screen.getByTestId('folder-menu')).toBeTruthy();
+  expect(titles()).toEqual(['agents-team-console-design', 'zulu work']);
+  expect(screen.getByTestId('folder-chip').textContent).toContain('2 folders');
+});
+
+it('marks the picked folders and leaves the rest with a quiet dot', async () => {
+  servePayload(FOLDERED);
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(folderRows()[2]);
+
+  const marks = folderRows().map((r) => within(r).getByTestId('folder-mark').textContent);
+  expect(marks).toEqual(['·', '·', '✓', '·']);
+  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
+});
+
+it('un-picks a folder that is picked again', async () => {
+  servePayload(FOLDERED);
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(folderRows()[2]);
+  expect(titles()).toEqual(['session-b5129c7b']);
+
+  fireEvent.click(folderRows()[2]);
+  expect(titles()).toEqual(['agents-team-console-design', 'session-b5129c7b', 'zulu work']);
+});
+
+it('clears the selection and closes the menu when every folder is picked', async () => {
+  servePayload(FOLDERED);
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(folderRows()[1]);
+  expect(titles()).toEqual(['agents-team-console-design']);
+
+  fireEvent.click(folderRows()[0]);
+  expect(screen.queryByTestId('folder-menu')).toBeNull();
+  expect(titles()).toEqual(['agents-team-console-design', 'session-b5129c7b', 'zulu work']);
+  expect(screen.getByTestId('folder-chip').textContent).toContain('all');
+});
+
+// A folder path was stored bare in this key before it held JSON; reading it as
+// an explicit single pick is what keeps the operator's scope across the change.
+it('reads a folder path stored before the key held JSON as one explicit pick', async () => {
+  localStorage.setItem('console.folder', HATCH);
+  servePayload(FOLDERED);
+  renderSelect();
+  await screen.findAllByRole('option');
+
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
+  expect(titles()).toEqual(['session-b5129c7b']);
+});
+
+it('treats a legacy every-folder marker as no preference at all', async () => {
+  localStorage.setItem('console.folder', '*');
+  renderSelect();
+  await screen.findAllByRole('option');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
+});
+
+// The ACTIVE IN range — a live session passes every range, since its
+// lastActivityAt can lag behind the clock the panel is ticking on.
+const AGED = [
+  { ...sampleTeams()[0], goal: 'live one', lastActivityAt: FIXTURE_NOW - 40 * 86_400_000 },
+  {
+    ...sampleTeams()[1],
+    name: 'session-aaaa1111',
+    goal: 'two hours',
+    state: 'idle' as const,
+    lastActivityAt: FIXTURE_NOW - 2 * 3_600_000,
+  },
+  {
+    ...sampleTeams()[1],
+    name: 'session-bbbb2222',
+    goal: 'three days',
+    state: 'idle' as const,
+    lastActivityAt: FIXTURE_NOW - 3 * 86_400_000,
+  },
+  {
+    ...sampleTeams()[1],
+    name: 'session-cccc3333',
+    goal: 'ten days',
+    state: 'idle' as const,
+    lastActivityAt: FIXTURE_NOW - 10 * 86_400_000,
+  },
+];
+
+it('shows the last day of activity by default, and the live row whatever its age', async () => {
+  servePayload({ current: 'session-98b0b4a7', teams: AGED });
+  renderSelect();
+  await screen.findAllByRole('option');
+  expect(titles()).toEqual(['live one', 'two hours']);
+});
+
+it('reaches further back as the range widens', async () => {
+  servePayload({ current: 'session-98b0b4a7', teams: AGED });
+  renderSelect();
+  await screen.findAllByRole('option');
+
+  fireEvent.click(screen.getByTestId('range-7d'));
+  expect(titles()).toEqual(['live one', 'three days', 'two hours']);
+
+  fireEvent.click(screen.getByTestId('range-30d'));
+  expect(titles()).toEqual(['live one', 'ten days', 'three days', 'two hours']);
+
+  fireEvent.click(screen.getByTestId('range-all'));
+  expect(titles()).toEqual(['live one', 'ten days', 'three days', 'two hours']);
+});
+
+it('keeps only what is running when the range is live', async () => {
+  servePayload({ current: 'session-98b0b4a7', teams: AGED });
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('range-live'));
+  expect(titles()).toEqual(['live one']);
+});
+
+it('remembers the range across a remount, the way navigating between views does', async () => {
+  servePayload({ current: 'session-98b0b4a7', teams: AGED });
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('range-7d'));
+
+  cleanup();
+  renderSelect();
+  await screen.findAllByRole('option');
+  expect(screen.getByTestId('range-7d').getAttribute('aria-pressed')).toBe('true');
+  expect(titles()).toEqual(['live one', 'three days', 'two hours']);
+});
+
+it('counts the rows shown against every row the scope holds', async () => {
+  servePayload({ current: 'session-98b0b4a7', teams: AGED });
+  renderSelect();
+  await screen.findAllByRole('option');
+  expect(screen.getByTestId('session-count').textContent).toBe('2 of 4');
+
+  fireEvent.click(screen.getByTestId('range-all'));
+  expect(screen.getByTestId('session-count').textContent).toBe('4 of 4');
+
+  fireEvent.change(screen.getByTestId('team-search'), { target: { value: 'ten days' } });
+  expect(screen.getByTestId('session-count').textContent).toBe('1 of 4');
+});
+
 // A machine-wide listing has no folder to name and no menu to offer.
 it('leaves the note empty when the listing is not scoped to a folder', async () => {
   vi.stubGlobal('fetch', vi.fn((path: string) =>
@@ -1103,6 +1296,9 @@ it('leaves the note empty when the listing is not scoped to a folder', async () 
   renderSelect();
   await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-note').textContent).toBe('');
+  // Nothing picked and no scope to name: the chip says nothing rather than
+  // counting a selection that was never made.
+  expect(screen.getByTestId('folder-chip').textContent).toBe('▾');
   fireEvent.click(screen.getByTestId('folder-chip'));
   expect(within(screen.getByTestId('folder-menu')).queryAllByRole('option')).toHaveLength(0);
 });
