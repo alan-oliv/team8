@@ -14,11 +14,11 @@ const TRIGGER_WIDTH = '146px';
 // branch and diffstat — and that anatomy was sized for 520; 432 predates it.
 const PANEL_WIDTH = '520px';
 
-// The folder menu is narrower than the panel it hangs off, and offset to start
-// under the chip that opens it rather than at the panel's edge — both the
-// canvas's own numbers.
+// The folder menu is narrower than the panel it hangs off, and starts under the
+// chip that opens it — which is the left edge of the second header row, so the
+// offset is that row's own padding.
 const FOLDER_MENU_WIDTH = '288px';
-const FOLDER_MENU_LEFT = '100px';
+const FOLDER_MENU_LEFT = '12px';
 
 // The folder scope is a preference of this machine, not of one mount: the
 // wall view and a workflow view each render their own TeamSelect, sharing no
@@ -26,21 +26,47 @@ const FOLDER_MENU_LEFT = '100px';
 // reset the operator back to every folder on the next open.
 const FOLDER_KEY = 'console.folder';
 
-function readStoredFolder(): string {
+/**
+ * Three states, not two: `null` is "the operator has never said", which leaves
+ * the scope to the server (the folder the console was started in); `[]` is
+ * "every folder", chosen; a non-empty array is the folders chosen.
+ */
+function readStoredFolders(): string[] | null {
+  let raw: string | null = null;
   try {
-    return typeof window === 'undefined' ? '' : (window.localStorage.getItem(FOLDER_KEY) ?? '');
+    raw = typeof window === 'undefined' ? null : window.localStorage.getItem(FOLDER_KEY);
   } catch {
-    return '';
+    return null;
   }
+  if (raw === null) return null;
+  let parsed: unknown = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Written before this key held JSON: a bare folder path.
+  }
+  if (Array.isArray(parsed)) return parsed as string[];
+  // The legacy single scope: '' and '*' both meant "no explicit preference".
+  const path = typeof parsed === 'string' ? parsed : '';
+  return path && path !== ALL_FOLDERS ? [path] : null;
 }
 
-function storeFolder(folder: string): void {
+function storeFolders(folders: string[] | null): void {
   try {
-    window.localStorage.setItem(FOLDER_KEY, folder);
+    window.localStorage.setItem(FOLDER_KEY, JSON.stringify(folders));
   } catch {
     // A full or disabled store costs the operator the preference on the next
     // open, and nothing else.
   }
+}
+
+const folderBase = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
+
+// A row's process is what the picker cares about, not the `state`/`live` pair
+// underneath it: `live` covers a re-keyed `/branch` session too, which reports
+// `leadAlive: false` while its process keeps running.
+function isRunning(team: TeamSummary): boolean {
+  return (team.state ?? (team.live ? 'live' : 'done')) === 'live';
 }
 
 /**
@@ -96,13 +122,20 @@ function stateText(team: TeamSummary, now: number): string {
   return `ended ${formatElapsed(now - team.lastActivityAt)} ago`;
 }
 
-// The collapsed group under the list holds what the operator hid with `✕` and
-// every session that has ended, so the main list is what is running. The session
-// on screen never folds by the ended rule: the picker must not hide what the
-// wall is showing.
-function folded(team: TeamSummary, hidden: ReadonlySet<string>, current: string): boolean {
-  if (hidden.has(team.name)) return true;
-  return team.name !== current && (team.state ?? (team.live ? 'live' : 'done')) === 'done';
+/**
+ * The main list is sessions with a live process only (README Screen 9);
+ * everything else — hidden, idle, ended — sits in the collapsed group below
+ * it, so the two must never disagree about a row. The session on screen never
+ * folds by the idle/ended rule: the picker must not hide what the wall is
+ * showing.
+ */
+type Bucket = 'shown' | 'idle' | 'ended' | 'hidden';
+
+function bucketOf(team: TeamSummary, hidden: ReadonlySet<string>, current: string): Bucket {
+  if (hidden.has(team.name)) return 'hidden';
+  if (team.name === current) return 'shown';
+  const state = team.state ?? (team.live ? 'live' : 'done');
+  return state === 'live' ? 'shown' : state === 'idle' ? 'idle' : 'ended';
 }
 
 function agentCount(team: TeamSummary): string {
@@ -140,6 +173,13 @@ export function byDisplayName(a: TeamSummary, b: TeamSummary): number {
   );
 }
 
+// The main list's one fixed order (README Screen 9): newest activity first.
+// There is no longer a time-range control to break the tie on recency, so a
+// name-based tiebreaker is what keeps two rows with the same timestamp stable.
+function byActivity(a: TeamSummary, b: TeamSummary): number {
+  return b.lastActivityAt - a.lastActivityAt || byDisplayName(a, b);
+}
+
 function matchesQuery(team: TeamSummary, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -174,14 +214,17 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   const [cursor, setCursor] = useState(0);
   const [mark, setMark] = useState<Mark | null>(null);
   const [query, setQuery] = useState('');
-  // Two folders, not one: `folder` is what the operator asked for ('' being
-  // "wherever the console was started"), `scope` is what the server answered
-  // with. Reading the chip off the reply rather than the request keeps them
-  // from chasing each other — setting one from the other would refetch.
-  const [folder, setFolder] = useState(readStoredFolder);
+  // `picked` is the operator's folder scope (null = never said, [] = every
+  // folder), `scope` is what the server answered with — which only names
+  // anything while the operator has said nothing.
+  const [picked, setPicked] = useState(readStoredFolders);
   const [scope, setScope] = useState('');
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [foldersOpen, setFoldersOpen] = useState(false);
+  // The folder menu now needs every folder's running count up front (not just
+  // the picked ones), so opening it once — even without a pick — is enough to
+  // ask for the machine-wide listing for the rest of this popover's lifetime.
+  const [neededAll, setNeededAll] = useState(false);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -195,14 +238,20 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     let live = true;
     setLoading(true);
     setUnreadable(false);
-    fetch(folder ? `/api/teams?folder=${encodeURIComponent(folder)}` : '/api/teams')
+    // One request either way: a chosen scope, or the folder menu having been
+    // opened at all, asks for every folder and narrows below — so toggling a
+    // folder, or reading its running count in the menu, never costs a round
+    // trip of its own.
+    fetch(picked || neededAll ? `/api/teams?folder=${ALL_FOLDERS}` : '/api/teams')
       .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
       .then((payload) => {
         if (!live) return;
         setTeams(payload.teams);
         setScope(payload.folder ?? '');
         setFolders(payload.folders ?? []);
-        const sorted = payload.teams.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
+        const sorted = payload.teams
+          .filter((t) => bucketOf(t, watch.hidden, current) === 'shown')
+          .sort(byActivity);
         setCursor(Math.max(0, sorted.findIndex((t) => t.name === current)));
         setLoading(false);
       })
@@ -214,7 +263,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     return () => {
       live = false;
     };
-  }, [open, folder]);
+    // Only whether a scope (or the menu) demands every folder changes the
+    // request, never which folders are picked: the set is applied to the rows
+    // already in hand.
+  }, [open, picked === null, neededAll]);
 
   function close() {
     setMark(null);
@@ -222,6 +274,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     // Only one menu is ever open: opening the session dropdown puts the folder
     // menu away, and so does closing it.
     setFoldersOpen(false);
+    setNeededAll(false);
     onOpenChange(false);
     trigger.current?.focus();
   }
@@ -301,41 +354,77 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // filter, its `reveal` escape hatch and the `done` drop were ever
   // compensating for (supersedes decision 23's bare-window carve-out).
   //
-  // The `✕` stays, and ended sessions fold into the same collapsed group
-  // (`folded`): out of the way, never out of reach.
+  // The `✕` stays, and idle/ended sessions fold into the same collapsed group
+  // (`bucketOf`): out of the way, never out of reach.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
-  const listed = teams ?? [];
-  const rows = listed.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
-  const hiddenCount = listed.length - rows.length;
-  const handHidden = listed.filter((t) => watch.hidden.has(t.name)).length;
+  // A row carries its folder's NAME, not its path (domain.ts), so the picked
+  // paths are matched on their last segment.
+  const inScope = (t: TeamSummary) =>
+    !picked?.length || picked.some((p) => t.folder === p || t.folder === folderBase(p));
+  const listed = (teams ?? []).filter(inScope);
+  const buckets = new Map(listed.map((t) => [t.name, bucketOf(t, watch.hidden, current)] as const));
+  const rows = listed.filter((t) => buckets.get(t.name) === 'shown').sort(byActivity);
+  const idleCount = listed.filter((t) => buckets.get(t.name) === 'idle').length;
+  const endedCount = listed.filter((t) => buckets.get(t.name) === 'ended').length;
+  const hiddenCount = listed.filter((t) => buckets.get(t.name) === 'hidden').length;
   const groupLabel = [
-    hiddenCount > handHidden && `${hiddenCount - handHidden} ended`,
-    handHidden > 0 && `${handHidden} hidden`,
+    idleCount > 0 && `${idleCount} idle`,
+    endedCount > 0 && `${endedCount} ended`,
+    hiddenCount > 0 && `${hiddenCount} hidden`,
   ]
     .filter(Boolean)
     .join(' · ');
   const filteredRows = rows.filter((t) => matchesQuery(t, query));
-  const teamCount = rows.length;
   const cursorTeam = filteredRows[Math.min(cursor, filteredRows.length - 1)];
   const hiddenRows = listed
-    .filter((t) => folded(t, watch.hidden, current))
+    .filter((t) => buckets.get(t.name) !== 'shown')
     .filter((t) => matchesQuery(t, query))
     .sort(byDisplayName);
+  const runningCount = filteredRows.filter(isRunning).length;
 
   // The chip and the note count SESSIONS ON DISK, which is what the folder menu
   // beside them counts; the header count above the list counts ROWS, because it
   // sits directly on top of them. The two differ whenever a folder's sessions
   // fold into one team row, and each is true of what it is next to.
-  const everyFolder = scope === ALL_FOLDERS;
-  const here = folders.find((f) => f.path === scope);
-  const folderName = everyFolder ? 'all' : (here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope);
-  const totalSessions = folders.reduce((n, f) => n + f.sessions, 0);
-  const folderNote = everyFolder
-    ? `${totalSessions} sessions across ${folders.length} folders`
-    : here
-      ? `${here.sessions} of ${totalSessions} sessions are in this folder` +
-        (here.sessions === totalSessions ? '' : ' · switch folders to see the rest')
-      : '';
+  const everyFolder = picked ? picked.length === 0 : scope === ALL_FOLDERS;
+  const one = picked ? (picked.length === 1 ? picked[0] : '') : scope;
+  const here = folders.find((f) => f.path === one);
+  // The last arm is a real multi-selection, never the machine-wide listing —
+  // which has nothing picked and no scope to name, and says so by saying
+  // nothing rather than counting to zero.
+  const folderName = everyFolder
+    ? 'all'
+    : one
+      ? (here?.name ?? folderBase(one))
+      : picked?.length
+        ? `${picked.length} folders`
+        : '';
+  const folderSub = everyFolder
+    ? 'every folder'
+    : one
+      ? shortPath(one)
+      : picked?.length
+        ? `${picked.length} of ${folders.length}`
+        : '';
+  // Per-folder running counts for the menu — only meaningful once every
+  // folder's teams have been fetched and tagged with `.folder` (a scoped
+  // listing never tags its own rows).
+  const runningByFolder = new Map<string, number>();
+  for (const t of teams ?? []) {
+    if (t.folder && isRunning(t)) runningByFolder.set(t.folder, (runningByFolder.get(t.folder) ?? 0) + 1);
+  }
+  const totalRunning = [...runningByFolder.values()].reduce((n, c) => n + c, 0);
+  // The footer's own stats are the scope's, not the machine's: what is
+  // running here, how many folders that spans, and what the idle/ended split
+  // is once the ✕'d rows are set apart.
+  const scopeRunning = rows.filter(isRunning).length;
+  const runningFolders = new Set(
+    rows.filter(isRunning).map((t) => t.folder).filter((f): f is string => Boolean(f)),
+  );
+  const folderSpan = runningFolders.size || (folders.length ? 1 : 0);
+  const openCount = scopeRunning + idleCount;
+  const folderClause = folderSpan > 0 ? ` across ${folderSpan} folder${folderSpan === 1 ? '' : 's'}` : '';
+  const footerStats = `${scopeRunning} running${folderClause} · ${openCount} open · ${endedCount} ended`;
 
   // Shared by the main list and the collapsed hidden group below it: same row
   // anatomy either way, just dimmed and with `unhide` where `hide` sits.
@@ -751,33 +840,29 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
             outline: 'none',
           }}
         >
-          {/* The header is a folder picker, not a caption: `SESSIONS ON` plus
-              the folder itself, because the scope is now something the operator
-              chooses rather than something the launcher decided for them. The
-              noun stays "SESSIONS" (decision 23) \u2014 the ruling that chose
-              "TEAMS" was compensating for a filter that listed bare windows,
-              and with that fixed the list holds teams, workflow sessions and
-              solo sessions alike. */}
+          {/* Row 1 \u2014 the folder pill and the search field share this row
+              (README Screen 9): there is no time-range control any more, so
+              the two filters that remain \u2014 folders (multi) and text \u2014 fit
+              on one line. */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '9px',
-              padding: '7px 12px 6px',
+              padding: '9px 12px',
               borderBottom: '1px solid var(--color-neutral-900)',
-              color: 'var(--color-neutral-600)',
-              fontSize: '10px',
-              letterSpacing: '.12em',
               position: 'relative',
             }}
           >
-            <span style={{ flex: 'none' }}>SESSIONS ON</span>
             <button
               type="button"
               data-testid="folder-chip"
               aria-haspopup="listbox"
               aria-expanded={foldersOpen}
-              onClick={() => setFoldersOpen((o) => !o)}
+              onClick={() => {
+                setFoldersOpen((o) => !o);
+                setNeededAll(true);
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -795,16 +880,12 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 {folderName}
               </span>
               <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                {everyFolder ? 'every folder' : shortPath(scope)}
+                {folderSub}
               </span>
               <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: '10px' }}>
                 {foldersOpen ? '\u25b4' : '\u25be'}
               </span>
             </button>
-            {/* The canvas leaves this slot as bare spacer \u2014 a mock has no live
-                search to draw in it. It is the only gap in the row wide enough
-                to type into, and the footer's `\u2318K to search` promises somewhere
-                to type, so the input fills it rather than displacing the count. */}
             <input
               ref={search}
               data-testid="team-search"
@@ -814,7 +895,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 setQuery(e.target.value);
                 setCursor(0);
               }}
-              placeholder="search"
+              placeholder="goal, session id, branch or agent name"
               aria-label="search sessions"
               style={{
                 background: 'transparent',
@@ -822,13 +903,21 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 outline: 'none',
                 color: 'var(--color-text)',
                 fontSize: '11px',
-                letterSpacing: 'normal',
                 flex: 1,
                 minWidth: 0,
               }}
             />
-            <span data-testid="session-count" style={{ flex: 'none' }}>
-              {teamCount}
+            <span
+              style={{
+                flex: 'none',
+                fontSize: '9.5px',
+                color: 'var(--color-neutral-700)',
+                border: '1px solid var(--color-neutral-800)',
+                borderRadius: 4,
+                padding: '1px 5px',
+              }}
+            >
+              \u2318K
             </span>
 
             {foldersOpen && (
@@ -859,21 +948,39 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 }}
               >
                 {/* `all` only where there are folders to span: a listing that is not
-                    scoped to one has no menu rows at all. */}
-                {(folders.length ? [{ path: ALL_FOLDERS, name: 'all', sessions: totalSessions }, ...folders] : []).map((f) => {
-                  const isHere = f.path === scope;
+                    scoped to one has no menu rows at all. Folders with nothing
+                    running sort last and dim — the list reads as where work
+                    is happening before it reads as a directory. */}
+                {(folders.length
+                  ? [
+                      { path: ALL_FOLDERS, name: 'all', running: totalRunning },
+                      ...folders
+                        .map((f) => ({ ...f, running: runningByFolder.get(f.name) ?? 0 }))
+                        .sort((a, b) => Number(b.running > 0) - Number(a.running > 0)),
+                    ]
+                  : []
+                ).map((f) => {
+                  const all = f.path === ALL_FOLDERS;
+                  const isHere = all ? everyFolder : picked ? picked.includes(f.path) : f.path === scope;
+                  const quiet = !all && f.running === 0;
                   return (
                     <div
                       key={f.path}
                       role="option"
                       aria-selected={isHere}
                       onClick={() => {
-                        // Picking filters the list and closes the folder menu \u2014
-                        // the session dropdown stays open, since choosing a
-                        // folder is how you get to the session in it.
-                        setFolder(f.path);
-                        storeFolder(f.path);
-                        setFoldersOpen(false);
+                        // A multi-select stays open across picks; `all` is the
+                        // one deliberate reset, so it closes. The session
+                        // dropdown stays up either way, since choosing a folder
+                        // is how you get to the session in it.
+                        const next = all
+                          ? []
+                          : picked?.includes(f.path)
+                            ? picked.filter((p) => p !== f.path)
+                            : [...(picked ?? []), f.path];
+                        setPicked(next);
+                        storeFolders(next);
+                        if (all) setFoldersOpen(false);
                         setCursor(0);
                       }}
                       style={{
@@ -887,8 +994,19 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                       }}
                     >
                       <span
+                        data-testid="folder-mark"
+                        aria-hidden="true"
                         style={{
-                          color: isHere ? 'var(--color-accent-300)' : 'var(--color-text)',
+                          color: isHere ? 'var(--color-accent-400)' : 'var(--color-neutral-700)',
+                          fontSize: '11px',
+                          flex: 'none',
+                        }}
+                      >
+                        {isHere ? '\u2713' : '\u00b7'}
+                      </span>
+                      <span
+                        style={{
+                          color: isHere ? 'var(--color-accent-300)' : quiet ? 'var(--color-neutral-500)' : 'var(--color-text)',
                           fontSize: '11.5px',
                           whiteSpace: 'nowrap',
                           flex: 'none',
@@ -898,7 +1016,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                       </span>
                       <span
                         style={{
-                          color: 'var(--color-neutral-600)',
+                          color: 'var(--color-neutral-700)',
                           fontSize: '10px',
                           minWidth: 0,
                           overflow: 'hidden',
@@ -911,19 +1029,47 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                       <span style={{ flex: 1 }} />
                       <span
                         style={{
-                          color: 'var(--color-neutral-600)',
+                          color: all || !quiet ? 'var(--color-accent-400)' : 'var(--color-neutral-700)',
                           fontSize: '10px',
                           whiteSpace: 'nowrap',
                           flex: 'none',
                         }}
                       >
-                        {f.sessions}
+                        {all ? `${f.running} running · ${folders.length} folders` : quiet ? 'none active' : `${f.running} active`}
                       </span>
                     </div>
                   );
                 })}
               </div>
             )}
+          </div>
+
+          {/* Row 2 — a label, not a control (the noun stays "SESSIONS",
+              decision 23), and the one count that separates "filtered to
+              nothing" from "broken". */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '7px 12px',
+              borderBottom: '1px solid var(--color-neutral-900)',
+              color: 'var(--color-neutral-700)',
+              fontSize: '9.5px',
+              letterSpacing: '.12em',
+            }}
+          >
+            <span>ACTIVE SESSIONS</span>
+            <span style={{ flex: 1 }} />
+            <span
+              data-testid="session-count"
+              style={{
+                letterSpacing: 'normal',
+                fontSize: '10px',
+                color: runningCount === 0 ? 'var(--warn)' : 'var(--color-neutral-600)',
+              }}
+            >
+              {runningCount} running
+            </span>
           </div>
 
           <div
@@ -951,7 +1097,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   : unreadable
                     ? 'could not read teams'
                     : rows.length === 0
-                      ? 'no sessions'
+                      ? idleCount + endedCount + hiddenCount > 0
+                        ? 'Nothing running matches. Idle, ended and hidden sessions are in the group below.'
+                        : 'no sessions'
                       : 'no matches'}
               </div>
             )}
@@ -959,9 +1107,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
             {/* The way back, in the picker itself as well as on the empty
                 screen — hiding the last row otherwise leaves a list with no
                 control in it at all. Collapsed by default: rows that are
-                hidden or finished should not reappear open every time the
+                hidden, idle or ended should not reappear open every time the
                 menu does. */}
-            {hiddenCount > 0 && (
+            {idleCount + endedCount + hiddenCount > 0 && (
               <button
                 type="button"
                 data-testid="show-hidden-rows"
@@ -994,16 +1142,18 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
               fontSize: '10px',
             }}
           >
-            {/* The canvas gives the footer two slots: the shortcut it wants
-                named, and the scope. The separator above comes from the last
-                row's own bottom border, so there is no border here. */}
+            {/* The canvas gives the footer two slots: the keyboard hints it
+                wants named, and the scope's own running/open/ended split. The
+                separator above comes from the last row's own bottom border,
+                so there is no border here. */}
             {/* Both `flex: none`: a flex child shrinks below its content by
                 default, and these two wrapped to four lines before the spacer
                 between them gave up any width. */}
-            <span style={{ flex: 'none' }}>⌘K to search</span>
+            <span style={{ flex: 'none' }}>⏎ open</span>
+            <span style={{ flex: 'none' }}>⌘⏎ new tab</span>
             <span style={{ flex: 1 }} />
             <span data-testid="folder-note" style={{ flex: 'none' }}>
-              {folderNote}
+              {footerStats}
             </span>
           </div>
         </div>
