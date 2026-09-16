@@ -29,7 +29,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    take the waves from the closing: teammates alive at any moment are the
    tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode: see Modes below. Teammates use the contract
-   below; assign the owner with `TaskUpdate`.
+   below; assign the owner of each track's *first* task with `TaskUpdate` and
+   let the teammate claim the rest of its track itself.
 6. **Teammates only: verify the roster before they get deep.** Every teammate you dispatched has
    to appear in `~/.claude/teams/<team>/config.json`:
    `jq -r '.members[].name' ~/.claude/teams/<team>/config.json`. A name missing
@@ -37,7 +38,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    immediately; a wrong roster is cheap to fix in the first minute and expensive
    once six agents have edited files.
 7. **Stay free.** Answer questions, relay results, and run the track review
-   below as each track lands. Never fix a finding yourself.
+   below as each track lands. Never fix a finding yourself. **While any track is
+   live, do no multi-step investigation yourself** — a message only reaches you
+   between your turns, so a teammate's finished report waits as long as your
+   longest turn. Dispatch a subagent for the investigation, or do it before
+   dispatching.
 8. **Close the run log.** When the PR is up, fill the Run section of
    `docs/team8/runs/<batch>.md` (opened by `team8:plan`; create it from that
    skill's template if this batch skipped `plan`) and commit it on the branch.
@@ -120,10 +125,10 @@ and `completed` as you go. No dispatch, no roster.
 
 **subagents.** One track, nothing parallel. For each task in dependency order:
 record BASE (`git rev-parse HEAD`), dispatch one fresh subagent (`Agent`,
-general-purpose, `model` from the task's metadata — never omit it) with the
+`subagent_type: "team8:executor"`, `model` from the task's metadata — never omit it) with the
 seven-part contract below minus part 1, since subagents have no task tools:
-you claim and close the task with `TaskUpdate` on its behalf, the one case
-where that is right. It commits on the branch and reports. Then the Track
+you claim the task with `TaskUpdate` on its behalf and close it from the
+reported output, `verified` metadata included — the one case where that is right. It commits on the branch and reports. Then the Track
 Review below on `BASE..HEAD`, findings back to the same subagent by resuming
 it, three rounds. Never dispatch two implementers at once in this mode. The
 lead opens the PR when the last task is clear.
@@ -170,6 +175,15 @@ file ownership**, and the dispatch prompt is where you create it:
   mid-edit. Re-run once, then report it — never fix another teammate's file.
 - A commit can fail on an index lock. Wait, retry.
 
+### After a resume
+
+`/resume` drops in-process teammates, but the task list under
+`~/.claude/tasks/session-<id>/` persists. The list is the state; the roster is
+not. On resume, `TaskList` first. A task still `in_progress` whose owner is not
+in `jq -r '.members[].name' ~/.claude/teams/<team>/config.json` is orphaned: set
+its owner back to empty with `TaskUpdate`, then respawn a fresh teammate with
+the same dispatch contract. Never message the dead name — nothing is listening.
+
 ## Track Review
 
 An executor that self-verifies and pushes has had nobody read its diff. Each
@@ -181,7 +195,8 @@ reviewer, and the executor stays alive until its track is clear.
    you recorded before dispatching:
    `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
    Never hand a reviewer the diff inline.
-2. **Dispatch a reviewer subagent**, read-only, model sized like the track's
+2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
+   carries no Edit or Write, so read-only is enforced), model sized like the track's
    biggest task (sonnet for standard, opus for judgment), with: the diff path,
    the task descriptions (`TaskGet` each, paste them), the plan sections those
    tasks name, and the global constraints. Two verdicts, both required: does
@@ -200,11 +215,22 @@ reviewer, and the executor stays alive until its track is clear.
 
 ## The Dispatch Contract
 
-Every dispatch prompt has these seven parts, in this order. Parts 1, 3 and 6 are the
-ones that get dropped.
+Spawn every executor as `subagent_type: "team8:executor"` and every reviewer as
+`subagent_type: "team8:reviewer"`. A definition's `tools` list applies to a
+teammate and its body is appended to the teammate's prompt, so the reviewer's
+read-only is enforced rather than requested, and the standing rules — skills,
+staging by name, no `git checkout -b`, the final answer is the report, the
+`verified` metadata — already reach the executor. A prompt may say "as your
+definition says" for those instead of repeating them in full.
 
-1. **The task.** Its id, and: "Call `TaskGet` on it. Claim it with `TaskUpdate`
-   (`owner` = your name, `status` = `in_progress`) before you start."
+Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
+6 carry what only this dispatch knows — write those out in full. Parts 1, 3 and
+6 are the ones that get dropped.
+
+1. **The tasks.** The track's task ids in dependency order, and: "Call `TaskGet`
+   on each before you start it. Claim it with `TaskUpdate` (`owner` = your name,
+   `status` = `in_progress`) — the first now, each later one once the previous
+   closes." You set the owner of the first task only.
 2. **The goal.** The done state in one sentence — not a list of steps.
 3. **Skills.** "Check your available skills before you start and use what fits.
    If the shape of the work is unsettled, `superpowers:brainstorming` first. If you
@@ -212,7 +238,9 @@ ones that get dropped.
    `superpowers:test-driven-development`. Before you claim done,
    `superpowers:verification-before-completion`."
 4. **Scope.** Files you own, files that are off limits, who else is live where.
-5. **Verification.** The exact commands, and paste the output.
+5. **Verification.** The exact commands, and paste the output. Only the tests
+   covering the files it owns — never the whole suite, which costs a track its
+   first report; the lead runs the full suite once before the push.
 6. **The terminal deliverable.** The decisions from steps 2a and 2b, stated in full.
    Name the branch and say it is already checked out — never "branch off `main`",
    which invites the `git checkout -b` that moves everyone. For the PR case:
@@ -221,11 +249,15 @@ ones that get dropped.
    exists, your push lands in it and you just report that."
    For the commit case: "Commit on `<branch>`. Do not push."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
-7. **Close out.** "`TaskUpdate` your task to `completed`, then report: what you did,
-   the verification output, and anything you deliberately left alone. Then stay
-   available: the lead sends review findings for your track. Fix them, re-run
-   the covering tests, push, report again. Stop only when the lead says the
-   track is clear."
+7. **Close out.** "Before each task closes, `TaskUpdate` its `metadata` with
+   `verified: "<command> → <result>"` — the part 5 commands and their one-line
+   outcome. A `TaskCompleted` hook refuses a completion without it. Then
+   `TaskUpdate` the task to `completed`. Your final answer IS the report — what
+   you did, the verification output, and anything you deliberately left alone.
+   Your idle notification carries it to the lead, so do not also send it by
+   `SendMessage`. Then go idle: idle is how you stay available. The lead's
+   message with review findings wakes you; fix, re-run the covering tests, push,
+   and answer again. Stop only when the lead says the track is clear."
 
 ## The Run Log at Close
 
@@ -253,13 +285,14 @@ the PR next to the plan it describes.
 | Asking the user to choose a branching strategy | Step 2a derives it from the blockers. Only you have the graph |
 | Per-task branches or PRs while tracks run in parallel | One checkout, one HEAD. Concurrency already foreclosed it |
 | Keeping the small task for yourself | Delegate it. A busy lead can't review or unblock |
-| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes it theirs. Yours is the owner assignment |
+| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Yours is the first task's owner, nothing after it |
 | One teammate per task, mechanically | Count tracks. Two teammates in one file is a merge conflict |
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | `isolation: "worktree"` to keep parallel writers apart | It silently spawns a subagent, not a teammate. Isolate by file ownership |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
 | Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for the track review. Nobody else can fix its findings |
 | Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
+| Treating a teammate's failure notice as the end of its track | A message wakes a teammate waiting on a retry — send one. Dead a second time, respawn it per After a resume |
 | Run log filled from memory a day later | The console's numbers are for this session. Fill it at close |
 
 ## Red Flags
@@ -267,6 +300,7 @@ the PR next to the plan it describes.
 - A dispatch prompt that never says how the work ends
 - Two live teammates whose scopes name the same file
 - You are editing files instead of reviewing them
+- You are mid-investigation while a track is live — reports are queued behind your turn
 - A finished teammate whose task is still `pending`
 - A "teammate" that cannot call `TaskGet` — it is a subagent; check `members[]`
 - More agents in your spawn log than names in `members[]`
