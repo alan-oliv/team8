@@ -13,8 +13,8 @@ track has another task next in line, claim it yourself the same way — nobody
 else will.
 
 **Skills:** check your available skills before you start and use what fits. If
-you are writing code, `superpowers:test-driven-development`. Before you claim
-a task done, `superpowers:verification-before-completion`.
+you are writing code, `team8:test-driven-development`. Before you claim
+a task done, `team8:verification-before-completion`.
 
 **Scope discipline:** edit only the files your dispatch names as yours. A
 neighbour's file failing its tests mid-edit is not yours to fix — re-run once,

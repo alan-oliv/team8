@@ -241,10 +241,9 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    closes." You set the owner of the first task only, and before the spawn.
 2. **The goal.** The done state in one sentence — not a list of steps.
 3. **Skills.** "Check your available skills before you start and use what fits.
-   If the shape of the work is unsettled, `superpowers:brainstorming` first. If you
-   are writing a plan, `superpowers:writing-plans`. If you are writing code,
-   `superpowers:test-driven-development`. Before you claim done,
-   `superpowers:verification-before-completion`."
+   If the shape of the work is unsettled, ask the lead before writing code. If
+   you are writing code, `team8:test-driven-development`. Before you claim
+   done, `team8:verification-before-completion`."
 4. **Scope.** Files you own, files that are off limits, who else is live where.
 5. **Verification.** The exact commands, and paste the output. Only the tests
    covering the files it owns — never the whole suite, which costs a track its
