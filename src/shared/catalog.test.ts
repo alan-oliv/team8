@@ -79,6 +79,23 @@ describe('resolveModel', () => {
     expect(m.approximate).toBe(true);
   });
 
+  it('resolves a point release to its family window, keeping the full id', () => {
+    // The lead ran claude-fable-5-1 and the console drew 465k / 200k: the catalog
+    // only knew claude-fable-5, so the id fell through to the 200k fallback.
+    const m = resolveModel('claude-fable-5-1');
+    expect(m.canonical).toBe('claude-fable-5-1');
+    expect(m.window).toBe(1_000_000);
+    expect(m.compactAt).toBe(967_000);
+    expect(m.pricing).toEqual(resolveModel('claude-fable-5').pricing);
+    // The family's price is a guess for the point release until the catalog names it.
+    expect(m.approximate).toBe(true);
+  });
+
+  it('does not treat a family id with two numbers as a point release', () => {
+    expect(resolveModel('claude-haiku-4-5').window).toBe(200_000);
+    expect(resolveModel('claude-haiku-4-5').approximate).toBe(false);
+  });
+
   it('falls back for a missing model', () => {
     const m = resolveModel(undefined);
     expect(m.canonical).toBe('unknown');
