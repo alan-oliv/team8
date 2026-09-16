@@ -3,7 +3,7 @@
 spec: docs/team8/melhorias-agent-teams.md (the improvements read off the Claude Code agent-teams doc, with the day's measurements)
 plan: none · tasks from the user via team8:tasks
 branch: agent-teams-alignment
-pr: <filled at close>
+pr: https://github.com/alan-oliv/team8/pull/19
 
 ## Brainstorm
 - path: bounded
