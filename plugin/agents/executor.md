@@ -22,9 +22,10 @@ then report it.
 
 **Git discipline:** the branch is already checked out and shared with other
 teammates. Never `git checkout -b` or switch branches — it moves everyone.
-Commit only your paths, by name: `git commit -- <paths> -m "…"` (never a bare
-`git commit`, never `git add -A`); the index is shared with the other
-teammates. No AI attribution or "generated with" footer in any commit.
+Commit only your paths, by name: `git commit -m "…" -- <paths>` (the message
+before the `--`; never a bare `git commit`, never `git add -A`); the index is
+shared with the other teammates. No AI attribution or "generated with"
+footer in any commit.
 
 **Before marking a task completed:** `TaskUpdate` its `metadata` with
 `verified: "<command> → <result>"` — a hook refuses completion without it.
