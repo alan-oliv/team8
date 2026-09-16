@@ -122,7 +122,7 @@ The mode came from the task graph (`team8:tasks` Mode). Each mode ends the
 same way: the terminal deliverable from step 2b, the run log filled at close.
 
 **solo.** The lead does the work itself, task by task in dependency order,
-TDD, one commit per task staging paths by name. Mark each task `in_progress`
+TDD, one commit per task by pathspec. Mark each task `in_progress`
 and `completed` as you go. No dispatch, no roster.
 
 **subagents.** One track, nothing parallel. For each task in dependency order:
@@ -170,10 +170,11 @@ There is no per-teammate worktree to reach for. Isolation comes from **disjoint
 file ownership**, and the dispatch prompt is where you create it:
 
 - Name the files each teammate owns, and name the ones it must not touch.
-- Each commits its own paths **by pathspec**: `git commit -m "…" -- <its paths>`
-  — the message first, since everything after `--` is read as a path.
-  Never `git add -A` or `git add .`, and never a bare `git commit` — the index is
-  shared, so either one ships a neighbour's half-finished edit.
+- Each commits its own paths **by pathspec**: `git add <its new paths>` for
+  anything new, then `git commit -m "…" -- <its paths>` — the message first,
+  since everything after `--` is read as a path. Never `git add -A` or
+  `git add .`, and never a bare `git commit` — the index is shared, so either
+  one ships a neighbour's half-finished edit.
 - One shared branch for the batch, unless step 2a derived otherwise. They share a
   checkout, so they share HEAD: a teammate running `git checkout -b` moves
   everyone. Create the branch yourself before dispatching.
@@ -251,12 +252,12 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 6. **The terminal deliverable.** The decisions from steps 2a and 2b, stated in full.
    Name the branch and say it is already checked out — never "branch off `main`",
    which invites the `git checkout -b` that moves everyone. For the PR case:
-   "Commit on `<branch>` by pathspec — `git commit -m '…' -- <your paths>`, with
-   the message first because everything after `--` is read as a path. Never a
-   bare `git commit`, which ships whatever a neighbour staged. Then
-   push. If no PR against `main` exists for this branch yet, open one and report
-   its URL; if one already exists, your push lands in it and you just report
-   that."
+   "Commit on `<branch>` by pathspec — `git add` any new file of yours by name,
+   then `git commit -m '…' -- <your paths>`, with the message first because
+   everything after `--` is read as a path. Never a bare `git commit`, which
+   ships whatever a neighbour staged. Then push. If no PR against `main` exists
+   for this branch yet, open one and report its URL; if one already exists, your
+   push lands in it and you just report that."
    For the commit case: "Commit on `<branch>` the same way. Do not push."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
 7. **Close out.** "Before each task closes, `TaskUpdate` its `metadata` with
@@ -266,9 +267,9 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    you did, the verification output, and anything you deliberately left alone.
    Your idle notification carries it to the lead, so do not also send it by
    `SendMessage`. Then go idle: idle is how you stay available — never poll the
-   task list waiting. The lead's
-   message with review findings wakes you; fix, re-run the covering tests, push,
-   and answer again. Stop only when the lead says the track is clear."
+   task list waiting. The lead's message with review findings wakes you; fix,
+   re-run the covering tests, push, and answer again. Stop only when the lead
+   says the track is clear."
 
 ## The Run Log at Close
 
