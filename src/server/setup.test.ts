@@ -8,8 +8,10 @@ import {
   backupPathFor,
   HOOK_EVENTS,
   HOOK_TIMEOUT_SECONDS,
+  MODEL_FORCE_WARNING,
   PERMISSION_HOOK_TIMEOUT_SECONDS,
   PINNED_CLAUDE_VERSION,
+  SUBAGENT_PROMPT_CACHE_TTL,
   checkClaudeVersion,
   hookBlock,
   mergeHookBlock,
@@ -303,6 +305,17 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(removeHookBlock(off)).toEqual(off);
   });
 
+  it('sets the teammate prompt-cache TTL to an hour when absent', () => {
+    const merged = mergeHookBlock({}, 4823);
+    expect(merged.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
+    expect(removeHookBlock(merged).subagentPromptCacheTtl).toBeUndefined();
+  });
+
+  it("keeps the user's own prompt-cache TTL", () => {
+    const withTtl = { subagentPromptCacheTtl: '30m' };
+    expect(mergeHookBlock(withTtl, 4823).subagentPromptCacheTtl).toBe('30m');
+  });
+
   it('leaves a settings file with no console hooks untouched', () => {
     const original = { model: 'opus', statusLine: { type: 'command', command: 'my-prompt' } };
     expect(removeHookBlock(original)).toEqual(original);
@@ -448,6 +461,61 @@ describe('runSetup', () => {
 
     await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
     expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ env: mine });
+  });
+
+  it('writes the prompt-cache TTL when absent, and takes it off on uninstall', async () => {
+    const settingsPath = path.join(dir, 'settings.json');
+    await runSetup({ settingsPath, port: 4823, confirm: true });
+    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
+      subagentPromptCacheTtl: string;
+    };
+    expect(installed.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
+
+    await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
+    const after = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { subagentPromptCacheTtl?: unknown };
+    expect(after.subagentPromptCacheTtl).toBeUndefined();
+  });
+
+  it("keeps and restores the user's own prompt-cache TTL", async () => {
+    const settingsPath = path.join(dir, 'settings.json');
+    await fs.writeFile(settingsPath, JSON.stringify({ subagentPromptCacheTtl: '30m' }, null, 2));
+
+    const output = await runSetup({ settingsPath, port: 4823, confirm: true });
+    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
+      subagentPromptCacheTtl: string;
+    };
+    expect(installed.subagentPromptCacheTtl).toBe('30m');
+    expect(output).toContain('kept your prompt-cache TTL of "30m"');
+
+    await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
+    expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ subagentPromptCacheTtl: '30m' });
+  });
+
+  it('warns when the model-force flag is set in settings env, and not otherwise', async () => {
+    const settingsPath = path.join(dir, 'settings.json');
+    const clean = await runSetup({ settingsPath, port: 4823, confirm: false });
+    expect(clean).not.toContain(MODEL_FORCE_WARNING);
+
+    const forcedPath = path.join(dir, 'forced.json');
+    await fs.writeFile(
+      forcedPath,
+      JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL_FORCE: '1' } }, null, 2),
+    );
+    const forced = await runSetup({ settingsPath: forcedPath, port: 4823, confirm: false });
+    expect(forced).toContain(MODEL_FORCE_WARNING);
+  });
+
+  it('warns when the model-force flag is set in the process env', async () => {
+    const settingsPath = path.join(dir, 'settings.json');
+    const prior = process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE;
+    process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1';
+    try {
+      const output = await runSetup({ settingsPath, port: 4823, confirm: false });
+      expect(output).toContain(MODEL_FORCE_WARNING);
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE;
+      else process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = prior;
+    }
   });
 
   it('does not re-stash on a second install', async () => {
