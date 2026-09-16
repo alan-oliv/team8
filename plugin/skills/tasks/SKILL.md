@@ -37,6 +37,10 @@ Every `TaskCreate` carries all four. A task missing the fourth is not finished.
               "why": "shape is a contract three later tasks consume"}}
 ```
 
+Hooks enforce both ends of this: a `TaskCreated` hook refuses a task whose
+`metadata` is missing `complexity`, `model`, `effort` or `why`, and a
+`TaskCompleted` hook refuses a completion whose `metadata` has no `verified`.
+
 ## Sizing: read the description you just wrote
 
 The verbs in your own description are the evidence. No separate analysis pass.
@@ -131,7 +135,7 @@ first, then read the graph against the table:
 |---|---|---|
 | At most two tasks, every one of them **mechanical** (Sizing above) — work the lead finishes in the next few tool calls | **solo** | Nothing is worth repeating and nothing is worth a worker. Spawning costs more than the work; the lead does it, TDD, one commit |
 | A peak of 1 — one track, or several that never share a wave — and any task is **standard** or **judgment**, even when it is the only task | **subagents** | A few delegated tasks, the lead deciding what runs next after each one, results back in the lead's context for review. Nothing runs in parallel and nobody needs a mailbox |
-| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Peers that run long at the same time and coordinate through the shared task list. Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review |
+| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Peers that run long at the same time and coordinate through the shared task list. Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. Each teammate self-claims down its own track: the lead owns the first task of each, the teammate takes the next itself. Size against 3–5 teammates and 5–6 tasks each — fewer tasks per teammate and coordination costs more than the parallelism buys |
 | Five or more tasks of the same shape — the same job over many inputs, a review per PR, a fan-out with a verify step — with no decision between them | **workflow** | The orchestration itself is the repeatable thing: the script decides what runs next, results live in its variables, and it scales to dozens or hundreds of agents where a lead would improvise the same dispatch by hand. This skill's instruction is the opt-in the Workflow tool requires: state it, do not ask the user to choose it |
 
 A single standard task is subagents, not solo: one file of real work is

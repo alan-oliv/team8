@@ -5532,7 +5532,11 @@ var PINNED_CLAUDE_VERSION = "2.1.231";
 var HOOK_TIMEOUT_SECONDS = 5;
 var PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1e3;
 var LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
+var TASK_CREATED_SCRIPT = path9.join(PLUGIN_DIR, "bin", "task-created.sh");
+var TASK_COMPLETED_SCRIPT = path9.join(PLUGIN_DIR, "bin", "task-completed.sh");
 var BACKUP_FILE = "team8.backup.json";
+var SUBAGENT_PROMPT_CACHE_TTL = "1h";
+var MODEL_FORCE_WARNING = "CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 overrides every per-task model team8 assigns";
 var AGENT_ENV_VARS = [
   "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
   "CLAUDE_CODE_ENABLE_TODO_TOOLS"
@@ -5547,8 +5551,14 @@ var HOOK_EVENTS = [
   "SubagentStop",
   "SessionStart",
   "SessionEnd",
-  "PreCompact"
+  "PreCompact",
+  "TaskCreated",
+  "TaskCompleted"
 ];
+var GATE_SCRIPTS = {
+  TaskCreated: TASK_CREATED_SCRIPT,
+  TaskCompleted: TASK_COMPLETED_SCRIPT
+};
 var MATCHER_EVENTS = /* @__PURE__ */ new Set(["PreToolUse", "PostToolUse", "PermissionRequest"]);
 var CONSOLE_HOOK_URL = /^http:\/\/127\.0\.0\.1:\d+\/hook$/;
 var CONSOLE_HOOK_COMMAND_URL = /http:\/\/127\.0\.0\.1:\d+\/hook\b/;
@@ -5562,8 +5572,10 @@ function hookBlock(port) {
   const hooks = {};
   for (const event of HOOK_EVENTS) {
     const timeout = event === "PermissionRequest" ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
+    const gateScript = GATE_SCRIPTS[event];
+    const command = gateScript ? `'${gateScript}'` : observe(port, timeout);
     const entry = {
-      hooks: [{ type: "command", command: observe(port, timeout), timeout }]
+      hooks: [{ type: "command", command, timeout }]
     };
     if (MATCHER_EVENTS.has(event)) entry.matcher = "*";
     hooks[event] = [entry];
@@ -5593,14 +5605,15 @@ function hookBlock(port) {
     hooks,
     statusLine: { type: "command", command: post(port, "statusline"), refreshInterval: 5 },
     subagentStatusLine: { type: "command", command: post(port, "substatus") },
-    env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, "1"]))
+    env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, "1"])),
+    subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL
   };
 }
 function isConsoleEntry(entry) {
   const hooks = entry?.hooks;
   if (!Array.isArray(hooks)) return false;
   return hooks.some(
-    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || CONSOLE_HOOK_COMMAND_URL.test(h.command))
+    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || h.command.includes("task-created.sh") || h.command.includes("task-completed.sh") || CONSOLE_HOOK_COMMAND_URL.test(h.command))
   );
 }
 function isConsoleStatusLine(value, route) {
@@ -5622,7 +5635,10 @@ function mergeHookBlock(settings, port) {
     hooks,
     statusLine: keptStatusLine(settings.statusLine, block.statusLine, "statusline"),
     subagentStatusLine: keptStatusLine(settings.subagentStatusLine, block.subagentStatusLine, "substatus"),
-    env: { ...settings.env ?? {}, ...block.env }
+    env: { ...settings.env ?? {}, ...block.env },
+    // Unlike env: never overwrite a value the user already set, only fill the
+    // key in when it is missing.
+    subagentPromptCacheTtl: settings.subagentPromptCacheTtl ?? block.subagentPromptCacheTtl
   };
 }
 function keptStatusLine(existing, ours, route) {
@@ -5643,6 +5659,7 @@ function removeHookBlock(settings) {
   }
   if (isConsoleStatusLine(out.statusLine, "statusline")) delete out.statusLine;
   if (isConsoleStatusLine(out.subagentStatusLine, "substatus")) delete out.subagentStatusLine;
+  if (out.subagentPromptCacheTtl === SUBAGENT_PROMPT_CACHE_TTL) delete out.subagentPromptCacheTtl;
   const env = settings.env;
   if (env) {
     const kept = Object.fromEntries(
@@ -5698,15 +5715,19 @@ async function runSetup(opts) {
       ""
     );
   }
-  if (!opts.confirm) {
-    lines.push("nothing was written \u2014 re-run with --yes to apply.");
-    return lines.join("\n");
-  }
   let current = {};
   try {
     current = JSON.parse(await fs7.readFile(opts.settingsPath, "utf8"));
   } catch {
     current = {};
+  }
+  const settingsEnv = current.env;
+  if (process.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE === "1" || settingsEnv?.CLAUDE_CODE_SUBAGENT_MODEL_FORCE === "1") {
+    lines.push(MODEL_FORCE_WARNING, "");
+  }
+  if (!opts.confirm) {
+    lines.push("nothing was written \u2014 re-run with --yes to apply.");
+    return lines.join("\n");
   }
   const next = opts.uninstall ? removeHookBlock(current) : mergeHookBlock(current, opts.port);
   await fs7.mkdir(path9.dirname(opts.settingsPath), { recursive: true });
@@ -5722,11 +5743,30 @@ async function runSetup(opts) {
       else delete next.env;
       lines.push(`put ${AGENT_ENV_VARS.join(" and ")} back the way you had them.`);
     }
+    if (typeof saved?.subagentPromptCacheTtl === "string") {
+      next.subagentPromptCacheTtl = saved.subagentPromptCacheTtl;
+      lines.push("put your prompt-cache TTL back the way you had it.");
+    }
     await fs7.rm(backupPath, { force: true });
   } else {
     if (saved === null) {
-      await atomicWrite(backupPath, `${JSON.stringify({ env: envBackup(current) }, null, 2)}
-`);
+      await atomicWrite(
+        backupPath,
+        `${JSON.stringify(
+          {
+            env: envBackup(current),
+            subagentPromptCacheTtl: typeof current.subagentPromptCacheTtl === "string" ? current.subagentPromptCacheTtl : null
+          },
+          null,
+          2
+        )}
+`
+      );
+    }
+    if (current.subagentPromptCacheTtl && current.subagentPromptCacheTtl !== SUBAGENT_PROMPT_CACHE_TTL) {
+      lines.push(`kept your prompt-cache TTL of ${JSON.stringify(current.subagentPromptCacheTtl)}.`);
+    } else {
+      lines.push(`subagentPromptCacheTtl is ${SUBAGENT_PROMPT_CACHE_TTL} \u2014 teammates keep their context warm between review rounds.`);
     }
     if (current.statusLine && !isConsoleStatusLine(current.statusLine, "statusline")) {
       lines.push("left your own status line alone \u2014 no rate-limit gauge or lead cost readout.");

@@ -100,7 +100,8 @@ with 20 and go up to 100 once the run works.
 - [ ] Whether it wrote a spec and plan. If it did, the plan tab fills in while planning
 - [ ] `wall`: one column per teammate, lead on the left
 - [ ] `tasks`: each task with its owner, blockers and state, and the waves unblocking in order
-- [ ] `comms`: the `everyone` room, and teammates' reports to the lead
+- [ ] The lead owns only each track's first task, set before the spawn, and the teammate claims the next one itself
+- [ ] `comms`: the `everyone` room, and the lead's messages out — a teammate's report arrives as its idle notification, not as a second message here
 - [ ] `overview`: the brief (NOW, WAITING, NEXT), one row per agent
 - [ ] `rail`: arrow keys move between agents
 - [ ] `grid`: one pane per agent, up to 6
@@ -113,6 +114,7 @@ with 20 and go up to 100 once the run works.
 ## Across scenarios
 
 - [ ] Run two labs at once: the session switcher lists both, and you can move between them
+- [ ] Every completed task carries `metadata.verified`, and a completion without it is refused
 
 ## Known gaps
 

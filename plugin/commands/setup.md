@@ -12,16 +12,24 @@ else, and nothing that is already there.
 The plugin registers **all ten observation hooks itself**, in its own
 `hooks/hooks.json` — `PreToolUse`, `PostToolUse`, `PermissionRequest`,
 `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStop`, `SessionStart`,
-`SessionEnd`, `PreCompact`, plus the launcher. **Do not add any of them here.**
-They fire from the plugin; a copy in `settings.json` would post every event twice.
+`SessionEnd`, `PreCompact`, plus the launcher. It also registers the `TaskCreated`
+and `TaskCompleted` gates that require a task's metadata and its verification.
+**Do not add any of them here.** They fire from the plugin; a copy in
+`settings.json` would post every event twice, or run the gates twice.
 
-Two things have no plugin-manifest equivalent, and that is all this command does:
+Three things have no plugin-manifest equivalent, and that is all this command does:
 
 - **`env`** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (teams at all) and
   `CLAUDE_CODE_ENABLE_TODO_TOOLS` (the shared task list the **tasks** view renders)
 - **`subagentStatusLine`** — each teammate's current tool, in its header
+- **`subagentPromptCacheTtl: "1h"`** — an in-process teammate's prompt cache holds 5 minutes by default, so a fix round starting 3-10 minutes after the last one re-reads its context cold; this keeps it warm for an hour, and is only ever added when the key is absent.
 
 It MERGES, and it never overwrites: whatever is already in that file stays.
+
+If `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` is `"1"` anywhere — the process env or this
+settings file's `env` — say so and leave it: it silently overrides every
+per-task model team8 assigns. And note for the operator that a `claude -p`
+session never spawns teammates, so its briefs come back to them as subagents instead.
 
 Setting them in `settings.json` rather than a shell profile is deliberate: it is
 per-machine, survives a change of shell, and applies to every session the operator
