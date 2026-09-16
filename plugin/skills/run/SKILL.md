@@ -44,10 +44,10 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    live, do no multi-step investigation yourself** — a report waits as long as
    your longest turn. Dispatch a subagent for it, or do it before dispatching.
 8. **Close the run.** Run the full suite yourself once every track is clear —
-   the executors only ran the tests covering their own files.
-   Then, when the PR is up, fill the Run section of `docs/team8/runs/<batch>.md`
-   (opened by `team8:plan`; create it from that skill's template if this batch
-   skipped `plan`) and commit it on the branch.
+   the executors only ran the tests covering their own files. Then, when the PR
+   is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
+   `team8:plan`; create it from that skill's template if this batch skipped
+   `plan`) and commit it on the branch.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
