@@ -1296,6 +1296,9 @@ it('leaves the note empty when the listing is not scoped to a folder', async () 
   renderSelect();
   await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-note').textContent).toBe('');
+  // Nothing picked and no scope to name: the chip says nothing rather than
+  // counting a selection that was never made.
+  expect(screen.getByTestId('folder-chip').textContent).toBe('▾');
   fireEvent.click(screen.getByTestId('folder-chip'));
   expect(within(screen.getByTestId('folder-menu')).queryAllByRole('option')).toHaveLength(0);
 });

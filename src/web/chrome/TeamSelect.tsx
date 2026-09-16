@@ -401,16 +401,23 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   const one = picked ? (picked.length === 1 ? picked[0] : '') : scope;
   const here = folders.find((f) => f.path === one);
   const totalSessions = folders.reduce((n, f) => n + f.sessions, 0);
+  // The last arm is a real multi-selection, never the machine-wide listing —
+  // which has nothing picked and no scope to name, and says so by saying
+  // nothing rather than counting to zero.
   const folderName = everyFolder
     ? 'all'
     : one
       ? (here?.name ?? folderBase(one))
-      : `${picked?.length ?? 0} folders`;
+      : picked?.length
+        ? `${picked.length} folders`
+        : '';
   const folderSub = everyFolder
     ? 'every folder'
     : one
       ? shortPath(one)
-      : `${picked?.length ?? 0} of ${folders.length}`;
+      : picked?.length
+        ? `${picked.length} of ${folders.length}`
+        : '';
   const folderNote = everyFolder
     ? `${totalSessions} sessions across ${folders.length} folders`
     : here
