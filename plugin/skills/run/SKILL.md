@@ -43,8 +43,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    below as each track lands. Never fix a finding yourself. **While any track is
    live, do no multi-step investigation yourself** — a report waits as long as
    your longest turn. Dispatch a subagent for it, or do it before dispatching.
-8. **Run the full suite, then close the run log.** Run it yourself once every
-   track is clear — the executors only ran the tests covering their own files.
+8. **Close the run.** Run the full suite yourself once every track is clear —
+   the executors only ran the tests covering their own files.
    Then, when the PR is up, fill the Run section of `docs/team8/runs/<batch>.md`
    (opened by `team8:plan`; create it from that skill's template if this batch
    skipped `plan`) and commit it on the branch.
