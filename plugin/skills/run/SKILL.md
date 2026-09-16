@@ -43,9 +43,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    below as each track lands. Never fix a finding yourself. **While any track is
    live, do no multi-step investigation yourself** — a report waits as long as
    your longest turn. Dispatch a subagent for it, or do it before dispatching.
-8. **Close the run log.** When the PR is up, fill the Run section of
-   `docs/team8/runs/<batch>.md` (opened by `team8:plan`; create it from that
-   skill's template if this batch skipped `plan`) and commit it on the branch.
+8. **Run the full suite, then close the run log.** Run it yourself once every
+   track is clear — the executors only ran the tests covering their own files.
+   Then, when the PR is up, fill the Run section of `docs/team8/runs/<batch>.md`
+   (opened by `team8:plan`; create it from that skill's template if this batch
+   skipped `plan`) and commit it on the branch.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -168,7 +170,8 @@ There is no per-teammate worktree to reach for. Isolation comes from **disjoint
 file ownership**, and the dispatch prompt is where you create it:
 
 - Name the files each teammate owns, and name the ones it must not touch.
-- Each commits its own paths **by pathspec**: `git commit -- <its paths> -m "…"`.
+- Each commits its own paths **by pathspec**: `git commit -m "…" -- <its paths>`
+  — the message first, since everything after `--` is read as a path.
   Never `git add -A` or `git add .`, and never a bare `git commit` — the index is
   shared, so either one ships a neighbour's half-finished edit.
 - One shared branch for the batch, unless step 2a derived otherwise. They share a
@@ -214,9 +217,8 @@ reviewer, and the executor stays alive until its track is clear.
    finding ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only.
    Three rounds per track. After three, rule on each open finding yourself and
    record the ruling in the run log. Minor findings go straight to the run log.
-4. **Clear the track.** Run the full suite yourself once every track is clear —
-   the executors only ran the tests covering their own files. Then tell each
-   executor its track is clear and it can stop. Note the rounds in the run log.
+4. **Clear the track.** Tell the executor its track is clear and it can stop.
+   Note the rounds in the run log.
 
 ## The Dispatch Contract
 
@@ -249,8 +251,9 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 6. **The terminal deliverable.** The decisions from steps 2a and 2b, stated in full.
    Name the branch and say it is already checked out — never "branch off `main`",
    which invites the `git checkout -b` that moves everyone. For the PR case:
-   "Commit on `<branch>` by pathspec — `git commit -- <your paths> -m '…'`,
-   never a bare `git commit`, which ships whatever a neighbour staged. Then
+   "Commit on `<branch>` by pathspec — `git commit -m '…' -- <your paths>`, with
+   the message first because everything after `--` is read as a path. Never a
+   bare `git commit`, which ships whatever a neighbour staged. Then
    push. If no PR against `main` exists for this branch yet, open one and report
    its URL; if one already exists, your push lands in it and you just report
    that."
