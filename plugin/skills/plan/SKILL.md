@@ -7,8 +7,8 @@ description: Use when a feature, subsystem or multi-step change needs a design a
 
 ## Overview
 
-Three phases. Phase 1 and the plan-writing half of 2 are superpowers'
-brainstorming and writing-plans, verbatim. team8 begins where the plan
+Three phases. Phase 1 and the plan-writing half of 2 are the vendored
+brainstorming and writing-plans skills, verbatim. team8 begins where the plan
 becomes tasks: tracks and a task list, a run log, and the user's approval
 before anything runs.
 
@@ -377,7 +377,7 @@ pr: <url, at close>
 | Dispatching a planner or reviewer teammate | The lead writes the plan in this session. A separate planner starts without the conversation, and every question becomes a relay round the user waits on |
 | The whole plan in one Write | Skeleton first, then one Edit per task, so the user and the console see it fill in |
 | Building or running the plan's code "to be sure" | Code in the plan is written, not run. Unproven means ask the user; it's a Phase 1 spike |
-| A review subagent on the plan | Self-review inline. Superpowers measured subagent plan review: twice the time, same quality |
+| A review subagent on the plan | Self-review inline. A subagent plan review was measured at twice the time for the same quality |
 | Writing the plan before the user approved the spec | The hard gate is the approval, not the spec's length |
 | Invoking `run` because the plan looks done | Only the user approves the run |
 | Plan sections that say "similar to Task N" | Repeat the code. Implementers read one section, out of order |
