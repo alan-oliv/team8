@@ -14,33 +14,95 @@ const TRIGGER_WIDTH = '146px';
 // branch and diffstat — and that anatomy was sized for 520; 432 predates it.
 const PANEL_WIDTH = '520px';
 
-// The folder menu is narrower than the panel it hangs off, and offset to start
-// under the chip that opens it rather than at the panel's edge — both the
-// canvas's own numbers.
+// The folder menu is narrower than the panel it hangs off, and starts under the
+// chip that opens it — which is the left edge of the second header row, so the
+// offset is that row's own padding.
 const FOLDER_MENU_WIDTH = '288px';
-const FOLDER_MENU_LEFT = '100px';
+const FOLDER_MENU_LEFT = '12px';
 
 // The folder scope is a preference of this machine, not of one mount: the
 // wall view and a workflow view each render their own TeamSelect, sharing no
 // React state, so without persisting it here every navigation between them
 // reset the operator back to every folder on the next open.
 const FOLDER_KEY = 'console.folder';
+const RANGE_KEY = 'console.activeWithin';
 
-function readStoredFolder(): string {
+/**
+ * Three states, not two: `null` is "the operator has never said", which leaves
+ * the scope to the server (the folder the console was started in); `[]` is
+ * "every folder", chosen; a non-empty array is the folders chosen.
+ */
+function readStoredFolders(): string[] | null {
+  let raw: string | null = null;
   try {
-    return typeof window === 'undefined' ? '' : (window.localStorage.getItem(FOLDER_KEY) ?? '');
+    raw = typeof window === 'undefined' ? null : window.localStorage.getItem(FOLDER_KEY);
   } catch {
-    return '';
+    return null;
   }
+  if (raw === null) return null;
+  let parsed: unknown = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Written before this key held JSON: a bare folder path.
+  }
+  if (Array.isArray(parsed)) return parsed as string[];
+  // The legacy single scope: '' and '*' both meant "no explicit preference".
+  const path = typeof parsed === 'string' ? parsed : '';
+  return path && path !== ALL_FOLDERS ? [path] : null;
 }
 
-function storeFolder(folder: string): void {
+function storeFolders(folders: string[] | null): void {
   try {
-    window.localStorage.setItem(FOLDER_KEY, folder);
+    window.localStorage.setItem(FOLDER_KEY, JSON.stringify(folders));
   } catch {
     // A full or disabled store costs the operator the preference on the next
     // open, and nothing else.
   }
+}
+
+const RANGES = [
+  { key: 'live', label: 'live' },
+  { key: '24h', label: '24 h' },
+  { key: '7d', label: '7 d' },
+  { key: '30d', label: '30 d' },
+  { key: 'all', label: 'all' },
+] as const;
+
+type ActiveWithin = (typeof RANGES)[number]['key'];
+
+const WINDOW: Record<'24h' | '7d' | '30d', number> = {
+  '24h': 86_400_000,
+  '7d': 7 * 86_400_000,
+  '30d': 30 * 86_400_000,
+};
+
+function readStoredRange(): ActiveWithin {
+  try {
+    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(RANGE_KEY);
+    return RANGES.some((r) => r.key === raw) ? (raw as ActiveWithin) : '24h';
+  } catch {
+    return '24h';
+  }
+}
+
+function storeRange(range: ActiveWithin): void {
+  try {
+    window.localStorage.setItem(RANGE_KEY, range);
+  } catch {
+    // Same bargain as the folder scope.
+  }
+}
+
+// A live session passes every range: its `lastActivityAt` is written by the
+// index and can lag the clock this panel ticks on, so the flag decides, not
+// the timestamp.
+const folderBase = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
+
+function matchesActiveWithin(team: TeamSummary, within: ActiveWithin, now: number): boolean {
+  if (team.live) return true;
+  if (within === 'live') return false;
+  return within === 'all' || now - team.lastActivityAt <= WINDOW[within];
 }
 
 /**
@@ -174,11 +236,11 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   const [cursor, setCursor] = useState(0);
   const [mark, setMark] = useState<Mark | null>(null);
   const [query, setQuery] = useState('');
-  // Two folders, not one: `folder` is what the operator asked for ('' being
-  // "wherever the console was started"), `scope` is what the server answered
-  // with. Reading the chip off the reply rather than the request keeps them
-  // from chasing each other — setting one from the other would refetch.
-  const [folder, setFolder] = useState(readStoredFolder);
+  // `picked` is the operator's folder scope (null = never said, [] = every
+  // folder), `scope` is what the server answered with — which only names
+  // anything while the operator has said nothing.
+  const [picked, setPicked] = useState(readStoredFolders);
+  const [activeWithin, setActiveWithin] = useState(readStoredRange);
   const [scope, setScope] = useState('');
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [foldersOpen, setFoldersOpen] = useState(false);
@@ -195,7 +257,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     let live = true;
     setLoading(true);
     setUnreadable(false);
-    fetch(folder ? `/api/teams?folder=${encodeURIComponent(folder)}` : '/api/teams')
+    // One request either way: a chosen scope asks for every folder and narrows
+    // below, so toggling a folder never costs a round trip.
+    fetch(picked ? `/api/teams?folder=${ALL_FOLDERS}` : '/api/teams')
       .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
       .then((payload) => {
         if (!live) return;
@@ -214,7 +278,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     return () => {
       live = false;
     };
-  }, [open, folder]);
+    // Only whether a scope was chosen changes the request, never which folders:
+    // the set is applied to the rows already in hand.
+  }, [open, picked === null]);
 
   function close() {
     setMark(null);
@@ -304,7 +370,11 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // The `✕` stays, and ended sessions fold into the same collapsed group
   // (`folded`): out of the way, never out of reach.
   const runOf = (t: TeamSummary) => (t.members < 2 ? t.workflow : undefined);
-  const listed = teams ?? [];
+  // A row carries its folder's NAME, not its path (domain.ts), so the picked
+  // paths are matched on their last segment.
+  const inScope = (t: TeamSummary) =>
+    !picked?.length || picked.some((p) => t.folder === p || t.folder === folderBase(p));
+  const listed = (teams ?? []).filter(inScope);
   const rows = listed.filter((t) => !folded(t, watch.hidden, current)).sort(byDisplayName);
   const hiddenCount = listed.length - rows.length;
   const handHidden = listed.filter((t) => watch.hidden.has(t.name)).length;
@@ -314,8 +384,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   ]
     .filter(Boolean)
     .join(' · ');
-  const filteredRows = rows.filter((t) => matchesQuery(t, query));
-  const teamCount = rows.length;
+  const filteredRows = rows.filter(
+    (t) => matchesQuery(t, query) && matchesActiveWithin(t, activeWithin, now),
+  );
   const cursorTeam = filteredRows[Math.min(cursor, filteredRows.length - 1)];
   const hiddenRows = listed
     .filter((t) => folded(t, watch.hidden, current))
@@ -326,10 +397,20 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // beside them counts; the header count above the list counts ROWS, because it
   // sits directly on top of them. The two differ whenever a folder's sessions
   // fold into one team row, and each is true of what it is next to.
-  const everyFolder = scope === ALL_FOLDERS;
-  const here = folders.find((f) => f.path === scope);
-  const folderName = everyFolder ? 'all' : (here?.name ?? scope.split('/').filter(Boolean).pop() ?? scope);
+  const everyFolder = picked ? picked.length === 0 : scope === ALL_FOLDERS;
+  const one = picked ? (picked.length === 1 ? picked[0] : '') : scope;
+  const here = folders.find((f) => f.path === one);
   const totalSessions = folders.reduce((n, f) => n + f.sessions, 0);
+  const folderName = everyFolder
+    ? 'all'
+    : one
+      ? (here?.name ?? folderBase(one))
+      : `${picked?.length ?? 0} folders`;
+  const folderSub = everyFolder
+    ? 'every folder'
+    : one
+      ? shortPath(one)
+      : `${picked?.length ?? 0} of ${folders.length}`;
   const folderNote = everyFolder
     ? `${totalSessions} sessions across ${folders.length} folders`
     : here
@@ -751,27 +832,58 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
             outline: 'none',
           }}
         >
-          {/* The header is a folder picker, not a caption: `SESSIONS ON` plus
-              the folder itself, because the scope is now something the operator
-              chooses rather than something the launcher decided for them. The
-              noun stays "SESSIONS" (decision 23) \u2014 the ruling that chose
-              "TEAMS" was compensating for a filter that listed bare windows,
-              and with that fixed the list holds teams, workflow sessions and
-              solo sessions alike. */}
+          {/* Row 1 \u2014 search, alone on its line. The scopes below need the whole
+              width once there are two of them, and the search is the one thing
+              here that wants to be typed into rather than read. */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '9px',
               padding: '7px 12px 6px',
+              borderBottom: '1px solid var(--color-neutral-900)',
+            }}
+          >
+            <input
+              ref={search}
+              data-testid="team-search"
+              type="text"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setCursor(0);
+              }}
+              placeholder="search"
+              aria-label="search sessions"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'var(--color-text)',
+                fontSize: '11px',
+                flex: 1,
+                minWidth: 0,
+              }}
+            />
+          </div>
+
+          {/* Row 2 \u2014 the two scopes: which folders the list spans, and how
+              recently a session has to have been active to be in it. The noun
+              stays "SESSIONS" (decision 23) \u2014 the ruling that chose "TEAMS"
+              was compensating for a filter that listed bare windows, and with
+              that fixed the list holds teams, workflow sessions and solo
+              sessions alike. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              padding: '6px 12px',
               borderBottom: '1px solid var(--color-neutral-900)',
               color: 'var(--color-neutral-600)',
               fontSize: '10px',
-              letterSpacing: '.12em',
               position: 'relative',
             }}
           >
-            <span style={{ flex: 'none' }}>SESSIONS ON</span>
             <button
               type="button"
               data-testid="folder-chip"
@@ -795,40 +907,47 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 {folderName}
               </span>
               <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                {everyFolder ? 'every folder' : shortPath(scope)}
+                {folderSub}
               </span>
               <span aria-hidden="true" style={{ color: 'var(--color-accent-400)', fontSize: '10px' }}>
                 {foldersOpen ? '\u25b4' : '\u25be'}
               </span>
             </button>
-            {/* The canvas leaves this slot as bare spacer \u2014 a mock has no live
-                search to draw in it. It is the only gap in the row wide enough
-                to type into, and the footer's `\u2318K to search` promises somewhere
-                to type, so the input fills it rather than displacing the count. */}
-            <input
-              ref={search}
-              data-testid="team-search"
-              type="text"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setCursor(0);
-              }}
-              placeholder="search"
-              aria-label="search sessions"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                color: 'var(--color-text)',
-                fontSize: '11px',
-                letterSpacing: 'normal',
-                flex: 1,
-                minWidth: 0,
-              }}
-            />
+            <span style={{ flex: 'none', letterSpacing: '.12em' }}>ACTIVE IN</span>
+            {RANGES.map((r) => {
+              const on = r.key === activeWithin;
+              return (
+                <button
+                  key={r.key}
+                  type="button"
+                  data-testid={`range-${r.key}`}
+                  aria-pressed={on}
+                  onClick={() => {
+                    setActiveWithin(r.key);
+                    storeRange(r.key);
+                    setCursor(0);
+                  }}
+                  style={{
+                    padding: '1px 7px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1px solid ${on ? 'var(--color-accent-700)' : 'transparent'}`,
+                    background: on ? 'var(--color-accent-900)' : 'transparent',
+                    color: on ? 'var(--color-accent-300)' : 'var(--color-neutral-600)',
+                    fontSize: '10px',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                    flex: 'none',
+                  }}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+            <span style={{ flex: 1 }} />
+            {/* Never a bare count: a narrow filter showing two of forty must not
+                read like a machine with two sessions on it. */}
             <span data-testid="session-count" style={{ flex: 'none' }}>
-              {teamCount}
+              {filteredRows.length} of {rows.length}
             </span>
 
             {foldersOpen && (
@@ -861,19 +980,26 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 {/* `all` only where there are folders to span: a listing that is not
                     scoped to one has no menu rows at all. */}
                 {(folders.length ? [{ path: ALL_FOLDERS, name: 'all', sessions: totalSessions }, ...folders] : []).map((f) => {
-                  const isHere = f.path === scope;
+                  const all = f.path === ALL_FOLDERS;
+                  const isHere = all ? everyFolder : picked ? picked.includes(f.path) : f.path === scope;
                   return (
                     <div
                       key={f.path}
                       role="option"
                       aria-selected={isHere}
                       onClick={() => {
-                        // Picking filters the list and closes the folder menu \u2014
-                        // the session dropdown stays open, since choosing a
-                        // folder is how you get to the session in it.
-                        setFolder(f.path);
-                        storeFolder(f.path);
-                        setFoldersOpen(false);
+                        // A multi-select stays open across picks; `all` is the
+                        // one deliberate reset, so it closes. The session
+                        // dropdown stays up either way, since choosing a folder
+                        // is how you get to the session in it.
+                        const next = all
+                          ? []
+                          : picked?.includes(f.path)
+                            ? picked.filter((p) => p !== f.path)
+                            : [...(picked ?? []), f.path];
+                        setPicked(next);
+                        storeFolders(next);
+                        if (all) setFoldersOpen(false);
                         setCursor(0);
                       }}
                       style={{
@@ -886,6 +1012,17 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                         borderBottom: '1px solid var(--color-neutral-900)',
                       }}
                     >
+                      <span
+                        data-testid="folder-mark"
+                        aria-hidden="true"
+                        style={{
+                          color: isHere ? 'var(--color-accent-400)' : 'var(--color-neutral-700)',
+                          fontSize: '11px',
+                          flex: 'none',
+                        }}
+                      >
+                        {isHere ? '\u2713' : '\u00b7'}
+                      </span>
                       <span
                         style={{
                           color: isHere ? 'var(--color-accent-300)' : 'var(--color-text)',
