@@ -44,6 +44,18 @@ export function resolveModel(raw: string | undefined): ResolvedModel {
       approximate: false,
     };
   }
+  // A point release (claude-fable-5-1) shares its family's window; the price
+  // is the family's until the catalog names it, so it stays approximate.
+  const family = catalog.models[canonical.replace(/-\d+$/, '')];
+  if (family) {
+    return {
+      canonical,
+      window: family.window,
+      compactAt: compactAtFor(family.window),
+      pricing: family.pricing,
+      approximate: true,
+    };
+  }
   return {
     canonical: canonical || 'unknown',
     window: catalog.fallbackWindow,
