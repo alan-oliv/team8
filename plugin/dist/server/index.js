@@ -1816,6 +1816,16 @@ function resolveModel(raw) {
       approximate: false
     };
   }
+  const family = catalog.models[canonical.replace(/-\d+$/, "")];
+  if (family) {
+    return {
+      canonical,
+      window: family.window,
+      compactAt: compactAtFor(family.window),
+      pricing: family.pricing,
+      approximate: true
+    };
+  }
   return {
     canonical: canonical || "unknown",
     window: catalog.fallbackWindow,
