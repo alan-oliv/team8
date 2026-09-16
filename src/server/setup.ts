@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { LAUNCH_SCRIPT, RESTART_SCRIPT, HINT_SCRIPT } from './lifecycle';
+import { LAUNCH_SCRIPT, RESTART_SCRIPT, HINT_SCRIPT, PLUGIN_DIR } from './lifecycle';
 import { atomicWrite } from './control/mailbox';
 import { DEFAULT_PERMISSION_TIMEOUT_MS } from './ingest/hooks';
 import { readJsonSafe } from './watch/jsonfile';
@@ -18,6 +18,9 @@ export const HOOK_TIMEOUT_SECONDS = 5;
 /** The hook's timeout has to cover the hold window the handler actually uses. */
 export const PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1000;
 export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
+/** Absolute paths to the two task gates, used by hookBlock(). */
+export const TASK_CREATED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-created.sh');
+export const TASK_COMPLETED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-completed.sh');
 /** Where the user's own env values are stashed while the console owns them. */
 export const BACKUP_FILE = 'team8.backup.json';
 
@@ -41,7 +44,16 @@ export const HOOK_EVENTS = [
   'SessionStart',
   'SessionEnd',
   'PreCompact',
+  'TaskCreated',
+  'TaskCompleted',
 ] as const;
+
+// The two gate events run a local script instead of the curl-to-console
+// observation every other event carries, and fire with no matcher.
+const GATE_SCRIPTS: Partial<Record<(typeof HOOK_EVENTS)[number], string>> = {
+  TaskCreated: TASK_CREATED_SCRIPT,
+  TaskCompleted: TASK_COMPLETED_SCRIPT,
+};
 
 const MATCHER_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PermissionRequest']);
 // Anchored form for the old `http`-type entries this version no longer
@@ -106,8 +118,10 @@ export function hookBlock(port: number): HookBlock {
     // event must not be able to stall the agent's turn.
     const timeout =
       event === 'PermissionRequest' ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
+    const gateScript = GATE_SCRIPTS[event];
+    const command = gateScript ? `'${gateScript}'` : observe(port, timeout);
     const entry: HookEntry = {
-      hooks: [{ type: 'command', command: observe(port, timeout), timeout }],
+      hooks: [{ type: 'command', command, timeout }],
     };
     if (MATCHER_EVENTS.has(event)) entry.matcher = '*';
     hooks[event] = [entry];
@@ -171,7 +185,10 @@ function isConsoleEntry(entry: unknown): boolean {
       (h?.type === 'http' && typeof h.url === 'string' && CONSOLE_HOOK_URL.test(h.url)) ||
       (h?.type === 'command' &&
         typeof h.command === 'string' &&
-        (h.command.includes('console-launch.sh') || CONSOLE_HOOK_COMMAND_URL.test(h.command))),
+        (h.command.includes('console-launch.sh') ||
+          h.command.includes('task-created.sh') ||
+          h.command.includes('task-completed.sh') ||
+          CONSOLE_HOOK_COMMAND_URL.test(h.command))),
   );
 }
 
