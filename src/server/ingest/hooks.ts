@@ -123,6 +123,19 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           }
         }
 
+        // A held PermissionRequest only clears when the console's own
+        // buttons call permits.resolve(). If the operator answers Claude
+        // Code's native terminal prompt instead — sitting right at the lead's
+        // keyboard rather than the web UI — the tool still runs and this
+        // PostToolUse fires, but our hold never hears about it and sits stuck
+        // until the auto-deny timer. Treat "the tool already completed" as
+        // resolution regardless of how it got answered.
+        if (event === 'PostToolUse') {
+          for (const permit of permits.list()) {
+            if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, 'allow');
+          }
+        }
+
         if (event !== 'PermissionRequest') return { status: 200, body: {} };
 
         // Holding in read-only mode is the worst of both worlds: the card

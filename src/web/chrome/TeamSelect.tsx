@@ -406,12 +406,14 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
       : picked?.length
         ? `${picked.length} of ${folders.length}`
         : '';
-  // Per-folder running counts for the menu — only meaningful once every
+  // Per-folder live counts for the menu — only meaningful once every
   // folder's teams have been fetched and tagged with `.folder` (a scoped
-  // listing never tags its own rows).
+  // listing never tags its own rows). Live, not mid-turn: an idle session is
+  // still one you can open, and counting only busy ones hid it behind
+  // `none active`.
   const runningByFolder = new Map<string, number>();
   for (const t of teams ?? []) {
-    if (t.folder && isRunning(t)) runningByFolder.set(t.folder, (runningByFolder.get(t.folder) ?? 0) + 1);
+    if (t.folder && t.live) runningByFolder.set(t.folder, (runningByFolder.get(t.folder) ?? 0) + 1);
   }
   const totalRunning = [...runningByFolder.values()].reduce((n, c) => n + c, 0);
   // The footer's own stats are the scope's, not the machine's: what is
@@ -917,7 +919,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                 padding: '1px 5px',
               }}
             >
-              \u2318K
+              {'\u2318K'}
             </span>
 
             {foldersOpen && (
@@ -1035,7 +1037,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                           flex: 'none',
                         }}
                       >
-                        {all ? `${f.running} running · ${folders.length} folders` : quiet ? 'none active' : `${f.running} active`}
+                        {all ? `${f.running} active · ${folders.length} folders` : quiet ? 'none active' : `${f.running} active`}
                       </span>
                     </div>
                   );

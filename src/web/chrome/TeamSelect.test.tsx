@@ -1009,7 +1009,7 @@ it('opens the folder menu from the chip and lists every folder with its count', 
   const menu = screen.getByTestId('folder-menu');
   const rows = within(menu).getAllByRole('option');
   expect(rows.map((r) => r.textContent)).toEqual([
-    '·allevery folder2 running · 2 folders',
+    '·allevery folder2 active · 2 folders',
     '✓octo~/code/octo2 active',
     '·hatch~/code/hatchnone active',
   ]);
@@ -1017,6 +1017,20 @@ it('opens the folder menu from the chip and lists every folder with its count', 
   expect(rows[0].getAttribute('aria-selected')).toBe('false');
   expect(rows[1].getAttribute('aria-selected')).toBe('true');
   expect(rows[2].getAttribute('aria-selected')).toBe('false');
+});
+
+it('counts an idle live session as active in the folder menu', async () => {
+  const idle = { ...sampleTeams()[1], name: 'session-idle0001', state: 'idle' as const, live: true, folder: 'hatch' };
+  vi.stubGlobal('fetch', vi.fn(() =>
+    Promise.resolve(new Response(JSON.stringify({ ...LIST, teams: [...LIST.teams, idle] }), { status: 200 })),
+  ));
+  renderSelect();
+  await screen.findAllByRole('option');
+
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  const rows = within(screen.getByTestId('folder-menu')).getAllByRole('option');
+  expect(rows.map((r) => r.textContent)).toContain('·hatch~/code/hatch1 active');
+  expect(rows[0].textContent).toBe('·allevery folder3 active · 2 folders');
 });
 
 it('asks for every folder once a scope is picked, and keeps both menus open', async () => {

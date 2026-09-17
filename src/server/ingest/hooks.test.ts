@@ -165,6 +165,32 @@ describe('hook', () => {
     expect((of(store.replay(), 'needsyou-resolved').at(-1)!.payload as { id: string }).id).toBe(card.id);
   });
 
+  it('resolves a held PermissionRequest once PostToolUse shows the tool already ran', async () => {
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      timeout: 10000,
+    });
+
+    const card = of(store.replay(), 'needsyou').at(-1)!.payload as NeedsYouItem;
+    expect(permits.list().map((p) => p.id)).toEqual([card.id]);
+
+    await handlers.hook({
+      hook_event_name: 'PostToolUse',
+      tool_name: 'AskUserQuestion',
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+    });
+
+    expect(permits.list()).toEqual([]);
+    const resolved = await pending;
+    expect(resolved.body).toEqual({
+      hookSpecificOutput: { hookEventName: 'PermissionRequest', decision: { behavior: 'allow' } },
+    });
+    expect((of(store.replay(), 'needsyou-resolved').at(-1)!.payload as { id: string }).id).toBe(card.id);
+  });
+
   it('answers a denied PermissionRequest with the reason as decision.message', async () => {
     const pending = handlers.hook({
       hook_event_name: 'PermissionRequest',
