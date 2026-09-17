@@ -4626,6 +4626,11 @@ function createHookHandlers(deps) {
             debug("hook", `SessionEnd for ${sid ?? "an unknown session"} is not the lead's`);
           }
         }
+        if (event === "PostToolUse") {
+          for (const permit of permits.list()) {
+            if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, "allow");
+          }
+        }
         if (event !== "PermissionRequest") return { status: 200, body: {} };
         if (deps.readOnly) return { status: 200, body: {} };
         const timeoutMs = num2(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
