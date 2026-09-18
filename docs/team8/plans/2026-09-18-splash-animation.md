@@ -349,9 +349,9 @@ git commit -m "Add the splash timeline as a pure function of elapsed time"
 - Test: `src/web/chrome/Splash.test.tsx`
 
 **Interfaces:**
-- Consumes: `splashFrame`, `SPLASH_END`, `REDUCED_END`, `UNIT`, `MARK`, `BLOOM`, `COLORS` from `src/web/chrome/splash-frame.ts`.
+- Consumes: `splashFrame`, `UNIT`, `MARK`, `BLOOM`, `COLORS` from `src/web/chrome/splash-frame.ts` (`done` on the returned frame is what ends the loop; the `*_END` constants are not read here).
 - Produces, exported from `src/web/chrome/Splash.tsx`:
-  - `function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => void }): JSX.Element` — renders `<div class="splash" data-testid="splash" aria-hidden="true">`, each node `<div class="splash-node" data-testid="splash-node">`, calls `onDone` exactly once when the timeline ends.
+  - `function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => void }): JSX.Element` — renders `<div class="splash" data-testid="splash" aria-hidden="true">`, a centred `data-testid="splash-stage"` wrapper carrying the viewport fit, and each node as `<div class="splash-node" data-testid="splash-node">`; calls `onDone` exactly once when the timeline ends.
   - `function prefersReducedMotion(): boolean` — `matchMedia('(prefers-reduced-motion: reduce)').matches`, false where `matchMedia` is missing (jsdom).
 
 - [ ] **Step 1: Write the failing tests**

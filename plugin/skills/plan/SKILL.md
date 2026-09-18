@@ -9,12 +9,11 @@ description: Use when a feature, subsystem or multi-step change needs a design a
 
 Three phases. Phase 1 and the plan-writing half of 2 are the vendored
 brainstorming and writing-plans skills, verbatim. team8 begins where the plan
-becomes tasks: tracks and a task list, a run log, and the user's approval
-before anything runs.
+becomes tasks: tracks and a task list, a run log, and the run.
 
 1. **Brainstorm** — the lead turns the idea into an approved spec, in dialogue with the user.
 2. **Plan** — the lead writes the plan from this skill's `writing-plans.md` in the same session, skeleton first and then one task at a time, and creates the tasks through `team8:tasks`.
-3. **Approve** — the lead shows the task table and asks: adjust, or run. Nothing runs before the user says so.
+3. **Run** — the lead shows the task table and invokes `team8:run` in the same turn. The spec approval in Phase 1 is the only gate; the user adjusts by interrupting.
 
 **Core principle: the plan is written where the user can see it.** The lead
 that brainstormed with the user writes the plan in the same session, a task
@@ -87,7 +86,7 @@ artifact, never the approval.
 pipeline is overkill, want me to just write it?" is not a question to
 ask — the user invoked `team8:plan`, and a small task is the solo mode
 with a two-line design, not a reason to bypass the tasks, the table, the
-approval and the run. The same holds when the folder is not a git repo:
+and the run. The same holds when the folder is not a git repo:
 say so once, skip the branch cut and every commit, and do everything
 else exactly as written.
 
@@ -103,7 +102,7 @@ else exactly as written.
 | "It grew, but I'm almost done — no need to re-classify" | Hidden complexity upgrades the path mid-task. Stop and say so. |
 | "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
 | "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means `mode: solo`, never no tasks and no approval. |
-| "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table, approval and run do not. |
+| "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table and run do not. |
 | "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
 
 ### Checklist
@@ -285,8 +284,7 @@ this skill's `visual-companion.md` (beside this file; its `scripts/` sit next to
 ## Phase 2: Plan
 
 The lead writes the plan in this session. Planning is solo: nothing is
-spawned — no teammate, no subagent — until the user approves the task table
-in Phase 3.
+spawned — no teammate, no subagent — until Phase 3 invokes `team8:run`.
 
 **Before writing:** cut the batch branch — `git checkout -b <topic>` — so
 the plan and the tasks land on it and `team8:run` finds it checked out. Open
@@ -314,27 +312,23 @@ exactly as it says:
 code while planning. If a step rests on something unproven, ask the user;
 settling it is a spike in Phase 1, not work in Phase 2.
 
-## Phase 3: Approve
+## Phase 3: Run
 
-<HARD-GATE>
-Nothing executes until the user has read the task table and said start. An
-approved plan is not an approved run.
-</HARD-GATE>
+The spec approval in Phase 1 was the gate. A finished plan runs at once; the
+user adjusts a model, a task or the mode by interrupting, and every teammate
+is stopped and re-dispatched from the edited list.
 
 1. **Fill the Plan section of the run log** — self-review fixes, task and
    track counts, the estimate total — and **commit the plan and the log** on
    the batch branch, so every executor can read them.
 2. **Close with the `team8:tasks` ending**: the plan path, the table (task,
-   blocked by, model, estimate) with its total, the notes (the mode and its
-   reason per `team8:tasks` Mode, tracks, what starts now, sizing you were
-   unsure about, any residual ruling), and the one ask —
-   adjust models, adjust tasks, or start the work. `AskUserQuestion` where
-   available, multiSelect on. Adjusting a model re-prices its row; show the
-   new total.
-3. **Adjust** edits the task list and, where it changes the plan, the plan
-   file. Show the table again and ask again.
-4. On **start the work**, invoke `team8:run` in the stated mode. The tasks and
-   the branch exist; `run` skips its own task creation and branch cut.
+   blocked by, model, estimate) with its total, and the notes (the mode and
+   its reason per `team8:tasks` Mode, tracks, what starts now, sizing you were
+   unsure about, any residual ruling). No question follows it.
+3. **In the same turn, invoke `team8:run`** in the stated mode. The tasks and
+   the branch exist; `run` skips its own task creation and branch cut. Ending
+   the turn after the table, with nothing dispatched, is the failure this
+   phase exists to prevent.
 
 ## The run log
 
@@ -379,7 +373,7 @@ pr: <url, at close>
 | Building or running the plan's code "to be sure" | Code in the plan is written, not run. Unproven means ask the user; it's a Phase 1 spike |
 | A review subagent on the plan | Self-review inline. A subagent plan review was measured at twice the time for the same quality |
 | Writing the plan before the user approved the spec | The hard gate is the approval, not the spec's length |
-| Invoking `run` because the plan looks done | Only the user approves the run |
+| Ending the turn after the task table, waiting to be told to run | Phase 3 invokes `run` in the same turn as the table. The spec approval was the gate |
 | Plan sections that say "similar to Task N" | Repeat the code. Implementers read one section, out of order |
 | Tracks decided in `run` | They are decided when the tasks are created, with file ownership. `run` counts them |
 | Run log left for "after" | After is when the numbers are gone. Fill each section in the phase that has them |
