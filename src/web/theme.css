@@ -199,6 +199,46 @@ button {
   }
 }
 
+/* The entry splash: a fixed full-bleed layer over the whole console with one
+   centred stage, so the mark and the bloom share a single centre and scale
+   together. Nothing here is a token: the splash paints the handoff's own
+   colours inline and looks the same on every theme. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.splash-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+
+.splash-bloom,
+.splash-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.splash-bloom {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(145, 132, 217, 0.2) 0%,
+    rgba(145, 132, 217, 0.06) 40%,
+    rgba(145, 132, 217, 0) 70%
+  );
+}
+
+.splash-node {
+  position: absolute;
+  border-radius: 0;
+}
+
 .team-trigger:hover {
   border-color: var(--color-accent-700);
   background: var(--color-accent-900);
