@@ -5,7 +5,7 @@ import type { Diff } from '../shared/domain';
 import { App } from './App';
 import { MockEventSource, installMockEventSource } from './test/mockEventSource';
 import { FIXTURE_NOW, sampleTeamState, sampleTeams } from './test/state-fixture';
-import { FOLDER_SETTINGS_KEY } from './state/useSettings';
+import { FOLDER_SETTINGS_KEY, SETTINGS_KEY } from './state/useSettings';
 import { THEMES } from './themes';
 
 beforeEach(() => {
@@ -15,6 +15,10 @@ beforeEach(() => {
   // test that hides a session leaves it hidden for every test after it — which
   // shows up as an empty picker several cases later, nowhere near the cause.
   window.localStorage.clear();
+  // The splash asks for a frame on mount; never granting one keeps it frozen at
+  // t=0 so no case sees a re-render from an animation it is not testing.
+  vi.stubGlobal('requestAnimationFrame', () => 1);
+  vi.stubGlobal('cancelAnimationFrame', () => {});
 });
 
 // This suite renders once per `it`; without explicit cleanup the un-unmounted
@@ -1257,4 +1261,69 @@ it('falls back to the wall when the URL asks for a plan the session does not hav
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   expect(screen.getByTestId('wall')).toBeTruthy();
   expect(screen.queryByTestId('plan')).toBeNull();
+});
+
+it('covers the shell with the splash until it finishes, then unmounts it', () => {
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    render(<App />);
+    // The shell is there underneath from the first paint; the splash sits over it.
+    expect(screen.getByRole('main')).toBeTruthy();
+    expect(screen.getByTestId('splash')).toBeTruthy();
+    expect(screen.getAllByTestId('splash-node')).toHaveLength(10);
+
+    now.mockReturnValue(4400);
+    act(() => pending?.(4400));
+    expect(screen.queryByTestId('splash')).toBeNull();
+    expect(screen.getByRole('main')).toBeTruthy();
+  } finally {
+    now.mockRestore();
+  }
+});
+
+it('plays the reduced splash when the console motion setting is off', () => {
+  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ motion: false }));
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    render(<App />);
+    // Reduced motion ends at 1.5s; the full timeline would still be mid-hold.
+    now.mockReturnValue(1500);
+    act(() => pending?.(1500));
+    expect(screen.queryByTestId('splash')).toBeNull();
+  } finally {
+    now.mockRestore();
+  }
+});
+
+it('keeps the splash running across the first snapshot instead of restarting it', () => {
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    render(<App />);
+    now.mockReturnValue(2000);
+    act(() => pending?.(2000));
+    // Node 0 landed at 0.8s; the first snapshot swaps the shell underneath.
+    expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
+    act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+    expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
+    now.mockReturnValue(4400);
+    act(() => pending?.(4400));
+    expect(screen.queryByTestId('splash')).toBeNull();
+  } finally {
+    now.mockRestore();
+  }
 });

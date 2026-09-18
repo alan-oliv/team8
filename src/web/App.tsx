@@ -6,6 +6,7 @@ import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
 import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
+import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
 import { DiffModal } from './components/DiffModal';
@@ -35,6 +36,9 @@ export function App() {
   const appearance = useSettings(store.state?.folder);
   const [now, setNow] = useState(() => Date.now());
   const [teamsOpen, setTeamsOpen] = useState(false);
+  // The entry splash plays once per page load over whichever shell renders
+  // underneath, and is unmounted the moment it reports done.
+  const [splashDone, setSplashDone] = useState(false);
 
   // The theme lives on the console root, but the page behind it is the body's,
   // and an overscroll on a light theme would otherwise flash the dark default.
@@ -327,11 +331,21 @@ export function App() {
     suspended: store.openDiff !== null,
   });
 
+  const splash = splashDone ? null : (
+    <Splash
+      reduced={!appearance.settings.motion || prefersReducedMotion()}
+      onDone={() => setSplashDone(true)}
+    />
+  );
+
   if (!state) {
     return (
-      <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
-        <main className="console-body" />
-      </div>
+      <>
+        <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
+          <main className="console-body" />
+        </div>
+        {splash}
+      </>
     );
   }
 
@@ -349,6 +363,7 @@ export function App() {
   const run = runs.find((r) => r.runId === store.run) ?? (state.mode === 'workflow' ? runs[0] : undefined);
   if (run) {
     return (
+      <>
       <SettingsContext.Provider value={appearance.settings}>
       <WatchContext.Provider value={watchState}>
       <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
@@ -369,10 +384,13 @@ export function App() {
       </div>
       </WatchContext.Provider>
       </SettingsContext.Provider>
+      {splash}
+      </>
     );
   }
 
   return (
+    <>
     <StopContext.Provider value={stopControl}>
     <SettingsContext.Provider value={appearance.settings}>
     <CastContext.Provider value={cast}>
@@ -540,5 +558,7 @@ export function App() {
     </CastContext.Provider>
     </SettingsContext.Provider>
     </StopContext.Provider>
+    {splash}
+    </>
   );
 }

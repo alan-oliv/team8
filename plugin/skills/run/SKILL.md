@@ -151,7 +151,7 @@ tasks and not the number of tracks overall:
 | A task that is small and easy | Still a teammate in this mode. Never keep it for yourself |
 
 **workflow.** Same-shape fan-out or a fixed pipeline. The mode came from the
-table and the user approved the table, and this skill's instruction is the
+table shown to the user, and this skill's instruction is the
 opt-in the Workflow tool requires — do not ask "run these as a workflow?".
 Load the `workflow-authoring` skill and write the script: one `agent()` per
 task with its model, `pipeline` over the dependency edges, a review stage per

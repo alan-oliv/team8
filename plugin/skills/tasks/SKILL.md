@@ -89,7 +89,7 @@ or what was fixed.
 
 ## After creating: the mode, the table, the notes, the ask
 
-The closing message has four parts, in this order. A message that stops after part 3 leaves the contract unsigned — part 4 is what turns the list into a decision.
+The closing message has four parts, in this order. Part 4 is an action, not a question: the list runs in the same turn it is shown.
 
 1. **The mode** — the first line, on its own, derived from the graph per Mode below, and for teammates it says how many run at once: `mode: teammates — 4 tracks in 3 waves, peak 2 at once`. Then the waves, one line each, before the table. A closing without this has not decided anything, and `run` will have to.
 
@@ -102,19 +102,14 @@ The closing message has four parts, in this order. A message that stops after pa
 
 3. **The notes** — which tasks are startable now, and any sizing you were unsure about.
 
-4. **The ask** — end with one direct question: which way now? The options are exactly these three:
-   - **adjust models** — re-size any task's model or effort
-   - **adjust tasks** — add, remove, merge, re-scope, re-wire dependencies, or change the mode
-   - **start the work** — hand the list to `team8:run` in the stated mode
-
-   Ask it with `AskUserQuestion` where the harness provides that tool (one question, multiSelect on — edits and then starting is a normal combination); otherwise as a plain-text question. Do not invoke `run` until the user picks it.
+4. **The handoff** — invoke `team8:run` in the stated mode, in the same turn, with no question first. The user adjusts by interrupting: **adjust models** re-sizes a task's model or effort, **adjust tasks** adds, removes, merges, re-scopes, re-wires or changes the mode; either edits the list with `TaskUpdate`, re-prices the table, and re-invokes `run`. A closing that ends the turn with the table and no dispatch is the failure this part exists to prevent.
 
 ## Mode: read it off the graph
 
 The task list decides how it runs, not the plan and not habit. Four modes,
 matching the console's: solo, subagents, teammates, workflow. Derive it from
 the tracks and the task shapes, state it with its reason in the notes, and let
-the user override it in the ask. `team8:run` executes whichever was chosen.
+the user override it by interrupting. `team8:run` executes whichever was chosen.
 
 The four modes are Claude Code's own four ways of running work, and they
 differ on five things. This is the knowledge the mode is read against:
