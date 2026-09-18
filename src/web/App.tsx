@@ -6,6 +6,7 @@ import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
 import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
+import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
 import { DiffModal } from './components/DiffModal';
@@ -35,6 +36,9 @@ export function App() {
   const appearance = useSettings(store.state?.folder);
   const [now, setNow] = useState(() => Date.now());
   const [teamsOpen, setTeamsOpen] = useState(false);
+  // The entry splash plays once per page load over whichever shell renders
+  // underneath, and is unmounted the moment it reports done.
+  const [splashDone, setSplashDone] = useState(false);
 
   // The theme lives on the console root, but the page behind it is the body's,
   // and an overscroll on a light theme would otherwise flash the dark default.
@@ -327,10 +331,18 @@ export function App() {
     suspended: store.openDiff !== null,
   });
 
+  const splash = splashDone ? null : (
+    <Splash
+      reduced={!appearance.settings.motion || prefersReducedMotion()}
+      onDone={() => setSplashDone(true)}
+    />
+  );
+
   if (!state) {
     return (
       <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
         <main className="console-body" />
+        {splash}
       </div>
     );
   }
@@ -366,6 +378,7 @@ export function App() {
           appearance={appearance}
           subagents={state.subagents}
         />
+        {splash}
       </div>
       </WatchContext.Provider>
       </SettingsContext.Provider>
@@ -534,6 +547,7 @@ export function App() {
       />
       <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} />
       <Panel agents={state.agents} focusedAgent={store.agent} onFocusAgent={store.setAgent} />
+      {splash}
     </div>
     </WatchContext.Provider>
     </DiffContext.Provider>
