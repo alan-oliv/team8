@@ -340,10 +340,12 @@ export function App() {
 
   if (!state) {
     return (
-      <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
-        <main className="console-body" />
+      <>
+        <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
+          <main className="console-body" />
+        </div>
         {splash}
-      </div>
+      </>
     );
   }
 
@@ -361,6 +363,7 @@ export function App() {
   const run = runs.find((r) => r.runId === store.run) ?? (state.mode === 'workflow' ? runs[0] : undefined);
   if (run) {
     return (
+      <>
       <SettingsContext.Provider value={appearance.settings}>
       <WatchContext.Provider value={watchState}>
       <div className="console" style={appearance.vars} data-motion={appearance.settings.motion ? 'on' : 'off'}>
@@ -378,14 +381,16 @@ export function App() {
           appearance={appearance}
           subagents={state.subagents}
         />
-        {splash}
       </div>
       </WatchContext.Provider>
       </SettingsContext.Provider>
+      {splash}
+      </>
     );
   }
 
   return (
+    <>
     <StopContext.Provider value={stopControl}>
     <SettingsContext.Provider value={appearance.settings}>
     <CastContext.Provider value={cast}>
@@ -547,12 +552,13 @@ export function App() {
       />
       <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} />
       <Panel agents={state.agents} focusedAgent={store.agent} onFocusAgent={store.setAgent} />
-      {splash}
     </div>
     </WatchContext.Provider>
     </DiffContext.Provider>
     </CastContext.Provider>
     </SettingsContext.Provider>
     </StopContext.Provider>
+    {splash}
+    </>
   );
 }

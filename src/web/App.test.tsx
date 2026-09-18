@@ -1304,3 +1304,26 @@ it('plays the reduced splash when the console motion setting is off', () => {
     now.mockRestore();
   }
 });
+
+it('keeps the splash running across the first snapshot instead of restarting it', () => {
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    render(<App />);
+    now.mockReturnValue(2000);
+    act(() => pending?.(2000));
+    // Node 0 landed at 0.8s; the first snapshot swaps the shell underneath.
+    expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
+    act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+    expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
+    now.mockReturnValue(4400);
+    act(() => pending?.(4400));
+    expect(screen.queryByTestId('splash')).toBeNull();
+  } finally {
+    now.mockRestore();
+  }
+});
