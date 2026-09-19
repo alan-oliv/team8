@@ -6568,6 +6568,13 @@ async function main(argv) {
   await ingest.sweep();
   let pinned = false;
   let leadFacts = {};
+  const leadFactsOf = async (id) => {
+    if (!id) return {};
+    const sessions = await readSessions(sessionsRoot);
+    const dir = await sessionProjectDir(projectsRoot, id, sessions.cwds.get(id));
+    const meta = dir ? await transcriptMeta(`${dir}.jsonl`) : {};
+    return { sessionName: sessions.names.get(id) ?? meta.title, branch: meta.branch, mode: meta.mode };
+  };
   const retarget = async (team, lead) => {
     hub.publish();
     const gen = ++generation;
@@ -6625,6 +6632,7 @@ async function main(argv) {
     leadFacts = {};
     ingest = startIngest(gen, void 0, sessionId);
     await ingest.sweep();
+    leadFacts = await leadFactsOf(sessionId);
     hub.publish();
   };
   const selectSession = async (sessionId) => {
@@ -6720,7 +6728,7 @@ async function main(argv) {
       cli.cwd
     );
     const mine = teams.find((t) => t.current);
-    leadFacts = { sessionName: mine?.goal, branch: mine?.branch, mode: mine?.mode };
+    leadFacts = mine ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode } : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
     if (pinned || gen !== generation) return;
     if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
     const target = teams.find((t) => t.members >= 2 && t.live);
