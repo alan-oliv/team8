@@ -9,7 +9,6 @@ import {
   parseArgs,
   discoverTeam,
   fencedSink,
-  folderScope,
   listFolders,
   listAllFolders, listTeamSummaries,
   sessionProjectDir,
@@ -404,6 +403,37 @@ describe('listTeamSummaries', () => {
     expect(without.teams[0].leadAlive).toBe(false);
   });
 
+  // The sidecar records the cwd the session STARTED in; its files sit under the
+  // slug fixed when the transcript was created. Rebuilding the path from the
+  // sidecar missed every file of a session that had since moved.
+  it("finds a re-keyed team's lead, and counts its subagents, from where its transcript is when the sidecar names another folder", async () => {
+    const projects = path.join(dir, 'projects');
+    const cwd = '/Users/someone/code/proj';
+    const sessionId = 'aaaaaaaa-1111-2222-3333-444444444444';
+    await writeConfig(
+      'session-rekeyed',
+      team('session-rekeyed', { createdAt: 10, leadSessionId: 'deadbeef-no-such-session', members: 3 }),
+    );
+    await fs.mkdir(sessions(), { recursive: true });
+    await fs.writeFile(
+      path.join(sessions(), `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId, cwd: '/Users/someone/code/elsewhere', name: 'team8' }),
+    );
+    const sessionDir = sessionDirOf(projects, cwd, sessionId);
+    await fs.mkdir(path.join(sessionDir, 'subagents'), { recursive: true });
+    await fs.writeFile(`${sessionDir}.jsonl`, JSON.stringify({ type: 'user', cwd }) + '\n');
+    await fs.writeFile(
+      path.join(sessionDir, 'subagents', 'agent-aworker-1111.meta.json'),
+      JSON.stringify({ name: 'worker', taskKind: 'in_process_teammate', teamName: 'session-rekeyed' }),
+    );
+    await fs.writeFile(path.join(sessionDir, 'subagents', 'agent-aworker-1111.jsonl'), '');
+
+    const [row] = (await listTeamSummaries(teams(), sessions(), '', projects)).teams;
+    expect(row.leadAlive).toBe(true);
+    expect(row.state).toBe('live');
+    expect(row.subagents).toBe(1);
+  });
+
   // A sidecar is a TEAMMATE's file, so a session that has only just started —
   // the lead alone — could not be joined to its team at all: the picker offered
   // it nameless and called it `idle` while it was running.
@@ -418,10 +448,12 @@ describe('listTeamSummaries', () => {
       JSON.stringify({ pid: process.pid, sessionId: 'fresh-1', cwd, name: 'team8' }),
     );
 
-    const [row] = (await listTeamSummaries(teams(), sessions(), '')).teams;
+    const [row] = (await listTeamSummaries(teams(), sessions(), 'fresh-1')).teams;
     expect(row.leadAlive).toBe(true);
     expect(row.state).toBe('live');
     expect(row.goal).toBe('team8');
+    // The live session is the one on screen; its only row is the team it adopted.
+    expect(row.current).toBe(true);
   });
 
   it('claims only the newest team in a directory, so yesterday\'s is not revived', async () => {
@@ -504,6 +536,15 @@ describe('listTeamSummaries', () => {
       ['session-aaaa1111', 5, true],
       ['session-bbbb2222', 1, false],
     ]);
+  });
+
+  // `/s/<uuid>` puts a session id on the frame, and the only row for a session
+  // that drives a team is the team's, named by its directory.
+  it('marks a team row current when the session on screen is its lead, not its directory', async () => {
+    await writeConfig('session-aaaa1111', team('session-aaaa1111', { createdAt: 10, leadSessionId: 'aaaa1111-x', members: 1 }));
+
+    const listed = await listTeamSummaries(teams(), sessions(), 'aaaa1111-x');
+    expect(listed.teams[0].current).toBe(true);
   });
 
   // The picker's only route to a session that never formed a team: no
@@ -620,6 +661,13 @@ describe('listTeamSummaries', () => {
       expect(row.state).toBe('live');
     });
 
+    it('marks a bare session row current when it is the one on screen', async () => {
+      const projects = await liveSessionWithSubagents(SOLO, 1);
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), SOLO, projects)).teams;
+      expect(row.current).toBe(true);
+    });
+
     // The config-less machine: no teams directory has ever been created.
     it('still lists the session when there is no teams directory at all', async () => {
       const projects = await liveSessionWithSubagents(SOLO, 1);
@@ -627,6 +675,46 @@ describe('listTeamSummaries', () => {
       const listed = await listTeamSummaries(path.join(dir, 'nope'), sessions(), '', projects);
 
       expect(listed.teams.map((t) => t.name)).toEqual([SOLO]);
+    });
+
+    it("reads a session's files from where its transcript is, not from the sidecar cwd", async () => {
+      const projects = path.join(dir, 'projects');
+      await fs.mkdir(sessions(), { recursive: true });
+      await fs.writeFile(
+        path.join(sessions(), `${process.pid}.json`),
+        JSON.stringify({ pid: process.pid, sessionId: SOLO, cwd: '/Users/someone/code/elsewhere', name: 'moved' }),
+      );
+      const sessionDir = sessionDirOf(projects, CWD, SOLO);
+      await fs.mkdir(path.join(sessionDir, 'subagents'), { recursive: true });
+      await fs.writeFile(`${sessionDir}.jsonl`, JSON.stringify({ type: 'user', cwd: CWD, gitBranch: 'hand-voices' }) + '\n');
+      await fs.writeFile(path.join(sessionDir, 'subagents', 'agent-a1111222233334441.jsonl'), '');
+      await fs.writeFile(path.join(sessionDir, 'subagents', 'agent-a1111222233334442.jsonl'), '');
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), '', projects, CWD)).teams;
+      expect(row.subagents).toBe(2);
+      expect(row.branch).toBe('hand-voices');
+    });
+
+    // A sidecar survives a crash, so a dead session whose sidecar named another
+    // folder found no transcript to date itself by and read as idle forever.
+    it('calls a session done when its transcript is old, though a stale sidecar names another folder', async () => {
+      const projects = path.join(dir, 'projects');
+      const deadPid = 2 ** 22 - 1;
+      await fs.mkdir(sessions(), { recursive: true });
+      await fs.writeFile(
+        path.join(sessions(), `${deadPid}.json`),
+        JSON.stringify({ pid: deadPid, sessionId: SOLO, cwd: '/Users/someone/code/elsewhere', status: 'idle' }),
+      );
+      const transcript = `${sessionDirOf(projects, CWD, SOLO)}.jsonl`;
+      await fs.mkdir(path.dirname(transcript), { recursive: true });
+      await fs.writeFile(transcript, JSON.stringify({ type: 'user', cwd: CWD }) + '\n');
+      const old = (Date.now() - IDLE_GRACE_MS * 3) / 1000;
+      await fs.utimes(transcript, old, old);
+
+      const [row] = (await listTeamSummaries(teams(), sessions(), '', projects, CWD)).teams;
+      expect(row.state).toBe('done');
+      expect(row.live).toBe(false);
+      expect(row.lastActivityAt).toBeLessThan(Date.now() - IDLE_GRACE_MS);
     });
   });
 
@@ -737,6 +825,8 @@ describe('listTeamSummaries', () => {
     expect(only.name).toBe('session-noneled1');
     expect(only.leadSessionId).toBe('');
     expect(only.leadAlive).toBe(false);
+    // Nothing on screen yet must not match a lead id that is also ''.
+    expect(only.current).toBe(false);
   });
 
   // A session running a dynamic workflow has no team — its agents never enter
@@ -862,22 +952,24 @@ describe('listTeamSummaries', () => {
   // answer where the team IS. Scoping by it instead of the session the sidecar
   // proves is actually driving misattributes the team to the folder it merely
   // started in.
-  it('scopes a re-keyed team by its live session’s folder, not the stale leadSessionId', async () => {
+  it('scopes a re-keyed team by its live session’s folder, not the stale leadSessionId, and lists the stale lead as its own ended row where it ran', async () => {
     const projects = path.join(dir, 'projects');
     const original = '/Users/x/code/grimoire';
     const liveCwd = '/Users/x/code/arco';
     const staleSessionId = 'aaaaaaaa-0000-0000-0000-000000000000';
     const liveSessionId = 'bbbbbbbb-1111-1111-1111-111111111111';
 
-    await writeConfig(
-      'session-rekeyed',
-      team('session-rekeyed', { createdAt: 10, leadSessionId: staleSessionId, members: 3 }),
-    );
+    const config = team('session-rekeyed', { createdAt: 10, leadSessionId: staleSessionId, members: 3 });
+    // members[] records the cwd at join — grimoire, where the stale lead sat.
+    config.members[0].cwd = original;
+    await writeConfig('session-rekeyed', config);
     // The team's ORIGINAL session left a transcript under grimoire's project
     // dir — real evidence grimoire's folder scope reads off disk.
     const staleSlug = path.join(projects, original.replace(/[^a-zA-Z0-9]/g, '-'));
     await fs.mkdir(staleSlug, { recursive: true });
     await fs.writeFile(path.join(staleSlug, `${staleSessionId}.jsonl`), '');
+    const old = (Date.now() - IDLE_GRACE_MS * 2) / 1000;
+    await fs.utimes(path.join(staleSlug, `${staleSessionId}.jsonl`), old, old);
 
     // A different live session, running in arco, is what actually drives the
     // team now — its sidecar names it, which is the join teamsOfLiveSessions
@@ -898,12 +990,29 @@ describe('listTeamSummaries', () => {
       path.join(subagents, 'agent-aworker-1111.meta.json'),
       JSON.stringify({ name: 'worker', taskKind: 'in_process_teammate', teamName: 'session-rekeyed' }),
     );
+    // An ended session's transcript is what gives arco a folder of its own;
+    // the live lead has no transcript, so its row has no last cwd to file by.
+    const endedId = 'cccccccc-2222-2222-2222-222222222222';
+    const endedTranscript = path.join(projects, liveCwd.replace(/[^a-zA-Z0-9]/g, '-'), `${endedId}.jsonl`);
+    await fs.writeFile(endedTranscript, `${JSON.stringify({ type: 'user', cwd: liveCwd })}\n`);
+    await fs.utimes(endedTranscript, old, old);
 
     const scopedToOriginal = await listTeamSummaries(teams(), sessions(), '', projects, original);
-    expect(scopedToOriginal.teams.map((t) => t.name)).not.toContain('session-rekeyed');
+    expect(scopedToOriginal.teams).toEqual([
+      expect.objectContaining({ name: staleSessionId, sessionOnly: true, live: false, state: 'done' }),
+    ]);
 
     const scopedToLive = await listTeamSummaries(teams(), sessions(), '', projects, liveCwd);
-    expect(scopedToLive.teams.map((t) => t.name)).toContain('session-rekeyed');
+    expect(scopedToLive.teams.map((t) => t.name)).toEqual(['session-rekeyed', endedId]);
+
+    // Filed where it was enumerated, not where members[] says the lead joined.
+    const everywhere = await listAllFolders(teams(), sessions(), '', projects);
+    expect(everywhere.teams.find((t) => t.name === 'session-rekeyed')?.folder).toBe(liveCwd);
+
+    // The frame's lead id for a re-keyed team is the stale one, and that is
+    // what a `/s/<lead>` URL carries — it still has to mark the team's row.
+    const onScreen = await listTeamSummaries(teams(), sessions(), staleSessionId, projects, liveCwd);
+    expect(onScreen.teams.find((t) => t.name === 'session-rekeyed')?.current).toBe(true);
   });
 
   it('keeps the session on screen out of another folder\'s list', async () => {
@@ -1177,7 +1286,62 @@ describe('the folder menu on a listing', () => {
     const listing = await listAllFolders(teams(), sessions(), '', projects());
     expect(listing.folder).toBe(ALL_FOLDERS);
     expect(listing.folders?.map((f) => f.name).sort()).toEqual(['hatch', 'octo']);
-    expect(listing.teams.map((t) => t.folder).sort()).toEqual(['hatch', 'octo']);
+    expect(listing.teams.map((t) => t.folder).sort()).toEqual(['/Users/dev/code/hatch', '/Users/dev/code/octo']);
+  });
+
+  // Every record carries the LIVE cwd while the dir is named for where the
+  // session started, so a worktree session's transcript opens with records
+  // naming the parent checkout. Reading the first cwd filed both dirs under the
+  // parent: it listed twice, with every row doubled, and the worktree never.
+  it('lists a moved session under its own project dir, once, not under the folder its first records name', async () => {
+    const octo = '/Users/dev/code/octo';
+    const worktree = `${octo}/.claude/worktrees/w`;
+    const ID2 = '00000002-1111-2222-3333-444444444444';
+    await writeTranscript(octo);
+    const slug = path.join(projects(), worktree.replace(/[^a-zA-Z0-9]/g, '-'));
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, `${ID2}.jsonl`),
+      `${JSON.stringify({ type: 'user', cwd: octo })}\n${JSON.stringify({ type: 'user', cwd: worktree })}\n`,
+    );
+
+    const folders = await listFolders(projects());
+    expect(folders.map((f) => [f.path, f.sessions]).sort()).toEqual([[octo, 1], [worktree, 1]]);
+    const listing = await listAllFolders(teams(), sessions(), '', projects());
+    expect(listing.teams.map((t) => [t.name, t.folder]).sort()).toEqual([[ID, octo], [ID2, worktree]]);
+  });
+
+  // Every record carries the live cwd, so the last one is where the session
+  // ended up working — the folder the operator looks for it under, not the one
+  // whose slug its transcript happens to sit in.
+  it('lists a session under the folder it last worked in, not the one it started in', async () => {
+    const code = '/Users/dev/code';
+    const slug = path.join(projects(), code.replace(/[^a-zA-Z0-9]/g, '-'));
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, `${ID}.jsonl`),
+      `${JSON.stringify({ type: 'user', cwd: code })}\n${JSON.stringify({ type: 'user', cwd: `${code}/arco` })}\n`,
+    );
+
+    const listing = await listAllFolders(teams(), sessions(), '', projects());
+    expect(listing.teams.map((t) => [t.name, t.folder])).toEqual([[ID, `${code}/arco`]]);
+  });
+
+  // The sidecar cwd is where the session STARTED and never moves; filing a
+  // cwd-less transcript by it would put the row under a folder that never
+  // enumerates it.
+  it('keeps a session whose sidecar names another folder under the folder that holds its transcript', async () => {
+    const MOVED = '00000002-1111-2222-3333-444444444444';
+    await writeTranscript('/S/alpha');
+    await fs.writeFile(path.join(projects(), '-S-alpha', `${MOVED}.jsonl`), `${JSON.stringify({ type: 'user' })}\n`);
+    await fs.mkdir(sessions(), { recursive: true });
+    await fs.writeFile(
+      path.join(sessions(), `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId: MOVED, cwd: '/S/beta' }),
+    );
+
+    const listing = await listAllFolders(teams(), sessions(), '', projects());
+    expect(listing.teams.map((t) => [t.name, t.folder]).sort()).toEqual([[ID, '/S/alpha'], [MOVED, '/S/alpha']]);
   });
 
   // A machine-wide listing has no chip to draw, and a menu on it would be
@@ -1248,41 +1412,6 @@ describe('listFolders', () => {
 
   it('reads nothing at all from a missing projects root', async () => {
     expect(await listFolders(path.join(dir, 'nope'))).toEqual([]);
-  });
-});
-
-describe('folderScope', () => {
-  const projects = () => path.join(dir, 'projects');
-
-  async function writeTranscript(cwd: string) {
-    const slug = path.join(projects(), cwd.replace(/[^a-zA-Z0-9]/g, '-'));
-    await fs.mkdir(slug, { recursive: true });
-    await fs.writeFile(
-      path.join(slug, '00000001-1111-2222-3333-444444444444.jsonl'),
-      `${JSON.stringify({ type: 'user', cwd })}\n`,
-    );
-  }
-
-  it('answers for a folder that holds sessions', async () => {
-    await writeTranscript('/Users/dev/code/hatch');
-    expect(await folderScope(projects(), '/Users/dev/code/octo', '/Users/dev/code/hatch')).toBe(
-      '/Users/dev/code/hatch',
-    );
-  });
-
-  // The scope is read from, and a `git diff` is spawned inside it, so a path the
-  // browser invented has to fall back rather than reach the filesystem.
-  it('falls back to its own cwd for a folder with no sessions in it', async () => {
-    await writeTranscript('/Users/dev/code/hatch');
-    for (const hostile of ['/etc', '../../etc', '/Users/dev/code/hatch/..']) {
-      expect(await folderScope(projects(), '/Users/dev/code/octo', hostile)).toBe(
-        '/Users/dev/code/octo',
-      );
-    }
-  });
-
-  it('takes its own cwd unread when no folder was asked for', async () => {
-    expect(await folderScope(projects(), '/Users/dev/code/octo')).toBe('/Users/dev/code/octo');
   });
 });
 

@@ -9,6 +9,7 @@ import { Panel } from './chrome/Panel';
 import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
+import { readStoredFolders, scopedRows } from './chrome/TeamSelect';
 import { DiffModal } from './components/DiffModal';
 import { StopContext } from './components/StopButton';
 import { CastContext } from './state/useCast';
@@ -154,7 +155,7 @@ export function App() {
         // Finished sessions stay: the design makes paging back into "a running
         // or finished session" the picker's whole point, and dropping them here
         // left the ✓ treatment on both screens as dead code.
-        setElsewhere(payload.teams.filter((t) => t.name !== state.teamName));
+        setElsewhere(payload.teams.filter((t) => !t.current));
       })
       .catch(() => {
         if (live) setElsewhere([]);
@@ -194,8 +195,9 @@ export function App() {
   }, [state, store.announcedTeam]);
 
   // A `/s/:sessionId` URL (task #4) announces itself the same way, but against
-  // its own endpoint and without waiting on `state` first — there is no
-  // existing team name to compare against, since a session select clears it.
+  // its own endpoint and without waiting on `state` first — the client cannot
+  // tell which team, if any, that lead drives, so the server's no-op guard, not
+  // a teamName comparison here, is what makes a same-session reload a no-op.
   const sessionAnnounced = useRef(false);
   useEffect(() => {
     const target = store.sessionRoute;
@@ -207,9 +209,11 @@ export function App() {
   // A bare open — no `?team=` announce, no `/s/` route — otherwise lands on
   // whatever the server happened to be showing at boot. The operator wants it
   // to land on the most recently ACTIVE session instead: the first `live` row,
-  // else the first `idle` one, off the same listing the picker uses. Ref-guarded
-  // like the two effects above, so it runs once per page load and never fights
-  // a later manual switch; an announce or a route still wins outright.
+  // else the first `idle` one, off the same listing and under the same folder
+  // scope the picker uses, so a bare open stays inside the operator's folder.
+  // Ref-guarded like the two effects above, so it runs once per page load and
+  // never fights a later manual switch; an announce or a route still wins
+  // outright.
   const autoResumed = useRef(false);
   useEffect(() => {
     if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state) return;
@@ -223,9 +227,10 @@ export function App() {
       .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
       .then((payload) => {
         if (!live) return;
-        const target = payload.teams.find((t) => t.state === 'live') ?? payload.teams.find((t) => t.state === 'idle');
-        // Same comparison TeamSelect's own `isCurrent` makes.
-        if (!target || target.name === (state.teamName || state.leadSessionId)) return;
+        const rows = scopedRows(payload.teams, readStoredFolders(), payload.folders ?? []);
+        const target = rows.find((t) => t.state === 'live') ?? rows.find((t) => t.state === 'idle');
+        // Same flag TeamSelect's own `isCurrent` reads.
+        if (!target || target.current) return;
         void postJson(
           target.sessionOnly
             ? `/api/select-session/${encodeURIComponent(target.leadSessionId ?? target.name)}`

@@ -375,6 +375,49 @@ it('falls back to the most recently idle session when nothing is live', async ()
   );
 });
 
+// The listing is machine-wide, but the pick is not: with nothing picked the
+// picker scopes to the folder of the session on screen, and a bare open lands
+// inside that same folder rather than on a livelier session elsewhere.
+it('lands a bare open inside the folder of the session on screen, not on a livelier session elsewhere', async () => {
+  window.history.replaceState(null, '', '/');
+  const OCTO = '/Users/dev/code/octo';
+  const fetchMock = vi.fn((path: string) =>
+    path === '/api/teams?folder=*'
+      ? Promise.resolve(
+          new Response(
+            JSON.stringify({
+              current: 'session-98b0b4a7',
+              teams: [
+                { ...sampleTeams()[0], state: 'done' as const, current: true, folder: OCTO },
+                {
+                  ...sampleTeams()[1],
+                  name: 'session-c1a2b3c4',
+                  state: 'live' as const,
+                  current: false,
+                  folder: '/Users/dev/code/hatch',
+                },
+                { ...sampleTeams()[1], name: 'session-d4e5f6a7', state: 'idle' as const, current: false, folder: OCTO },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
+      : Promise.resolve(new Response('{}', { status: 200 })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+
+  await vi.waitFor(() =>
+    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-d4e5f6a7/select', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }),
+  );
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', expect.anything());
+});
+
 it('does not switch when the most recently live session is already on screen', async () => {
   window.history.replaceState(null, '', '/');
   const fetchMock = stubTeamsFetch();
@@ -778,7 +821,7 @@ it('clears the dismissal automatically once the console actually switches teams'
 
 it('lists the other live sessions on the machine and switches to one on click', async () => {
   const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path === '/api/teams' || path === '/api/teams?folder=*'
       ? Promise.resolve(
           new Response(
             JSON.stringify({
@@ -1000,7 +1043,7 @@ function stubMixedFetch() {
     { ...other, name: 'session-done0004', members: 3, state: 'done' as const, live: false },
   ];
   const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path === '/api/teams' || path === '/api/teams?folder=*'
       ? Promise.resolve(
           new Response(JSON.stringify({ current: 'session-98b0b4a7', teams }), { status: 200 }),
         )
@@ -1212,6 +1255,9 @@ it('badges a session with a tree subagents, and a bare one not at all', async ()
   act(() => MockEventSource.last().emit('snapshot', soloState()));
   expect(screen.getByTestId('team-mode').textContent).toBe('subagents');
   cleanup();
+  // The first snapshot wrote `/s/<lead>` into the path; a fresh open, not a
+  // reload, is what the second mount is about.
+  window.history.replaceState(null, '', '/');
 
   // Nothing has spawned yet, so the mode is not known: the badge waits for
   // evidence (a subagent, a roster, a workflow) rather than guessing "solo".

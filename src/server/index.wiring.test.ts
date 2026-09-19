@@ -337,6 +337,32 @@ describe('push -> pull wiring', () => {
   );
 
   it(
+    "resolves select-session on a team's lead to that team, so a reload of /s/<lead> lands on the roster",
+    async () => {
+      home = await layout();
+      const url = await boot(home);
+      expect((await selectTeam(url, TEAM_B)).status).toBe(200);
+      expect((await snapshot(url)).teamName).toBe(TEAM_B);
+
+      const res = await selectSession(url, LEAD_SESSION);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, session: LEAD_SESSION, changed: true });
+
+      const after = await snapshot(url);
+      expect(after.teamName).toBe(TEAM);
+      expect(names(after)).toContain(AGENT);
+
+      // The same reload again finds its team already on screen.
+      expect(await (await selectSession(url, LEAD_SESSION)).json()).toEqual({
+        ok: true,
+        session: LEAD_SESSION,
+        changed: false,
+      });
+    },
+    20_000,
+  );
+
+  it(
     'switches the console to another team at runtime, roster and transcript',
     async () => {
       home = await layout();
@@ -523,6 +549,27 @@ describe('push -> pull wiring', () => {
       const again = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
       expect(again.current).toBe(TEAM_B);
       expect(again.teams.filter((t) => t.current).map((t) => t.name)).toEqual([TEAM_B]);
+    },
+    20_000,
+  );
+
+  // The scope reaches `<cwd>/.git/HEAD` and spawns `git diff` there, so a path
+  // the browser names must never become one: anything but `*` is answered for
+  // the console's own folder.
+  it(
+    'answers a folder the browser names with the console\'s own listing, never reading the named path',
+    async () => {
+      home = await layout();
+      const url = await boot(home);
+
+      const bare = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
+      for (const hostile of ['/etc', '../../etc']) {
+        const named = (await (
+          await fetch(`${url}/api/teams?folder=${encodeURIComponent(hostile)}`)
+        ).json()) as TeamsResponse;
+        expect(named.folder).toBe(bare.folder);
+        expect(named.teams.map((t) => t.name).sort()).toEqual(bare.teams.map((t) => t.name).sort());
+      }
     },
     20_000,
   );
