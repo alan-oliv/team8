@@ -16,3 +16,4 @@ live-*.png
 probe-*.mjs
 graphify-out/
 design_handoff_agent_teams_console/
+.playwright-mcp/

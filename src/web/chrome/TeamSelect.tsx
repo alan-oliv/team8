@@ -29,7 +29,9 @@ const FOLDER_KEY = 'console.folder';
 /**
  * Three states, not two: `null` is "the operator has never said", which
  * `scopedRows` reads as the folder of the session on screen; `[]` is "every
- * folder", chosen; a non-empty array is the folders chosen.
+ * folder", chosen; a one-element array is the folder chosen. Still an array
+ * because that is the stored shape: a pick saved while the menu was a
+ * multi-select reads as its first folder.
  */
 export function readStoredFolders(): string[] | null {
   let raw: string | null = null;
@@ -45,7 +47,7 @@ export function readStoredFolders(): string[] | null {
   } catch {
     // Written before this key held JSON: a bare folder path.
   }
-  if (Array.isArray(parsed)) return parsed as string[];
+  if (Array.isArray(parsed)) return (parsed as string[]).slice(0, 1);
   // The legacy single scope: '' and '*' both meant "no explicit preference".
   const path = typeof parsed === 'string' ? parsed : '';
   return path && path !== ALL_FOLDERS ? [path] : null;
@@ -82,7 +84,7 @@ function homeFolder(teams: TeamSummary[], folders: FolderSummary[]): string | un
  * anything.
  */
 export function scopedRows(teams: TeamSummary[], picked: string[] | null, folders: FolderSummary[]): TeamSummary[] {
-  if (picked) return picked.length ? teams.filter((t) => picked.some((p) => inFolder(t.folder, p))) : teams;
+  if (picked) return picked.length ? teams.filter((t) => inFolder(t.folder, picked[0])) : teams;
   const home = homeFolder(teams, folders);
   return home ? teams.filter((t) => inFolder(t.folder, home)) : teams;
 }
@@ -150,11 +152,12 @@ function stateText(team: TeamSummary, now: number): string {
 }
 
 /**
- * The main list is sessions with a live process only (README Screen 9);
- * everything else — hidden, idle, ended — sits in the collapsed group below
- * it, so the two must never disagree about a row. The session on screen never
- * folds by the idle/ended rule: the picker must not hide what the wall is
- * showing.
+ * The main list is sessions whose process is alive (README Screen 9) — busy
+ * or parked at its prompt: a session waiting for its operator is exactly one
+ * you switch to. Everything else — hidden, ended, or gone within the grace
+ * window — sits in the collapsed group below it, so the two must never
+ * disagree about a row. The session on screen never folds by that rule: the
+ * picker must not hide what the wall is showing.
  */
 type Bucket = 'shown' | 'idle' | 'ended' | 'hidden';
 
@@ -162,7 +165,8 @@ function bucketOf(team: TeamSummary, hidden: ReadonlySet<string>): Bucket {
   if (hidden.has(team.name)) return 'hidden';
   if (team.current) return 'shown';
   const state = team.state ?? (team.live ? 'live' : 'done');
-  return state === 'live' ? 'shown' : state === 'idle' ? 'idle' : 'ended';
+  if (state === 'live' || (state === 'idle' && team.leadAlive)) return 'shown';
+  return state === 'idle' ? 'idle' : 'ended';
 }
 
 function agentCount(team: TeamSummary): string {
@@ -406,23 +410,10 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
   // fold into one team row, and each is true of what it is next to.
   const home = homeFolder(teams ?? [], folders);
   const everyFolder = picked ? picked.length === 0 : !home;
-  const one = picked ? (picked.length === 1 ? picked[0] : '') : (home ?? '');
+  const one = picked ? (picked[0] ?? '') : (home ?? '');
   const named = folders.find((f) => f.path === one);
-  // The last arm is a real multi-selection.
-  const folderName = everyFolder
-    ? 'all'
-    : one
-      ? (named?.name ?? folderBase(one))
-      : picked?.length
-        ? `${picked.length} folders`
-        : '';
-  const folderSub = everyFolder
-    ? 'every folder'
-    : one
-      ? shortPath(one)
-      : picked?.length
-        ? `${picked.length} of ${folders.length}`
-        : '';
+  const folderName = everyFolder ? 'all' : (named?.name ?? folderBase(one));
+  const folderSub = everyFolder ? 'every folder' : shortPath(one);
   // The menu's counts. Live, not mid-turn: an idle session is still one you
   // can open, and counting only busy ones hid it behind `none active`. A
   // folder counts what runs anywhere under it — the rows picking it shows.
@@ -436,7 +427,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
     rows.filter(isRunning).map((t) => t.folder).filter((f): f is string => Boolean(f)),
   );
   const folderSpan = runningFolders.size || (folders.length ? 1 : 0);
-  const openCount = scopeRunning + idleCount;
+  const openCount = rows.filter((t) => t.live).length + idleCount;
   const folderClause = folderSpan > 0 ? ` across ${folderSpan} folder${folderSpan === 1 ? '' : 's'}` : '';
   const footerStats = `${scopeRunning} running${folderClause} · ${openCount} open · ${endedCount} ended`;
 
@@ -857,7 +848,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
         >
           {/* Row 1 \u2014 the folder pill and the search field share this row
               (README Screen 9): there is no time-range control any more, so
-              the two filters that remain \u2014 folders (multi) and text \u2014 fit
+              the two filters that remain \u2014 folder and text \u2014 fit
               on one line. */}
           <div
             style={{
@@ -973,7 +964,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                   : []
                 ).map((f) => {
                   const all = f.path === ALL_FOLDERS;
-                  const isHere = all ? everyFolder : picked ? picked.includes(f.path) : f.path === one;
+                  const isHere = all ? everyFolder : f.path === one;
                   const quiet = !all && f.running === 0;
                   return (
                     <div
@@ -981,18 +972,14 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
                       role="option"
                       aria-selected={isHere}
                       onClick={() => {
-                        // A multi-select stays open across picks; `all` is the
-                        // one deliberate reset, so it closes. The session
-                        // dropdown stays up either way, since choosing a folder
-                        // is how you get to the session in it.
-                        const next = all
-                          ? []
-                          : picked?.includes(f.path)
-                            ? picked.filter((p) => p !== f.path)
-                            : [...(picked ?? []), f.path];
+                        // One folder or every folder — `all` already covers
+                        // what a multi-select did. The menu closes on the pick;
+                        // the session dropdown stays up, since choosing a
+                        // folder is how you get to the session in it.
+                        const next = all ? [] : [f.path];
                         setPicked(next);
                         storeFolders(next);
-                        if (all) setFoldersOpen(false);
+                        setFoldersOpen(false);
                         setCursor(0);
                       }}
                       style={{
