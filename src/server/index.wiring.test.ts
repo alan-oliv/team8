@@ -37,6 +37,7 @@ const B_LINE = "team B's own line";
 // project directory. Its id is deliberately unlike a team directory name.
 const SOLO_SESSION = '8f2a1c00-9d4e-4f1b-8a77-0c2e6b5d4a31';
 const SOLO_LINE = 'the solo session speaking';
+const SOLO_TITLE = 'the solo session, by name';
 
 /**
  * How long after the hook the drained line is allowed to take. It has to stay
@@ -301,13 +302,15 @@ describe('push -> pull wiring', () => {
     'retargets at a session that never formed a team, dropping the team it was showing',
     async () => {
       home = await layout();
-      // A session with no config.json anywhere: a transcript and a subagents
-      // directory under its own project dir, and nothing in teams/.
+      // A session with no config.json anywhere: a transcript beside a subagents
+      // directory under its own project dir — Claude Code's own layout — and
+      // nothing in teams/.
       const solo = path.join(home, 'projects', SLUG, SOLO_SESSION);
       await fs.mkdir(path.join(solo, 'subagents'), { recursive: true });
       await fs.writeFile(
-        path.join(solo, `${SOLO_SESSION}.jsonl`),
-        assistantLine('44444444-4444-4444-4444-444444444444', SOLO_LINE),
+        `${solo}.jsonl`,
+        assistantLine('44444444-4444-4444-4444-444444444444', SOLO_LINE) +
+          `${JSON.stringify({ type: 'custom-title', customTitle: SOLO_TITLE, sessionId: SOLO_SESSION })}\n`,
       );
 
       const url = await boot(home);
@@ -322,6 +325,10 @@ describe('push -> pull wiring', () => {
       // team it was showing left in the log it now reads.
       expect(after.teamName).toBe('');
       expect(names(after)).not.toContain(AGENT);
+      // Named right away, off its own transcript: this server was not started
+      // in the session's folder, so the follower's scoped listing has no row
+      // for it and the header used to fall back to the id.
+      expect(after.sessionName).toBe(SOLO_TITLE);
 
       // Selecting it again is a no-op, not a second rebuild.
       expect(await (await selectSession(url, SOLO_SESSION)).json()).toEqual({

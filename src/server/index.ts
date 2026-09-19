@@ -1426,6 +1426,21 @@ export async function main(argv: string[]): Promise<number> {
   let leadFacts: { sessionName?: string; branch?: string; mode?: DecidedMode } = {};
 
   /**
+   * The same facts a picker row carries, read off the session's own transcript
+   * and sidecar — for a session the scoped listing in `followRealTeam` has no
+   * row for, because it lives in a folder other than the console's own.
+   */
+  const leadFactsOf = async (id: string | undefined): Promise<typeof leadFacts> => {
+    if (!id) return {};
+    const sessions = await readSessions(sessionsRoot);
+    const dir = await sessionProjectDir(projectsRoot, id, sessions.cwds.get(id));
+    const meta: { title?: string; branch?: string; mode?: DecidedMode } = dir
+      ? await transcriptMeta(`${dir}.jsonl`)
+      : {};
+    return { sessionName: sessions.names.get(id) ?? meta.title, branch: meta.branch, mode: meta.mode };
+  };
+
+  /**
    * Only the ingest is rebuilt. The store is RE-POINTED: setTeam already clears
    * the events, loads the target team's log and hands the owner stamp over,
    * while reopening it would orphan the hub's snapshot closure, `live`, and the
@@ -1522,6 +1537,9 @@ export async function main(argv: string[]): Promise<number> {
     leadFacts = {};
     ingest = startIngest(gen, undefined, sessionId);
     await ingest.sweep();
+    // Not left to the follower's next tick: the header would name the session
+    // by its id for up to FOLLOW_INTERVAL_MS after every switch.
+    leadFacts = await leadFactsOf(sessionId);
     hub.publish();
   };
 
@@ -1653,9 +1671,12 @@ export async function main(argv: string[]): Promise<number> {
     // from the `statusline` hook, which only fires when the console owns the
     // `statusLine` key — an optional install step — so on most machines the
     // header fell back to the directory id while the picker row two lines
-    // below it showed the real name.
+    // below it showed the real name. A session picked from another folder has
+    // no row in this listing at all, so its facts come off its own transcript.
     const mine = teams.find((t) => t.current);
-    leadFacts = { sessionName: mine?.goal, branch: mine?.branch, mode: mine?.mode };
+    leadFacts = mine
+      ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode }
+      : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
 
     if (pinned || gen !== generation) return;
     if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
