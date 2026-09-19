@@ -231,6 +231,15 @@ it('writes the team the server says is on screen, not a client copy', () => {
   expect(result.current.announcedTeam).toBeNull();
 });
 
+it('writes the session on screen into the path, so a reload re-selects it', () => {
+  window.history.replaceState(null, '', '/');
+  renderHook(() => useTeamState());
+  const frame = sampleTeamState();
+  act(() => MockEventSource.last().emit('snapshot', frame));
+  expect(window.location.pathname).toBe(`/s/${frame.leadSessionId}`);
+  expect(window.location.search).toBe('?view=wall&team=session-98b0b4a7');
+});
+
 it('treats a team with no view as an announcement and a team beside one as our own bookkeeping', () => {
   expect(isAnnouncedTeam('?team=session-b5129c7b')).toBe(true);
   expect(isAnnouncedTeam('?view=wall&team=session-b5129c7b')).toBe(false);

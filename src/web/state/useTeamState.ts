@@ -155,13 +155,19 @@ export function writeUrlState(
   agent: string | null,
   team: string | null,
   run: string | null,
+  lead: string | null,
 ): void {
   const params = new URLSearchParams();
   params.set('view', view);
   if (agent) params.set('agent', agent);
   if (team) params.set('team', team);
   if (run) params.set('run', run);
-  window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+  // The path is the one durable selection: a team pick POSTs and leaves the URL
+  // alone, and `?team=` is ignored on reload, so without this a reload from
+  // `/s/<old>` lands back on <old>. The server resolves `/s/<lead>` to the team
+  // that lead drives, so the same path serves both modes.
+  const pathname = lead ? `/s/${lead}` : window.location.pathname;
+  window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
 }
 
 /**
@@ -334,9 +340,10 @@ export function useTeamState(url = '/stream'): TeamStateStore {
     };
   }, [url]);
 
+  const lead = state?.leadSessionId ?? null;
   useEffect(() => {
-    writeUrlState(view, agent, team, run);
-  }, [view, agent, team, run]);
+    writeUrlState(view, agent, team, run, lead);
+  }, [view, agent, team, run, lead]);
 
   return {
     state,

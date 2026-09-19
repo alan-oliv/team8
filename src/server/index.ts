@@ -208,7 +208,12 @@ interface SessionFacts {
   busy: Set<string>;
   /** sessionId -> the conversation name `/branch` writes, used as the row's goal. */
   names: Map<string, string>;
-  /** sessionId -> its cwd, for finding the subagents directory it writes into. */
+  /**
+   * sessionId -> the cwd it STARTED in, never updated when the session `cd`s.
+   * A resolution hint for `sessionProjectDir` and the tree to diffstat — not
+   * where the session's files are, which is the slug fixed at transcript
+   * creation.
+   */
   cwds: Map<string, string>;
 }
 
@@ -279,6 +284,8 @@ interface TranscriptFacts {
   branch?: string;
   entrypoint?: string;
   mode?: DecidedMode;
+  cwd?: string;
+  lastCwd?: string;
 }
 const transcriptFacts = new Map<string, { offset: number; facts: TranscriptFacts }>();
 
@@ -323,6 +330,30 @@ function lastBranch(buf: Buffer): string | null | undefined {
 }
 
 /**
+ * The cwds this transcript records, walking backwards: `last` is the newest
+ * record's — where the session last worked, which is the folder its row lists
+ * under — and `filedUnder` the newest whose slug is the project dir's own name.
+ *
+ * Every record carries the LIVE cwd, which moves when the session `cd`s, while
+ * the dir is named for where it started — so a record can name another folder
+ * entirely (a worktree session opens with dozens naming the parent checkout).
+ * Only a cwd that slugs back to `slug` can be the one this dir stands for.
+ */
+function lastCwds(buf: Buffer, slug: string): { last?: string; filedUnder?: string } {
+  const marker = '"cwd":"';
+  let last: string | undefined;
+  for (let at = buf.lastIndexOf(marker); at >= 0; at = at > 0 ? buf.lastIndexOf(marker, at - 1) : -1) {
+    const from = at + marker.length;
+    const end = buf.indexOf(0x22, from);
+    if (end <= from) continue;
+    const cwd = buf.subarray(from, end).toString('utf8');
+    last ??= cwd;
+    if (cwd.replace(/[^a-zA-Z0-9]/g, '-') === slug) return { last, filedUnder: cwd };
+  }
+  return { last };
+}
+
+/**
  * The mode `team8:tasks` decided, read off the lead's own write of the run
  * log: the `mode: <x> — <reason>` line of `docs/team8/runs/<batch>.md`. Only a
  * tool_use record counts — the skill text arrives as a user record and quotes
@@ -351,7 +382,14 @@ function lastDecidedMode(buf: Buffer): DecidedMode | undefined {
 // ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
 async function transcriptMeta(
   file: string,
-): Promise<{ title?: string; branch?: string; entrypoint?: string; mode?: DecidedMode }> {
+): Promise<{
+  title?: string;
+  branch?: string;
+  entrypoint?: string;
+  mode?: DecidedMode;
+  cwd?: string;
+  lastCwd?: string;
+}> {
   let size: number;
   try {
     size = (await fs.stat(file)).size;
@@ -373,6 +411,11 @@ async function transcriptMeta(
       const foundBranch = lastBranch(whole);
       facts.branch = foundBranch === null ? undefined : (foundBranch ?? facts.branch);
       facts.mode = lastDecidedMode(whole) ?? facts.mode;
+      // `file` is `<projectsRoot>/<slug>/<id>.jsonl` at every call site, so the
+      // parent's name is the slug the cwd has to match.
+      const cwds = lastCwds(whole, path.basename(path.dirname(file)));
+      facts.cwd = cwds.filedUnder ?? facts.cwd;
+      facts.lastCwd = cwds.last ?? facts.lastCwd;
       // Written on the first record, so only the read from the top can see it.
       if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
@@ -385,6 +428,8 @@ async function transcriptMeta(
     branch: facts.branch,
     entrypoint: facts.entrypoint,
     mode: facts.mode,
+    cwd: facts.cwd,
+    lastCwd: facts.lastCwd,
   };
 }
 
@@ -484,20 +529,10 @@ async function lastActivityOf(teamDir: string, configMtimeMs: number): Promise<n
  * row's activity cell, not an ingest. `workflows` is a directory and the match
  * wants a `.jsonl` file, so a session that only ever ran workflows counts zero.
  */
-async function subagentCountOf(
-  projectsRoot: string,
-  cwd: string,
-  sessionId: string,
-): Promise<number> {
-  if (!cwd || !sessionId) return 0;
-  const dir = path.join(
-    projectsRoot,
-    cwd.replace(/[^a-zA-Z0-9]/g, '-'),
-    sessionId,
-    'subagents',
-  );
+async function subagentCountOf(sessionDir: string | null): Promise<number> {
+  if (!sessionDir) return 0;
   try {
-    const entries = await fs.readdir(dir);
+    const entries = await fs.readdir(path.join(sessionDir, 'subagents'));
     return entries.filter((e) => /^agent-.*\.jsonl$/.test(e)).length;
   } catch {
     return 0;
@@ -505,13 +540,10 @@ async function subagentCountOf(
 }
 
 async function workflowOf(
-  projectsRoot: string,
-  cwd: string,
-  sessionId: string,
+  sessionDir: string | null,
   now: number,
 ): Promise<TeamSummary['workflow']> {
-  if (!cwd || !sessionId) return undefined;
-  const sessionDir = path.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, '-'), sessionId);
+  if (!sessionDir) return undefined;
   const runsDir = path.join(sessionDir, 'subagents', 'workflows');
   let entries: string[];
   try {
@@ -642,9 +674,9 @@ async function teamsOfLiveSessions(
 ): Promise<Map<string, string>> {
   const teams = new Map<string, string>();
   for (const sessionId of sessions.live) {
-    const cwd = sessions.cwds.get(sessionId);
-    if (!cwd) continue;
-    const dir = path.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, '-'), sessionId, 'subagents');
+    const sessionDir = await sessionProjectDir(projectsRoot, sessionId, sessions.cwds.get(sessionId));
+    if (!sessionDir) continue;
+    const dir = path.join(sessionDir, 'subagents');
     let entries: string[];
     try {
       entries = await fs.readdir(dir);
@@ -740,14 +772,19 @@ async function sessionRows(
   covered: ReadonlySet<string>,
   diffstats: Map<string, TeamSummary['diffstat']>,
   now: number,
+  current: string,
 ): Promise<TeamSummary[]> {
   const rows: TeamSummary[] = [];
   for (const sessionId of sessionIds) {
     if (covered.has(sessionId)) continue;
+    // The tree the process runs in, for the diffstat and branch only (D6): the
+    // files sit under the slug of the folder that enumerated the id, which a
+    // scoped listing hands over as the hint, so the resolve costs two stats.
     const cwd = sessions.cwds.get(sessionId) ?? folderCwd;
-    const dir = path.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, '-'), sessionId);
-    const subagents = await subagentCountOf(projectsRoot, cwd, sessionId);
-    const workflow = await workflowOf(projectsRoot, cwd, sessionId, now);
+    const dir = await sessionProjectDir(projectsRoot, sessionId, folderCwd || sessions.cwds.get(sessionId));
+    if (!dir) continue;
+    const subagents = await subagentCountOf(dir);
+    const workflow = await workflowOf(dir, now);
     // The transcript is the session, so its mtime is the session's last sign of
     // life — and unlike `subagents/` it is written by every session, including
     // the bare ones this list exists to stop dropping.
@@ -784,10 +821,13 @@ async function sessionRows(
       leadAlive,
       lastActivityAt,
       live: leadAlive || recent,
-      current: false,
+      current: sessionId === current,
       branch: transcript.branch ?? (await branchOf(cwd)),
       goal: sessions.names.get(sessionId) ?? transcript.title,
       state,
+      // Where the session last worked — never the sidecar's started-in cwd,
+      // which is what filed moved sessions under the wrong folder for good.
+      ...(transcript.lastCwd ? { folder: transcript.lastCwd } : {}),
       ...(transcript.mode ? { mode: transcript.mode } : {}),
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
@@ -798,8 +838,8 @@ async function sessionRows(
 }
 
 /**
- * Every session this folder has ever held, newest first — the `<sessionId>.jsonl`
- * files Claude Code writes per session under the cwd's project slug.
+ * Every session this folder has ever held — the `<sessionId>.jsonl` files
+ * Claude Code writes per session under the cwd's project slug.
  *
  * This is the durable record and the only complete one. `teams/<name>/` is
  * reaped when a team ends, so a listing keyed on it loses every finished team:
@@ -837,46 +877,20 @@ async function folderSessionIds(projectsRoot: string, cwd: string): Promise<stri
  *
  * The slug cannot be reversed — `cwd.replace(/[^a-zA-Z0-9]/g, '-')` maps `/`,
  * `.`, `_` and `-` all onto the same character, so `-private-tmp` is as much
- * `/private/tmp` as it is `/private-tmp`. Every transcript record carries the
- * real `cwd`, so one of them is asked instead. Not the first line: a resumed
- * session opens with a summary record that has no cwd on it, so the scan runs
- * until it finds one.
+ * `/private/tmp` as it is `/private-tmp`. Every transcript record carries a
+ * `cwd`, but the LIVE one, so the transcript is asked for a cwd that slugs back
+ * to this very dir, found anywhere in the file: the real worktree transcript's
+ * first such record sits 1.5 MB in, behind records naming the parent checkout.
+ * That makes the path→slug round trip lossless — one dir, one folder — whatever
+ * order the records or the ids come in. A dir none of whose transcripts ever
+ * recorded its own cwd has no path and is dropped by the caller.
  */
 async function folderPathOf(dir: string, sessionIds: string[]): Promise<string | undefined> {
-  // A session id can name a spill directory with no transcript beside it, so
-  // the first id is not always readable. Three is enough to clear that without
-  // turning a miss into a scan of the whole folder.
-  for (const sessionId of sessionIds.slice(0, 3)) {
-    const cwd = await cwdInTranscript(path.join(dir, `${sessionId}.jsonl`));
+  // The first hit returns, so a normal dir costs one read; an id naming only a
+  // spill directory has no transcript and costs a stat.
+  for (const id of sessionIds) {
+    const { cwd } = await transcriptMeta(path.join(dir, `${id}.jsonl`));
     if (cwd) return cwd;
-  }
-  return undefined;
-}
-
-async function cwdInTranscript(file: string): Promise<string | undefined> {
-  let head: string;
-  try {
-    const fh = await fs.open(file);
-    try {
-      // 64 KiB covers a transcript's opening records many times over; reading
-      // the whole file would mean pulling megabytes per folder to answer a
-      // question the first few lines always settle.
-      const { buffer, bytesRead } = await fh.read(Buffer.alloc(65536), 0, 65536, 0);
-      head = buffer.subarray(0, bytesRead).toString('utf8');
-    } finally {
-      await fh.close();
-    }
-  } catch {
-    return undefined;
-  }
-  for (const line of head.split('\n')) {
-    if (!line.includes('"cwd"')) continue;
-    try {
-      const rec = JSON.parse(line) as { cwd?: unknown };
-      if (typeof rec.cwd === 'string' && rec.cwd !== '') return rec.cwd;
-    } catch {
-      // A truncated last line is expected — we read a fixed prefix of the file.
-    }
   }
   return undefined;
 }
@@ -884,11 +898,14 @@ async function cwdInTranscript(file: string): Promise<string | undefined> {
 /**
  * Every folder the machine has sessions in, newest first — the folder menu.
  *
- * Ordered by the project directory's own mtime, which moves when a session is
- * written into it: the folder worked in most recently sits at the top, which is
- * the one an operator switching folders most often wants. A folder whose path
- * cannot be read back is dropped rather than shown under its slug — a row the
- * operator cannot recognise is worse than no row.
+ * One row per project dir, named by the path that slugs to it
+ * ({@link folderPathOf}), so two dirs can never share a path and every row's
+ * path enumerates exactly the dir it came from. Ordered by the project
+ * directory's own mtime, which moves when a session is written into it: the
+ * folder worked in most recently sits at the top, which is the one an operator
+ * switching folders most often wants. A folder whose path cannot be read back
+ * is dropped rather than shown under its slug — a row the operator cannot
+ * recognise is worse than no row.
  */
 export async function listFolders(projectsRoot: string): Promise<FolderSummary[]> {
   let entries: string[];
@@ -917,22 +934,14 @@ export async function listFolders(projectsRoot: string): Promise<FolderSummary[]
 }
 
 /**
- * Which folder a listing request may actually be answered for.
- *
- * The scope is not just a filter: it reaches `<cwd>/.git/HEAD` and a `git diff`
- * spawned in that directory, so a path the browser names is checked against the
- * folders that demonstrably hold sessions before any of that runs. `fallback`
- * is this process's own `--cwd` and needs no check — and deliberately is not
- * required to be in the list, since a working copy whose first session has not
- * been written yet is still the right scope for it.
- */
-/**
  * Every folder's rows at once, for the picker's `all` scope: the per-folder
  * listing run for each folder and merged, so every scoping rule above holds
- * unchanged. Each row carries its folder's name, since a mixed list otherwise
- * cannot say where a `session-…` row lives.
+ * unchanged. Each row carries a folder — where its transcript last recorded
+ * working, else the folder it was enumerated from — since a mixed list
+ * otherwise cannot say where a `session-…` row lives.
  */
 // ponytail: re-lists every folder on each open, concurrently; cache per folder if it drags
+// ponytail: the menu (listFolders) is still keyed on start dirs, so a folder that is only ever a cd target has no row of its own — its sessions list under the nearest ancestor; build the menu from row folders if that bites
 export async function listAllFolders(
   teamsRoot: string,
   sessionsRoot: string,
@@ -950,18 +959,8 @@ export async function listAllFolders(
       listTeamSummaries(teamsRoot, sessionsRoot, current, projectsRoot, f.path, { folders, walk }),
     ),
   );
-  const teams = listings.flatMap((one, i) => one.teams.map((t) => ({ ...t, folder: folders[i].name })));
+  const teams = listings.flatMap((one, i) => one.teams.map((t) => ({ folder: folders[i].path, ...t })));
   return { current, teams, folder: ALL_FOLDERS, folders };
-}
-
-export async function folderScope(
-  projectsRoot: string,
-  fallback: string,
-  folder?: string,
-): Promise<string> {
-  if (!folder || folder === fallback) return fallback;
-  const known = await listFolders(projectsRoot);
-  return known.some((f) => f.path === folder) ? folder : fallback;
 }
 
 /**
@@ -1036,7 +1035,9 @@ export async function listTeamSummaries(
     // `teams/` directory was reaped still lists. Unscoped: the old rule, live
     // sessions only, since there is no folder to enumerate.
     const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
-    teams.push(...(await sessionRows(projectsRoot, ids, cwd ?? '', sessions, covered, diffstats, now)));
+    teams.push(
+      ...(await sessionRows(projectsRoot, ids, cwd ?? '', sessions, covered, diffstats, now, current)),
+    );
   }
 
   teams.sort(
@@ -1119,15 +1120,16 @@ async function walkTeams(
     const lead = config.members.find((m) => m.agentId === config.leadAgentId) ?? config.members[0];
     leadCwds.set(name, lead?.cwd ?? '');
     leadSessions.set(name, leadSession);
-    // The session's own cwd first: it is the directory whose slug names the
-    // project dir the run writes into, and a re-keyed team's members[] can name
-    // a different one.
-    const workflow = projectsRoot
-      ? await workflowOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? '', leadSession, now)
-      : undefined;
-    const subagents = projectsRoot
-      ? await subagentCountOf(projectsRoot, sessions.cwds.get(leadSession) ?? lead?.cwd ?? '', leadSession)
-      : 0;
+    // Where the lead's files actually are: the sidecar cwd is the started-in
+    // directory and a re-keyed team's members[] can name another one, so both
+    // are only hints. `leadSession` must be non-empty — `sessionProjectDir`
+    // with `''` resolves to the slug dir itself.
+    const leadDir =
+      projectsRoot && leadSession
+        ? await sessionProjectDir(projectsRoot, leadSession, sessions.cwds.get(leadSession) ?? lead?.cwd)
+        : null;
+    const workflow = await workflowOf(leadDir, now);
+    const subagents = await subagentCountOf(leadDir);
     const leadCwd = lead?.cwd ?? '';
     // A finished team's own uncommitted work is gone by the time anyone is
     // looking at the row — this is just whatever the folder's tree holds
@@ -1136,16 +1138,7 @@ async function walkTeams(
     const state: TeamSummary['state'] =
       leadAlive && sessions.busy.has(leadSession) ? 'live' : leadAlive || recent ? 'idle' : 'done';
     if (state !== 'done') needsDiffstat.set(name, leadCwd);
-    const leadTranscript =
-      projectsRoot && leadSession
-        ? await transcriptMeta(
-            path.join(
-              projectsRoot,
-              (sessions.cwds.get(leadSession) ?? leadCwd).replace(/[^a-zA-Z0-9]/g, '-'),
-              `${leadSession}.jsonl`,
-            ),
-          )
-        : {};
+    const leadTranscript = leadDir ? await transcriptMeta(`${leadDir}.jsonl`) : {};
     teams.push({
       // The DIRECTORY name, not config.name: the ingest gates its own team's
       // config.json on the directory, so a mismatch would make the team
@@ -1157,7 +1150,7 @@ async function walkTeams(
       leadAlive,
       lastActivityAt,
       live: leadAlive || recent,
-      current: name === current,
+      current: false,
       branch: leadTranscript.branch ?? (await branchOf(lead?.cwd)),
       // Named after the session actually driving the team. Keyed on
       // config.leadSessionId this was blank for every re-keyed team — the live
@@ -1166,6 +1159,9 @@ async function walkTeams(
       // `idle` is a team whose lead process is gone but whose files moved
       // recently — it can still be paged back into; `done` is finished.
       state,
+      // Where the lead last worked — never members[].cwd, which a re-keyed
+      // team leaves naming the folder its stale lead joined from.
+      ...(leadTranscript.lastCwd ? { folder: leadTranscript.lastCwd } : {}),
       ...(leadTranscript.mode ? { mode: leadTranscript.mode } : {}),
       ...(workflow ? { workflow } : {}),
       ...(subagents > 0 ? { subagents } : {}),
@@ -1175,6 +1171,16 @@ async function walkTeams(
   // Runs first: a session it hands a team to is represented by that team's row
   // and must not also appear in a listing as a bare session.
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
+  // After adoption, against every identity the session on screen can carry:
+  // `/s/<uuid>` hands over a session id, and the only row for a session that
+  // drives a team is the team's, named by its directory. The `''` guard is
+  // load-bearing — at boot with neither `--team` nor `--session` it would
+  // otherwise match every team whose leadSessionId was coerced to `''` above.
+  for (const t of teams) {
+    t.current =
+      current !== '' &&
+      (t.name === current || t.leadSessionId === current || leadSessions.get(t.name) === current);
+  }
   return { sessions, now, teams, leadSessions, needsDiffstat, adopted };
 }
 
@@ -1495,13 +1501,15 @@ export async function main(argv: string[]): Promise<number> {
   };
 
   /**
-   * The same rebuild as `retarget`, aimed at a session with no team. The store
-   * is re-pointed at a log named for the SESSION: `setTeam` is what clears the
-   * previous target's events, and a session id passes its name gate, so the
-   * session gets the per-target log every team already gets. `currentTeam`
-   * stays empty — there is no team to highlight in the picker, and a name with
-   * no `teams/<name>` directory behind it would read as a deleted team and have
-   * the idle reaper exit the console out from under the operator.
+   * The same rebuild as `retarget`, aimed at a session with no team — a session
+   * that drives a team directory never gets here, `selectSession` opens it AS
+   * that team. The store is re-pointed at a log named for the SESSION:
+   * `setTeam` is what clears the previous target's events, and a session id
+   * passes its name gate, so the session gets the per-target log every team
+   * already gets. `currentTeam` stays empty — there is no team to highlight in
+   * the picker, and a name with no `teams/<name>` directory behind it would
+   * read as a deleted team and have the idle reaper exit the console out from
+   * under the operator.
    */
   const retargetSession = async (sessionId: string): Promise<void> => {
     hub.publish();
@@ -1518,7 +1526,10 @@ export async function main(argv: string[]): Promise<number> {
   };
 
   const selectSession = async (sessionId: string): Promise<SelectTeamOutcome> => {
-    if (sessionId === currentSession) {
+    // In team mode the id a `/s/<lead>` reload carries is the FRAME's lead, so
+    // that is what the no-op check compares against — not `leadSessionId`,
+    // which onLeadSession re-points at the adopted driver.
+    if (sessionId === currentSession || (currentTeam !== '' && sessionId === publish().leadSessionId)) {
       pinned = true;
       return { ok: true, changed: false };
     }
@@ -1534,7 +1545,14 @@ export async function main(argv: string[]): Promise<number> {
       const sessions = await readSessions(sessionsRoot);
       const dir = await sessionProjectDir(projectsRoot, sessionId, sessions.cwds.get(sessionId));
       if (!dir) return { ok: false, reason: 'missing', message: `no session ${sessionId}` };
-      await retargetSession(sessionId);
+      // A session that drives a team dir is opened as that team, so `/s/<lead>`
+      // can stand in for the team row on reload. walkTeams, not
+      // listTeamSummaries: no diffstat spawns, no session rows.
+      const team = (await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot)).teams.find(
+        (t) => t.current,
+      );
+      if (team) await retarget(team.name, team.leadSessionId || sessionId);
+      else await retargetSession(sessionId);
       pinned = true;
       return { ok: true, changed: true };
     } finally {
@@ -1572,14 +1590,8 @@ export async function main(argv: string[]): Promise<number> {
     readOnly: cli.readOnly,
     listTeams: async (folder?: string) =>
       folder === ALL_FOLDERS
-        ? listAllFolders(teamsRoot, sessionsRoot, currentTeam, projectsRoot)
-        : listTeamSummaries(
-            teamsRoot,
-            sessionsRoot,
-            currentTeam,
-            projectsRoot,
-            await folderScope(projectsRoot, cli.cwd, folder),
-          ),
+        ? listAllFolders(teamsRoot, sessionsRoot, currentTeam || currentSession, projectsRoot)
+        : listTeamSummaries(teamsRoot, sessionsRoot, currentTeam || currentSession, projectsRoot, cli.cwd),
     history: (agent: string) => transcriptHistory(store.replay(), agent),
     lineText: (agent: string, id: string) => transcriptLineText(store.replay(), agent, id),
     planTask: (n: number) => plans.task(n),
@@ -1631,7 +1643,7 @@ export async function main(argv: string[]): Promise<number> {
     const { teams } = await listTeamSummaries(
       teamsRoot,
       sessionsRoot,
-      currentTeam,
+      currentTeam || currentSession,
       projectsRoot,
       cli.cwd,
     );
@@ -1642,8 +1654,7 @@ export async function main(argv: string[]): Promise<number> {
     // `statusLine` key — an optional install step — so on most machines the
     // header fell back to the directory id while the picker row two lines
     // below it showed the real name.
-    // A solo session's row is named by its session id, and `currentTeam` is ''.
-    const mine = teams.find((t) => t.name === (currentTeam || currentSession));
+    const mine = teams.find((t) => t.current);
     leadFacts = { sessionName: mine?.goal, branch: mine?.branch, mode: mine?.mode };
 
     if (pinned || gen !== generation) return;

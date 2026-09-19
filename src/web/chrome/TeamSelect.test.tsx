@@ -16,6 +16,8 @@ afterEach(cleanup);
 // The main list is live sessions only now (README Screen 9), so the second
 // fixture team — `done` by default — is bumped to `live` here: these tests
 // are about rows and switching, not about the idle/ended fold.
+const HATCH = '/Users/dev/code/hatch';
+
 const LIST = {
   current: 'session-98b0b4a7',
   folder: '/Users/dev/code/octo',
@@ -24,7 +26,9 @@ const LIST = {
     { path: '/Users/dev/code/hatch', name: 'hatch', sessions: 5 },
   ],
   teams: sampleTeams().map((t, i) =>
-    i === 1 ? { ...t, state: 'live' as const, live: true, members: 2, folder: 'octo' } : { ...t, folder: 'octo' },
+    i === 1
+      ? { ...t, state: 'live' as const, live: true, members: 2, folder: '/Users/dev/code/octo' }
+      : { ...t, folder: '/Users/dev/code/octo' },
   ),
 };
 
@@ -97,7 +101,7 @@ it('does not read the team list until it is opened', async () => {
 
   rerender({ open: true });
   await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
 });
 
 // The trigger names the SESSION, not the directory it lives in. It comes off
@@ -161,7 +165,7 @@ it('shortens an unnamed session-only row instead of showing its full uuid', asyn
     },
   ];
   fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
       : Promise.resolve(new Response('{}', { status: 200 })),
   );
@@ -190,7 +194,7 @@ it('shortens a session-only row id line to the short id even when the row has a 
     },
   ];
   fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
       : Promise.resolve(new Response('{}', { status: 200 })),
   );
@@ -245,7 +249,7 @@ it('routes a session-only row to /s/:sessionId instead of posting the team switc
     { ...LIST.teams[1], name: 'abc12345', leadSessionId: 'abc12345', sessionOnly: true, subagents: 2 },
   ];
   fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
       : Promise.resolve(new Response('{}', { status: 200 })),
   );
@@ -280,7 +284,7 @@ it('routes a flag-on solo row to the full session uuid, not its team directory n
     },
   ];
   fetchMock = vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
       : Promise.resolve(new Response('{}', { status: 200 })),
   );
@@ -317,7 +321,7 @@ it('closes without a request when the current team is selected', async () => {
   const rows = await screen.findAllByRole('option');
   fireEvent.click(rows[0]);
   expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
   expect(onOpenChange).toHaveBeenCalledWith(false);
 });
 
@@ -577,6 +581,21 @@ it('keeps the ended team that is being VIEWED, so the picker cannot contradict t
   expect(rows.map((r) => r.getAttribute('id'))).toContain('team-option-session-b5129c7b');
 });
 
+// After `/s/<uuid>` the frame carries a session id, and the only row for that
+// session is its team's, named by directory — so the name never matches. The
+// server's flag is what says which row is on screen.
+it('marks, and keeps in the main list, the row the server says is on screen even when its name is not the id on the frame', async () => {
+  const [first, second] = sampleTeams();
+  listOf([{ ...first, current: false }, { ...second, current: true, state: 'done' as const }]);
+
+  renderSelect({ current: 'b5129c7b-a009-4de3-9a42-4664d1214f39' });
+  const rows = await screen.findAllByRole('option');
+  const row = rows.find((r) => r.getAttribute('id') === 'team-option-session-b5129c7b')!;
+  expect(row).toBeTruthy();
+  expect(row.getAttribute('aria-selected')).toBe('true');
+  expect(within(row).getByTestId('team-mark').textContent).toBe('✓');
+});
+
 it('offers the hide control on every row, current one included', async () => {
   renderSelect();
   const rows = await screen.findAllByRole('option');
@@ -673,7 +692,7 @@ function soloList() {
     teams: sampleTeams().map((t) => ({ ...t, members: 1, state: 'live' as const })),
   };
   vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(new Response(JSON.stringify(solo), { status: 200 }))
       : Promise.resolve(new Response('{}', { status: 200 })),
   ));
@@ -719,7 +738,7 @@ it('counts every listed session in the header', async () => {
 
 function listOf(teams: TeamSummary[]) {
   vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path === '/api/teams'
+    path.startsWith('/api/teams') && !path.includes('/select')
       ? Promise.resolve(
           new Response(JSON.stringify({ current: 'session-98b0b4a7', teams }), { status: 200 }),
         )
@@ -776,6 +795,37 @@ it('starts the cursor on the current row wherever it sorts', async () => {
   listOf([
     { ...current, goal: 'Zulu Goal', state: 'live' as const },
     { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
+  ]);
+  renderSelect();
+  await screen.findAllByRole('option');
+  const list = screen.getByRole('listbox', { name: 'teams' });
+  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
+});
+
+// The listing is machine-wide but the rows shown are one folder's, so the
+// cursor has to be found among the rows shown, not the rows fetched.
+it('starts the cursor on the current row under the default scope even when a livelier row elsewhere sorts first', async () => {
+  const [current, other] = sampleTeams();
+  listOf([
+    {
+      ...other,
+      name: 'session-octo0001',
+      current: false,
+      live: true,
+      state: 'live' as const,
+      folder: '/Users/dev/code/octo',
+      lastActivityAt: FIXTURE_NOW - 1_000,
+    },
+    { ...current, folder: HATCH, lastActivityAt: FIXTURE_NOW - 12_000 },
+    {
+      ...other,
+      name: 'session-hatch002',
+      current: false,
+      live: true,
+      state: 'live' as const,
+      folder: HATCH,
+      lastActivityAt: FIXTURE_NOW - 20_000,
+    },
   ]);
   renderSelect();
   await screen.findAllByRole('option');
@@ -1020,7 +1070,7 @@ it('opens the folder menu from the chip and lists every folder with its count', 
 });
 
 it('counts an idle live session as active in the folder menu', async () => {
-  const idle = { ...sampleTeams()[1], name: 'session-idle0001', state: 'idle' as const, live: true, folder: 'hatch' };
+  const idle = { ...sampleTeams()[1], name: 'session-idle0001', state: 'idle' as const, live: true, folder: HATCH };
   vi.stubGlobal('fetch', vi.fn(() =>
     Promise.resolve(new Response(JSON.stringify({ ...LIST, teams: [...LIST.teams, idle] }), { status: 200 })),
   ));
@@ -1050,7 +1100,7 @@ it('asks for every folder once a scope is picked, and keeps both menus open', as
 // no React state between them — without persisting the pick, navigating
 // between the two reset the operator back to every folder.
 it('remembers the picked folders across a remount, the way navigating between views does', async () => {
-  const spread = { ...LIST, teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? 'octo' : 'hatch' })) };
+  const spread = { ...LIST, teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? t.folder : HATCH })) };
   fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(spread), { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
 
@@ -1069,13 +1119,13 @@ it('remembers the picked folders across a remount, the way navigating between vi
   expect(rows.map((r) => r.id)).toEqual(['team-option-session-b5129c7b']);
 });
 
-// Until the operator picks, the chip names what the SERVER scoped the listing
-// to — the folder the console was started in.
-it('names the folder the server answered with while nothing is picked', async () => {
+// Until the operator picks, the chip names the folder of the session on
+// screen — the one scope under which that session is always in the list.
+it('names the folder of the session on screen while nothing is picked', async () => {
   renderSelect();
   await screen.findAllByRole('option');
   expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
 });
 
 it('offers all as the first folder, and asks the server for every folder at once', async () => {
@@ -1087,7 +1137,8 @@ it('offers all as the first folder, and asks the server for every folder at once
 });
 
 it('names the all scope, counts every folder, and says which folder each row is in', async () => {
-  const all = { ...LIST, folder: '*', teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? 'octo' : 'hatch' })) };
+  localStorage.setItem('console.folder', '[]');
+  const all = { ...LIST, folder: '*', teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? t.folder : HATCH })) };
   vi.stubGlobal('fetch', vi.fn((path: string) =>
     path.startsWith('/api/teams')
       ? Promise.resolve(new Response(JSON.stringify(all), { status: 200 }))
@@ -1121,7 +1172,6 @@ function servePayload(payload: unknown) {
   vi.stubGlobal('fetch', fetchMock);
 }
 
-const HATCH = '/Users/dev/code/hatch';
 
 const FOLDERED = {
   current: 'session-98b0b4a7',
@@ -1132,15 +1182,15 @@ const FOLDERED = {
     { path: '/Users/dev/code/zulu', name: 'zulu', sessions: 1 },
   ],
   teams: [
-    { ...sampleTeams()[0], folder: 'octo' },
-    { ...sampleTeams()[1], state: 'live' as const, live: true, folder: 'hatch' },
+    { ...sampleTeams()[0], folder: '/Users/dev/code/octo' },
+    { ...sampleTeams()[1], state: 'live' as const, live: true, folder: HATCH },
     {
       ...sampleTeams()[1],
       name: 'session-zzzz1111',
       goal: 'zulu work',
       state: 'live' as const,
       live: true,
-      folder: 'zulu',
+      folder: '/Users/dev/code/zulu',
     },
   ],
 };
@@ -1202,6 +1252,75 @@ it('clears the selection and closes the menu when every folder is picked', async
   expect(screen.getByTestId('folder-chip').textContent).toContain('all');
 });
 
+// Rows carry their folder's path, not its basename: two folders named alike
+// used to pool their counts and show each other's sessions.
+it('keeps two folders with the same basename apart', async () => {
+  const WORK = '/Users/dev/work/octo';
+  servePayload({
+    ...FOLDERED,
+    folders: [
+      { path: '/Users/dev/code/octo', name: 'octo', sessions: 2 },
+      { path: WORK, name: 'octo', sessions: 1 },
+    ],
+    teams: [
+      { ...sampleTeams()[0], folder: '/Users/dev/code/octo' },
+      { ...sampleTeams()[1], state: 'live' as const, live: true, folder: WORK },
+    ],
+  });
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  expect(folderRows().slice(1).map((r) => r.textContent)).toEqual([
+    '✓octo~/code/octo1 active',
+    '·octo~/work/octo1 active',
+  ]);
+
+  fireEvent.click(folderRows()[1]);
+  expect(titles()).toEqual(['agents-team-console-design']);
+});
+
+// Folders match by prefix: a session that `cd`'d from `code` into `code/arco`
+// lists under either, and its pill says which.
+it('picking a parent folder lists the sessions working anywhere under it', async () => {
+  const CODE = '/Users/dev/code';
+  servePayload({
+    ...FOLDERED,
+    folders: [
+      { path: CODE, name: 'code', sessions: 3 },
+      { path: `${CODE}/arco`, name: 'arco', sessions: 1 },
+    ],
+    teams: [{ ...sampleTeams()[1], state: 'live' as const, live: true, folder: `${CODE}/arco` }],
+  });
+  renderSelect();
+  await screen.findAllByRole('option');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(folderRows()[1]);
+
+  expect(titles()).toEqual(['session-b5129c7b']);
+  expect(screen.getByTestId('team-folder').textContent).toBe('arco');
+  expect(folderRows()[1].textContent).toBe('✓code~/code1 active');
+});
+
+// The wall may be showing a session from a folder the console was not started
+// in; with nothing picked the list opens on that folder, so the row on screen
+// is in it and the chip names where it is.
+it('defaults the scope to the folder of the session on screen, so the wall and the chip agree', async () => {
+  servePayload({
+    ...FOLDERED,
+    teams: [
+      { ...FOLDERED.teams[0], current: false },
+      { ...FOLDERED.teams[1], current: true },
+      FOLDERED.teams[2],
+    ],
+  });
+  renderSelect();
+  await screen.findAllByRole('option');
+
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
+  expect(titles()).toEqual(['session-b5129c7b']);
+  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
+});
+
 // A folder path was stored bare in this key before it held JSON; reading it as
 // an explicit single pick is what keeps the operator's scope across the change.
 it('reads a folder path stored before the key held JSON as one explicit pick', async () => {
@@ -1218,7 +1337,9 @@ it('treats a legacy every-folder marker as no preference at all', async () => {
   localStorage.setItem('console.folder', '*');
   renderSelect();
   await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams');
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
+  // No preference scopes to the session on screen, not to every folder.
+  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
 });
 
 // README Screen 9: "deliberately no time-range control" — a range picker can
@@ -1271,8 +1392,9 @@ it('counts only the running rows in the header, ignoring the search box entirely
   expect(screen.getByTestId('session-count').textContent).toBe('0 running');
 });
 
-// A machine-wide listing has no folder to name and no menu to offer, but the
-// footer's running/open/ended split still says something about the rows.
+// A listing with no folder menu to offer still names the folder of the session
+// on screen off its row, and the footer's running/open/ended split still says
+// something about the rows.
 it('offers no folder menu when the listing is not scoped to a folder', async () => {
   vi.stubGlobal('fetch', vi.fn((path: string) =>
     path.startsWith('/api/teams')
@@ -1283,9 +1405,7 @@ it('offers no folder menu when the listing is not scoped to a folder', async () 
   ));
   renderSelect();
   await screen.findAllByRole('option');
-  // Nothing picked and no scope to name: the chip says nothing rather than
-  // counting a selection that was never made.
-  expect(screen.getByTestId('folder-chip').textContent).toBe('▾');
+  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
   fireEvent.click(screen.getByTestId('folder-chip'));
   expect(within(screen.getByTestId('folder-menu')).queryAllByRole('option')).toHaveLength(0);
 });

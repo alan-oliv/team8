@@ -388,11 +388,18 @@ export interface TeamSummary {
   // config.json, so a genuinely live team can report leadAlive false. Recency
   // covers that case; the pid covers a team idle longer than the grace window.
   live: boolean;             // leadAlive || within IDLE_GRACE_MS of lastActivityAt
+  // The row for the session on screen — matched by team directory, config lead
+  // id, or live driver, so a `/s/<uuid>` frame still marks its team's row.
   current: boolean;
   // The dropdown's row. All three are best-effort: a team whose lead session
   // sidecar or working tree is gone still lists, just with less on the row.
   branch?: string;           // read from <cwd>/.git/HEAD, not the statusline hook
-  folder?: string;           // the folder's name, only on a listing across every folder
+  // The absolute PATH of the directory the session last wrote from, else the
+  // one it was listed under — the same kind of value `TeamState.folder`
+  // carries (project.ts), so the client keys on it and never on a basename two
+  // folders can share. Matched by prefix (`inFolder`): picking `~/code` lists
+  // what works anywhere under it.
+  folder?: string;
   goal?: string;             // the lead session's name (`/branch` sets it)
   // live = process alive and mid-turn (sidecar status "busy"); idle = alive
   // but parked at its prompt, or gone within IDLE_GRACE_MS; done = gone longer.
@@ -454,7 +461,9 @@ export interface TeamSummary {
 export interface FolderSummary {
   path: string;              // absolute; the client abbreviates it for display
   name: string;              // its basename — what the chip shows first
-  sessions: number;          // `<sessionId>.jsonl` files under its project dir
+  // Sessions under its project dir, by either form (`<id>.jsonl` or `<id>/`) —
+  // the same rule `sessionProjectDir` selects by.
+  sessions: number;
 }
 
 /**
@@ -463,8 +472,12 @@ export interface FolderSummary {
  */
 export const ALL_FOLDERS = '*';
 
+/** Whether `dir` is `folder` or sits under it — how a folder scope matches a row. */
+export const inFolder = (dir: string | undefined, folder: string): boolean =>
+  dir === folder || dir?.startsWith(`${folder}/`) === true;
+
 export interface TeamsResponse {
-  current: string;           // '' when the console has not resolved a team yet
+  current: string;           // '' until resolved; a team name in team mode, the session id in session mode
   teams: TeamSummary[];      // current first, then live, then lastActivityAt desc, then name
   /** The folder the rows above are scoped to; '' when the listing is machine-wide. */
   folder?: string;
