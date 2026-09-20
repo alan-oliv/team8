@@ -3999,18 +3999,38 @@ async function walk(root) {
     (a, b) => (path6.basename(a) === "config.json" ? 0 : 1) - (path6.basename(b) === "config.json" ? 0 : 1) || a.localeCompare(b)
   );
 }
-var FIRST_LINE_BYTES = 64 * 1024;
-async function readFirstLine(file) {
+var HEAD_BYTES = 64 * 1024;
+async function readHeadLines(file) {
   const fh = await fs4.open(file, "r");
   try {
-    const buf = Buffer.alloc(FIRST_LINE_BYTES);
-    const { bytesRead } = await fh.read(buf, 0, FIRST_LINE_BYTES, 0);
-    const text = buf.subarray(0, bytesRead).toString("utf8");
-    const nl = text.indexOf("\n");
-    return nl === -1 ? text : text.slice(0, nl);
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0);
+    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (bytesRead === HEAD_BYTES) lines.pop();
+    return lines;
   } finally {
     await fh.close();
   }
+}
+var CONVERSATIONAL = /* @__PURE__ */ new Set(["user", "assistant", "attachment", "system"]);
+function teammateIdentityOf(lines) {
+  for (const line of lines) {
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!rec || typeof rec !== "object") continue;
+    if (typeof rec.agentName === "string") {
+      return {
+        agentName: rec.agentName,
+        teamName: typeof rec.teamName === "string" ? rec.teamName : void 0
+      };
+    }
+    if (typeof rec.type === "string" && CONVERSATIONAL.has(rec.type)) return null;
+  }
+  return void 0;
 }
 function startFileIngest(store, config) {
   const { paths } = config;
@@ -4021,6 +4041,11 @@ function startFileIngest(store, config) {
   let leadProjectDir = null;
   const forkParent = /* @__PURE__ */ new Map();
   const forkChecked = /* @__PURE__ */ new Set();
+  const tmuxTranscripts = /* @__PURE__ */ new Map();
+  const claimOf = (file) => {
+    const mate = tmuxTranscripts.get(file);
+    return mate ? { agent: mate, scoped: true } : claimOfTranscript(file, chain, leadName);
+  };
   let lastConfig = null;
   const sidecars = /* @__PURE__ */ new Map();
   const ownedFiles = /* @__PURE__ */ new Map();
@@ -4195,7 +4220,7 @@ function startFileIngest(store, config) {
       handleSubagentLines(file, lines, fromStart);
       return;
     }
-    const claim = claimOfTranscript(file, chain, leadName);
+    const claim = claimOf(file);
     if (!claim) {
       deferred.add(file);
       return;
@@ -4213,7 +4238,7 @@ function startFileIngest(store, config) {
     noteUsage(file, agent, records);
     const lead = claim.scoped && claim.agent === leadName;
     if (lead) own(leadName, file);
-    if (meta || lead) {
+    if (meta || lead || tmuxTranscripts.has(file)) {
       flushPending(agent, file);
       appendTranscript(agent, records, fromStart && (ownedFiles.get(agent)?.size ?? 1) <= 1, mtimeMs);
       return;
@@ -4252,6 +4277,7 @@ function startFileIngest(store, config) {
       const cfg = await readJsonSafe(file);
       if (!cfg) return;
       lastConfig = cfg;
+      forkChecked.clear();
       const learned = teamName !== cfg.name || leadSessionId !== cfg.leadSessionId;
       teamName = cfg.name;
       leadSessionId = cfg.leadSessionId;
@@ -4263,6 +4289,7 @@ function startFileIngest(store, config) {
         leadProjectDir = null;
         forkParent.clear();
         forkChecked.clear();
+        tmuxTranscripts.clear();
         for (const f of [...pending.keys()]) {
           if (claimOfTranscript(f, chain, leadName)?.scoped !== true) forget(f);
         }
@@ -4402,7 +4429,7 @@ function startFileIngest(store, config) {
       await transcripts.pump(file);
       return;
     }
-    const claim = claimOfTranscript(file, chain, leadName);
+    const claim = claimOf(file);
     if (!claim || disowned.has(file)) return;
     notePath(sidecars.get(file)?.name ?? claim.agent, file);
     if (deferred.delete(file)) await transcripts.forget(file);
@@ -4416,6 +4443,14 @@ function startFileIngest(store, config) {
     for (const set of transcriptPaths.values()) for (const file of set) files.add(file);
     await Promise.all([...files].map((file) => transcripts.pump(file)));
   };
+  const adoptTmuxTranscript = async (file, agent) => {
+    if (tmuxTranscripts.get(file) === agent) return;
+    tmuxTranscripts.set(file, agent);
+    disowned.delete(file);
+    own(agent, file);
+    if (deferred.delete(file)) await transcripts.forget(file);
+    await transcripts.pump(file);
+  };
   const growForkChain = async (files) => {
     if (!leadSessionId) return;
     if (!leadProjectDir) {
@@ -4427,22 +4462,26 @@ function startFileIngest(store, config) {
       if (!file.endsWith(".jsonl") || path6.dirname(file) !== leadProjectDir) continue;
       const stem = path6.basename(file, ".jsonl");
       if (forkChecked.has(stem) || SUBAGENT_FILE.test(path6.basename(file))) continue;
-      let firstLine;
+      let lines;
       try {
-        firstLine = await readFirstLine(file);
+        lines = await readHeadLines(file);
       } catch {
         continue;
       }
-      if (firstLine === null) continue;
       let parsed;
       try {
-        parsed = JSON.parse(firstLine);
+        parsed = JSON.parse(lines[0] ?? "");
       } catch {
         continue;
       }
-      forkChecked.add(stem);
       const parent = parsed.forkedFrom?.sessionId;
       if (parent) forkParent.set(stem, parent);
+      const identity = teammateIdentityOf(lines);
+      if (identity === void 0) continue;
+      forkChecked.add(stem);
+      if (identity && teamName && identity.teamName === teamName && isRosterMember(identity.agentName)) {
+        await adoptTmuxTranscript(file, identity.agentName);
+      }
     }
     let changed = true;
     while (changed) {
