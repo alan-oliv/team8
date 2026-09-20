@@ -291,28 +291,63 @@ async function walk(root: string): Promise<string[]> {
   );
 }
 
-const FIRST_LINE_BYTES = 64 * 1024;
+const HEAD_BYTES = 64 * 1024;
 
 /**
- * Just the first line of a transcript file. Chain discovery only needs the
- * `forkedFrom` header Claude Code writes as the very first record, and these
- * files run into the megabytes — reading the whole thing to find one field on
- * line 1 would cost real time for every sibling session that turns out not to
- * be one of ours. 64 KiB is generous over any real header line (the largest
- * observed carries a full hook payload) while still bounding a read that
- * lands mid-write to something JSON.parse can only ever reject, not hang on.
+ * The complete lines in the head of a transcript file. Chain discovery needs
+ * the `forkedFrom` header Claude Code writes as the very first record, and a
+ * tmux teammate names itself within its first few (teammateIdentityOf below);
+ * these files run into the megabytes, so reading the whole thing to find one
+ * field near the top would cost real time for every sibling session that turns
+ * out not to be one of ours. 64 KiB is generous over any real header line (the
+ * largest observed carries a full hook payload) while still bounding a read
+ * that lands mid-write to something JSON.parse can only ever reject, not hang
+ * on. A line the head cuts through is dropped rather than returned half-written.
  */
-async function readFirstLine(file: string): Promise<string | null> {
+async function readHeadLines(file: string): Promise<string[]> {
   const fh = await fs.open(file, 'r');
   try {
-    const buf = Buffer.alloc(FIRST_LINE_BYTES);
-    const { bytesRead } = await fh.read(buf, 0, FIRST_LINE_BYTES, 0);
-    const text = buf.subarray(0, bytesRead).toString('utf8');
-    const nl = text.indexOf('\n');
-    return nl === -1 ? text : text.slice(0, nl);
+    const buf = Buffer.alloc(HEAD_BYTES);
+    const { bytesRead } = await fh.read(buf, 0, HEAD_BYTES, 0);
+    const lines = buf.subarray(0, bytesRead).toString('utf8').split('\n');
+    if (bytesRead === HEAD_BYTES) lines.pop();
+    return lines;
   } finally {
     await fh.close();
   }
+}
+
+/**
+ * Whose session a session-root transcript is, by its own account. With
+ * `teammateMode: "tmux"` every teammate is its own `claude` process, so its
+ * transcript is a `<uuid>.jsonl` BESIDE the lead's rather than a file under
+ * subagents/, and it gets no .meta.json sidecar — nothing in the path says
+ * whose it is. Every conversational record it writes carries `agentName` and
+ * `teamName` instead (line 3-4 of all sixteen files of a real tmux team), and
+ * a plain session's records carry neither. `undefined` is "nothing decided
+ * yet": only settings records so far, so the head has to be read again.
+ */
+const CONVERSATIONAL = new Set(['user', 'assistant', 'attachment', 'system']);
+function teammateIdentityOf(
+  lines: readonly string[],
+): { agentName: string; teamName?: string } | null | undefined {
+  for (const line of lines) {
+    let rec: { type?: unknown; agentName?: unknown; teamName?: unknown } | null;
+    try {
+      rec = JSON.parse(line) as typeof rec;
+    } catch {
+      continue;
+    }
+    if (!rec || typeof rec !== 'object') continue;
+    if (typeof rec.agentName === 'string') {
+      return {
+        agentName: rec.agentName,
+        teamName: typeof rec.teamName === 'string' ? rec.teamName : undefined,
+      };
+    }
+    if (typeof rec.type === 'string' && CONVERSATIONAL.has(rec.type)) return null;
+  }
+  return undefined;
 }
 
 export function startFileIngest(store: Store, config: IngestConfig): FileIngest {
@@ -342,6 +377,16 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
   // sweep. A file is only added here once JSON.parse actually succeeds; a
   // read that lands mid-write must be retried, not given up on forever.
   const forkChecked = new Set<string>();
+  // Session-root transcripts whose own records have proven them a member's:
+  // file -> name. The same two agreeing facts acceptSidecar demands — the
+  // records name our team AND a member of our config.json — and the only way
+  // such a file gets a claim at all, since its path carries no name. Filled
+  // by growForkChain, which already reads every sibling's head.
+  const tmuxTranscripts = new Map<string, string>();
+  const claimOf = (file: string): TranscriptClaim | null => {
+    const mate = tmuxTranscripts.get(file);
+    return mate ? { agent: mate, scoped: true } : claimOfTranscript(file, chain, leadName);
+  };
 
   let lastConfig: TeamConfig | null = null;
   // Keyed by the TRANSCRIPT FILE each sidecar describes, never by the name it
@@ -672,7 +717,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       handleSubagentLines(file, lines, fromStart);
       return;
     }
-    const claim = claimOfTranscript(file, chain, leadName);
+    const claim = claimOf(file);
     // Not "not ours" — "not placeable YET". A subagent transcript whose session
     // has not joined the lead's chain, or the lead's own file seen before
     // config.json named the session, both land here and both become claimable
@@ -699,13 +744,14 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     noteUsage(file, agent, records);
 
     // ADMISSION IS PER FILE. Records enter the store when a sidecar under our
-    // lead session proved THIS FILE is that teammate's, or when it is the lead's
+    // lead session proved THIS FILE is that teammate's, when its own records
+    // did (a tmux teammate, see tmuxTranscripts), or when it is the lead's
     // own session transcript — one exact path. Sharing a registered teammate's
     // NAME proves nothing, and a name with no leadSessionId to check it against
     // is not even a claim we can test.
     const lead = claim.scoped && claim.agent === leadName;
     if (lead) own(leadName, file);
-    if (meta || lead) {
+    if (meta || lead || tmuxTranscripts.has(file)) {
       flushPending(agent, file);
       // A second file for one name must never clear the first: the fold's
       // `fromStart` clear is scoped to the AGENT, not to the file, so it would
@@ -752,6 +798,9 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       const cfg = await readJsonSafe<TeamConfig>(file);
       if (!cfg) return;
       lastConfig = cfg;
+      // A member can join after its transcript's head was judged — the member
+      // list and the file are written by two processes — so judge them again.
+      forkChecked.clear();
       const learned = teamName !== cfg.name || leadSessionId !== cfg.leadSessionId;
       teamName = cfg.name;
       leadSessionId = cfg.leadSessionId;
@@ -770,6 +819,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
         leadProjectDir = null;
         forkParent.clear();
         forkChecked.clear();
+        tmuxTranscripts.clear();
         for (const f of [...pending.keys()]) {
           if (claimOfTranscript(f, chain, leadName)?.scoped !== true) forget(f);
         }
@@ -1015,7 +1065,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       await transcripts.pump(file);
       return;
     }
-    const claim = claimOfTranscript(file, chain, leadName);
+    const claim = claimOf(file);
     if (!claim || disowned.has(file)) return;
     notePath(sidecars.get(file)?.name ?? claim.agent, file);
     // The claim resolves now but did not when a watcher event got here first,
@@ -1034,6 +1084,23 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     const files = new Set<string>();
     for (const set of transcriptPaths.values()) for (const file of set) files.add(file);
     await Promise.all([...files].map((file) => transcripts.pump(file)));
+  };
+
+  /**
+   * A session-root transcript whose own records have named a member of our
+   * team. Pumped here rather than left to the drain loop: the sweep records a
+   * file's mtime whether or not it could place it, so a teammate that went
+   * idle before the console started would never be offered again — and a
+   * watcher read that got here first dropped the bytes it could not place, so
+   * that file is put back and read whole.
+   */
+  const adoptTmuxTranscript = async (file: string, agent: string): Promise<void> => {
+    if (tmuxTranscripts.get(file) === agent) return;
+    tmuxTranscripts.set(file, agent);
+    disowned.delete(file);
+    own(agent, file);
+    if (deferred.delete(file)) await transcripts.forget(file);
+    await transcripts.pump(file);
   };
 
   /**
@@ -1056,22 +1123,28 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       if (!file.endsWith('.jsonl') || path.dirname(file) !== leadProjectDir) continue;
       const stem = path.basename(file, '.jsonl');
       if (forkChecked.has(stem) || SUBAGENT_FILE.test(path.basename(file))) continue;
-      let firstLine: string | null;
+      let lines: string[];
       try {
-        firstLine = await readFirstLine(file);
+        lines = await readHeadLines(file);
       } catch {
         continue; // vanished between the walk and this read — try again later
       }
-      if (firstLine === null) continue;
       let parsed: { forkedFrom?: { sessionId?: string } };
       try {
-        parsed = JSON.parse(firstLine) as { forkedFrom?: { sessionId?: string } };
+        parsed = JSON.parse(lines[0] ?? '') as { forkedFrom?: { sessionId?: string } };
       } catch {
         continue; // read landed mid-write; the line is not complete yet
       }
-      forkChecked.add(stem);
       const parent = parsed.forkedFrom?.sessionId;
       if (parent) forkParent.set(stem, parent);
+      // Only settings records so far: whose file this is stays open, and the
+      // next sweep reads its head again.
+      const identity = teammateIdentityOf(lines);
+      if (identity === undefined) continue;
+      forkChecked.add(stem);
+      if (identity && teamName && identity.teamName === teamName && isRosterMember(identity.agentName)) {
+        await adoptTmuxTranscript(file, identity.agentName);
+      }
     }
 
     // Transitive closure: a branch of a branch joins once its own parent is

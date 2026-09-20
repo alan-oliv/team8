@@ -2310,3 +2310,122 @@ describe('workflow agent usage', () => {
     expect(of(await sweep(), 'workflow-usage')).toHaveLength(0);
   });
 });
+
+// With `teammateMode: "tmux"` every teammate is its own `claude` process, so
+// its transcript is a session-root `<uuid>.jsonl` BESIDE the lead's, not a file
+// under the lead session's subagents/ — and it gets no .meta.json sidecar at
+// all. Nothing in the path says whose it is; every conversational record it
+// writes carries `agentName` and `teamName` instead (observed at line 3-4 of
+// all sixteen files of a real tmux team). Before this, such a team rendered as
+// a wall of named, idle agents at 0 tokens and $0.00 for as long as it ran.
+describe('tmux-backend teammates', () => {
+  const MATE = 'track-a';
+  const MATE_SESSION = 'a1b2c3d4-0000-4000-8000-000000000001';
+
+  const leadTranscript = () => path.join(paths.projects, SLUG, `${LEAD_SESSION}.jsonl`);
+  const mateTranscript = () => path.join(paths.projects, SLUG, `${MATE_SESSION}.jsonl`);
+
+  const assistant = (tag: string, i: number): TranscriptRecord => ({
+    type: 'assistant',
+    uuid: `${tag}-${i}`,
+    timestamp: new Date(1787843400000 + i * 1000).toISOString(),
+    message: {
+      id: `msg-${tag}-${i}`,
+      model: 'claude-opus-5',
+      role: 'assistant',
+      usage: { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 100, cache_creation_input_tokens: 10 },
+      content: [{ type: 'text', text: `${tag} ${i}` }],
+    },
+  });
+  // The real file opens with settings records that name nobody.
+  const settings = () => ({ type: 'agent-setting', agentSetting: 'team8:executor', sessionId: MATE_SESSION });
+  const tagged = (rec: TranscriptRecord, teamName: string) => ({ ...rec, agentName: MATE, teamName });
+
+  const write = async (file: string, records: unknown[]) => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  };
+
+  const start = () =>
+    startFileIngest(store, {
+      paths,
+      teamName: TEAM,
+      leadSessionId: LEAD_SESSION,
+      leadName: 'team-lead',
+      sweepIntervalMs: 0,
+      tailPollMs: 0,
+    });
+
+  beforeEach(async () => {
+    await fs.mkdir(path.join(paths.teams, TEAM), { recursive: true });
+    const config = JSON.parse(
+      await fs.readFile(path.join(FIXTURES, 'config-4-members.json'), 'utf8'),
+    ) as { members: Array<Record<string, unknown>> };
+    config.members.push({
+      agentId: `${MATE}@${TEAM}`,
+      name: MATE,
+      agentType: 'team8:executor',
+      model: 'opus',
+      backendType: 'tmux',
+      tmuxPaneId: '%0',
+      joinedAt: 1787843400000,
+      subscriptions: [],
+    });
+    await fs.writeFile(path.join(paths.teams, TEAM, 'config.json'), JSON.stringify(config));
+    await write(leadTranscript(), [assistant('lead', 0)]);
+  });
+
+  it("reads a tmux teammate's transcript from its own session file beside the lead's", async () => {
+    const mateRecords = Array.from({ length: 5 }, (_, i) => assistant('mate', i));
+    await write(mateTranscript(), [settings(), ...mateRecords.map((r) => tagged(r, TEAM))]);
+
+    const ingest = start();
+    try {
+      await ingest.sweep();
+    } finally {
+      ingest.close();
+    }
+
+    const mate = project(store.replay(), false).agents.find((a) => a.name === MATE);
+    expect(mate).toBeDefined();
+    expect(mate!.transcript.map((l) => l.text)).toEqual(['mate 0', 'mate 1', 'mate 2', 'mate 3', 'mate 4']);
+    expect(mate!.costUsd).toBeCloseTo(totalCost(dedupeUsage(usageRecordsOf(mateRecords))), 9);
+  });
+
+  it("keeps a sibling session that names another team out, even under a member's name", async () => {
+    const stranger = Array.from({ length: 3 }, (_, i) => assistant('stranger', i));
+    await write(mateTranscript(), [settings(), ...stranger.map((r) => tagged(r, 'session-other'))]);
+
+    const ingest = start();
+    try {
+      await ingest.sweep();
+      await ingest.sweep();
+    } finally {
+      ingest.close();
+    }
+
+    const state = project(store.replay(), false);
+    expect(state.agents.flatMap((a) => a.transcript).some((l) => l.text.includes('stranger'))).toBe(false);
+    expect(state.agents.find((a) => a.name === MATE)!.costUsd).toBe(0);
+  });
+
+  it('decides nothing from a file that only has its settings lines yet, and adopts it once it speaks', async () => {
+    await write(mateTranscript(), [settings()]);
+
+    const ingest = start();
+    try {
+      await ingest.sweep();
+      const mateRecords = Array.from({ length: 2 }, (_, i) => assistant('mate', i));
+      await fs.appendFile(
+        mateTranscript(),
+        mateRecords.map((r) => JSON.stringify(tagged(r, TEAM))).join('\n') + '\n',
+      );
+      await ingest.sweep();
+    } finally {
+      ingest.close();
+    }
+
+    const mate = project(store.replay(), false).agents.find((a) => a.name === MATE);
+    expect(mate!.transcript.map((l) => l.text)).toEqual(['mate 0', 'mate 1']);
+  });
+});
