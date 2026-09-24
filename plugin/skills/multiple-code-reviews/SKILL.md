@@ -17,8 +17,8 @@ Reviews are not code changes: no branch, no commit, no PR. The terminal
 deliverable of every task is a file in the session scratchpad.
 
 **REQUIRED SUB-SKILLS:** `team8:tasks` for the task contract, `team8:run` for
-dispatch and roster checks, `my-skills:alanizer` for every comment body,
-`my-skills:review-as-me` for Conventional Comments and the posting mechanics.
+dispatch and roster checks, `grimoire:alanizer` for every comment body,
+`grimoire:review-as-me` for Conventional Comments and the posting mechanics.
 
 ## Phase 1: review into files
 
