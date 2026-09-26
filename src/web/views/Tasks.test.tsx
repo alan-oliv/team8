@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { MailMessage, Task } from '../../shared/domain';
 import { buildCast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
-import { Tasks } from './Tasks';
+import { TASK_VIEW_KEY, Tasks } from './Tasks';
 
 afterEach(cleanup);
+// Board is the default; the row-level tests below read the rows view.
+beforeEach(() => window.localStorage.setItem(TASK_VIEW_KEY, 'rows'));
 
 // fixtures/tasks.json: task 1 was claimed and completed by probe-alpha; task 2 in
 // its unclaimed pending snapshot.
@@ -197,7 +199,7 @@ describe('Tasks — left pane', () => {
     const footer = screen.getByTestId('tasks-footer');
     expect(within(footer).getByText('~/.claude/tasks/session-98b0b4a7/')).toBeTruthy();
     expect(
-      within(footer).getByText('claiming is file-locked · completing a task unblocks its dependents'),
+      within(footer).getByText('claiming is file-locked · completing a task unblocks its dependents · cards move when the file does'),
     ).toBeTruthy();
   });
 });
@@ -323,4 +325,69 @@ it('casts the owner cell and nothing else in the row', () => {
   expect(owners).toContain('Saito');
   expect(owners).not.toContain('probe-alpha');
   expect(owners).toContain('unassigned');
+});
+
+describe('Tasks — board', () => {
+  afterEach(() => window.localStorage.clear());
+
+  const LADDER: Task[] = [
+    { ...TASKS[1], id: '1', state: 'completed' },
+    { ...TASKS[1], id: '2', state: 'pending', blockedBy: ['1'], openBlockedBy: [] },
+    { ...TASKS[1], id: '3', state: 'blocked', blockedBy: ['1', '9'], openBlockedBy: ['9'] },
+    { ...TASKS[1], id: '4', state: 'in_progress', owner: 'probe-alpha' },
+    { ...TASKS[1], id: '5', state: 'plan_pending', owner: 'probe-alpha' },
+    { ...TASKS[1], id: '6', state: 'failed', owner: 'probe-alpha' },
+  ];
+
+  function openBoard(tasks = LADDER) {
+    render(<Tasks tasks={tasks} teamName="session-98b0b4a7" />);
+    fireEvent.click(screen.getByRole('button', { name: 'board' }));
+    return screen.getAllByTestId('board-column');
+  }
+
+  const ids = (column: HTMLElement) =>
+    within(column).queryAllByTestId('board-card').map((card) => card.firstElementChild!.firstElementChild!.textContent);
+
+  it('lays tasks out on the ladder, with plan approval and failed still in progress', () => {
+    const columns = openBoard();
+    expect(columns.map(ids)).toEqual([['3'], ['2'], ['4', '5', '6'], ['1']]);
+    expect(screen.getAllByTestId('board-count').map((c) => c.textContent)).toEqual(['1', '1', '3', '1']);
+  });
+
+  it('flags plan approval and failed cards by edge and label', () => {
+    const cards = within(openBoard()[2]).getAllByTestId('board-card');
+    expect(cards[0].style.border).toBe('1px solid var(--color-neutral-900)');
+    expect(cards[1].style.border).toBe('1px solid var(--warn)');
+    expect(cards[2].style.border).toBe('1px solid var(--fail)');
+    expect(screen.getAllByTestId('card-note').map((n) => n.textContent)).toEqual(['plan approval', 'failed']);
+  });
+
+  it('says what a card needs and how much of it is done', () => {
+    const blocked = within(openBoard()[0]).getByTestId('card-deps');
+    expect(blocked.textContent).toBe('needs 1, 9 · 1/2 done');
+  });
+
+  it('shows a none box in an empty column', () => {
+    const columns = openBoard([LADDER[0]]);
+    expect(within(columns[0]).getByText('none')).toBeTruthy();
+    expect(within(columns[3]).queryByText('none')).toBeNull();
+  });
+
+  it('opens on the board when no view was chosen, with board as the first pill', () => {
+    window.localStorage.clear();
+    render(<Tasks tasks={LADDER} teamName="session-98b0b4a7" />);
+    expect(screen.getByTestId('tasks-board')).toBeTruthy();
+    expect(screen.getAllByTestId('tasks-view-toggle').map((b) => b.textContent)).toEqual(['board', 'rows']);
+  });
+
+  it('remembers the chosen view across mounts', () => {
+    openBoard();
+    expect(window.localStorage.getItem(TASK_VIEW_KEY)).toBe('board');
+    cleanup();
+    render(<Tasks tasks={LADDER} teamName="session-98b0b4a7" />);
+    expect(screen.getByTestId('tasks-board')).toBeTruthy();
+    expect(screen.queryAllByTestId('task-row')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'rows' }));
+    expect(screen.getAllByTestId('task-row')).toHaveLength(6);
+  });
 });
