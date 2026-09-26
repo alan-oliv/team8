@@ -6,6 +6,7 @@ import {
   liveCounts,
   phaseList,
   phaseTally,
+  runProgress,
   workflowGrid,
   WORK_ITEM_WIDTH,
 } from './workflow-grid';
@@ -233,7 +234,7 @@ describe('phaseTally', () => {
     states.map((state, i) => agent({ agentId: `a${i}`, state, phaseIndex: 1 }));
 
   it('counts each state it actually has, and never a zero', () => {
-    expect(phaseTally(withStates('done', 'done', 'run'), 1)).toBe('2 returned · 1 running');
+    expect(phaseTally(withStates('done', 'done', 'run'), 1)).toBe('2 finished · 1 running');
   });
 
   it('says queued for a phase no agent has reached', () => {
@@ -241,7 +242,7 @@ describe('phaseTally', () => {
   });
 
   it('names a cache replay and a null return in the reader\'s words', () => {
-    expect(phaseTally(withStates('cache', 'null'), 1)).toBe('1 cached · 1 returned null');
+    expect(phaseTally(withStates('cache', 'null'), 1)).toBe('2 finished · (1 cached, 1 returned null)');
   });
 
   // Ruling 11 picks `queued` over `waiting` for the `·` state, so the tally and
@@ -250,9 +251,9 @@ describe('phaseTally', () => {
     expect(phaseTally(withStates('wait', 'wait'), 1)).toBe('2 queued');
   });
 
-  it('counts a failure and a refusal apart from a returned null', () => {
+  it('counts failed and null as finished, and still names each apart', () => {
     expect(phaseTally(withStates('fail', 'block', 'null'), 1))
-      .toBe('1 failed · 1 blocked · 1 returned null');
+      .toBe('3 finished · (1 failed, 1 blocked, 1 returned null)');
   });
 
   it('counts only the phase asked for', () => {
@@ -260,7 +261,61 @@ describe('phaseTally', () => {
       agent({ agentId: 'a1', state: 'done', phaseIndex: 1 }),
       agent({ agentId: 'a2', state: 'done', phaseIndex: 2 }),
     ];
-    expect(phaseTally(mixed, 2)).toBe('1 returned');
+    expect(phaseTally(mixed, 2)).toBe('1 finished');
+  });
+});
+
+describe('runProgress', () => {
+  const PHASES = [
+    { index: 1, title: 'Fetch' },
+    { index: 2, title: 'Read' },
+    { index: 3, title: 'Verify' },
+  ];
+
+  it('counts failed and null agents as finished, in the totals and the segment alike', () => {
+    const p = runProgress(run({
+      status: 'killed',
+      phases: PHASES,
+      agents: [
+        agent({ agentId: 'a1', phaseIndex: 1 }),
+        agent({ agentId: 'a2', phaseIndex: 2, state: 'fail' }),
+        agent({ agentId: 'a3', phaseIndex: 2, state: 'null' }),
+        agent({ agentId: 'a4', phaseIndex: 2, state: 'run' }),
+      ],
+    }));
+    expect([p.finished, p.dispatched, p.running]).toEqual([3, 4, 1]);
+    expect(p.segments[1]).toMatchObject({ finished: 2, running: true, bad: true });
+    expect(phaseTally(p.segments[1].agents, 2)).toMatch(/^2 finished/);
+  });
+
+  it('gives a phase the script has not reached no agents at all', () => {
+    const p = runProgress(run({ phases: PHASES, agents: [agent({ agentId: 'a1', phaseIndex: 1 })] }));
+    expect(p.segments.map((s) => s.agents.length)).toEqual([1, 0, 0]);
+  });
+
+  it('keeps cells in dispatch order even when a later agent shares an earlier queuedAt', () => {
+    const p = runProgress(run({
+      phases: PHASES,
+      agents: [
+        agent({ agentId: 'a1', phaseIndex: 1, queuedAt: 1 }),
+        agent({ agentId: 'a2', phaseIndex: 1, queuedAt: 2 }),
+        agent({ agentId: 'a3', phaseIndex: 1, queuedAt: 1 }),
+      ],
+    }));
+    expect(p.segments[0].agents.map((a) => a.agentId)).toEqual(['a1', 'a2', 'a3']);
+  });
+
+  it('says returned only for a completed run, and the status word otherwise', () => {
+    expect(runProgress(run({ status: 'completed' })).where).toBe('returned');
+    expect(runProgress(run({ status: 'killed' })).where).toBe('killed');
+    expect(runProgress(run({ status: 'failed' })).where).toBe('failed');
+  });
+
+  it('names no phase on a live run, whose phases are not on disk yet', () => {
+    const p = runProgress(run({ live: true, status: 'running', agents: [agent({ agentId: 'a1', state: 'run' })] }));
+    expect(p.where).toBeUndefined();
+    expect(p.segments).toEqual([]);
+    expect([p.finished, p.dispatched, p.running]).toEqual([0, 1, 1]);
   });
 });
 

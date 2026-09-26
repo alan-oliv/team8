@@ -53,7 +53,61 @@ describe('WorkflowRun', () => {
   it('counts a phase by what it has, and says queued for one never reached', () => {
     render(<WorkflowRun run={RUN} />);
     const counts = screen.getAllByTestId('wf-phase-count').map((n) => n.textContent);
-    expect(counts).toEqual(['2 returned', '1 returned · 1 running', 'queued']);
+    expect(counts).toEqual(['2 finished', '1 finished · 1 running', 'queued']);
+  });
+
+  it('draws the progress band with one cell per agent and a dashed stub, never 0/n, for a phase not reached', () => {
+    render(<WorkflowRun run={RUN} />);
+    const segments = screen.getAllByTestId('wf-progress-segment');
+    expect(segments.map((s) => within(s).getByTestId('wf-progress-count').textContent)).toEqual(['2/2', '1/2', '—']);
+    expect(within(segments[0]).getAllByTestId('wf-progress-cell')).toHaveLength(2);
+    expect(within(segments[2]).queryAllByTestId('wf-progress-cell')).toHaveLength(0);
+    expect(within(segments[2]).getByTestId('wf-progress-stub')).toBeTruthy();
+    // Segment width is the dispatched count, floored at 2.
+    expect(segments.map((s) => s.style.flexGrow)).toEqual(['2', '2', '2']);
+    expect(screen.getByTestId('wf-progress-totals').textContent).toBe('3 of 4 finished · 1 running');
+    expect(screen.getByTestId('wf-progress-where').textContent).toBe('killed');
+  });
+
+  it('counts a failed and a null agent as finished in the band and the header alike', () => {
+    render(
+      <WorkflowRun
+        run={{
+          ...RUN,
+          agents: [
+            agent({ agentId: 'a1', phaseIndex: 1 }),
+            agent({ agentId: 'a2', phaseIndex: 1, state: 'fail' }),
+            agent({ agentId: 'a3', phaseIndex: 1, state: 'null' }),
+          ],
+        }}
+      />,
+    );
+    const [first] = screen.getAllByTestId('wf-progress-segment');
+    expect(within(first).getByTestId('wf-progress-count').textContent).toBe('3/3');
+    expect(first.style.flexGrow).toBe('3');
+    expect(screen.getAllByTestId('wf-phase-count')[0].textContent).toMatch(/^3 finished/);
+  });
+
+  it('draws totals but no segments on a live run, whose phases are not on disk', () => {
+    render(
+      <WorkflowRun
+        run={{ ...RUN, live: true, status: 'running', phases: [], agents: [agent({ agentId: 'a1', state: 'run' })] }}
+      />,
+    );
+    expect(screen.getByTestId('wf-progress-totals').textContent).toBe('0 of 1 finished · 1 running');
+    expect(screen.queryAllByTestId('wf-progress-segment')).toHaveLength(0);
+    expect(screen.queryByTestId('wf-progress-where')).toBeNull();
+  });
+
+  it('opens only the clicked phase when a segment is selected on a returned run', () => {
+    render(<WorkflowRun run={{ ...RUN, status: 'completed' }} />);
+    expect(screen.queryAllByTestId('wf-phase-agent')).toHaveLength(0);
+    fireEvent.click(screen.getAllByTestId('wf-progress-segment')[1]);
+    expect(screen.getAllByTestId('wf-phase-agent').map((n) => within(n).getByTestId('wf-name').textContent))
+      .toEqual(['S1-server', 'S2-client']);
+    fireEvent.click(screen.getAllByTestId('wf-progress-segment')[0]);
+    expect(screen.getAllByTestId('wf-phase-agent')).toHaveLength(2);
+    expect(screen.getAllByTestId('wf-phase-agent')[0].textContent).toContain('S1-server');
   });
 
   it('clamps a phase detail to two lines instead of ellipsising it', () => {
