@@ -35,9 +35,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/polyfills.js
+// node_modules/graceful-fs/polyfills.js
 var require_polyfills = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/polyfills.js"(exports, module) {
+  "node_modules/graceful-fs/polyfills.js"(exports, module) {
     var constants = __require("constants");
     var origCwd = process.cwd;
     var cwd = null;
@@ -323,9 +323,9 @@ var require_polyfills = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/legacy-streams.js
+// node_modules/graceful-fs/legacy-streams.js
 var require_legacy_streams = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/legacy-streams.js"(exports, module) {
+  "node_modules/graceful-fs/legacy-streams.js"(exports, module) {
     var Stream = __require("stream").Stream;
     module.exports = legacy;
     function legacy(fs9) {
@@ -419,9 +419,9 @@ var require_legacy_streams = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/clone.js
+// node_modules/graceful-fs/clone.js
 var require_clone = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/clone.js"(exports, module) {
+  "node_modules/graceful-fs/clone.js"(exports, module) {
     "use strict";
     module.exports = clone;
     var getPrototypeOf = Object.getPrototypeOf || function(obj) {
@@ -442,9 +442,9 @@ var require_clone = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/graceful-fs.js
+// node_modules/graceful-fs/graceful-fs.js
 var require_graceful_fs = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/graceful-fs/graceful-fs.js"(exports, module) {
+  "node_modules/graceful-fs/graceful-fs.js"(exports, module) {
     var fs9 = __require("fs");
     var polyfills = require_polyfills();
     var legacy = require_legacy_streams();
@@ -812,9 +812,9 @@ var require_graceful_fs = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/retry/lib/retry_operation.js
+// node_modules/retry/lib/retry_operation.js
 var require_retry_operation = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/retry/lib/retry_operation.js"(exports, module) {
+  "node_modules/retry/lib/retry_operation.js"(exports, module) {
     function RetryOperation(timeouts, options) {
       if (typeof options === "boolean") {
         options = { forever: options };
@@ -943,9 +943,9 @@ var require_retry_operation = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/retry/lib/retry.js
+// node_modules/retry/lib/retry.js
 var require_retry = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/retry/lib/retry.js"(exports) {
+  "node_modules/retry/lib/retry.js"(exports) {
     var RetryOperation = require_retry_operation();
     exports.operation = function(options) {
       var timeouts = exports.timeouts(options);
@@ -1029,16 +1029,16 @@ var require_retry = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/retry/index.js
+// node_modules/retry/index.js
 var require_retry2 = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/retry/index.js"(exports, module) {
+  "node_modules/retry/index.js"(exports, module) {
     module.exports = require_retry();
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/signal-exit/signals.js
+// node_modules/signal-exit/signals.js
 var require_signals = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/signal-exit/signals.js"(exports, module) {
+  "node_modules/signal-exit/signals.js"(exports, module) {
     module.exports = [
       "SIGABRT",
       "SIGALRM",
@@ -1073,9 +1073,9 @@ var require_signals = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/signal-exit/index.js
+// node_modules/signal-exit/index.js
 var require_signal_exit = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/signal-exit/index.js"(exports, module) {
+  "node_modules/signal-exit/index.js"(exports, module) {
     var process2 = global.process;
     var processOk = function(process3) {
       return process3 && typeof process3 === "object" && typeof process3.removeListener === "function" && typeof process3.emit === "function" && typeof process3.reallyExit === "function" && typeof process3.listeners === "function" && typeof process3.kill === "function" && typeof process3.pid === "number" && typeof process3.on === "function";
@@ -1232,9 +1232,9 @@ var require_signal_exit = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/mtime-precision.js
+// node_modules/proper-lockfile/lib/mtime-precision.js
 var require_mtime_precision = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/mtime-precision.js"(exports, module) {
+  "node_modules/proper-lockfile/lib/mtime-precision.js"(exports, module) {
     "use strict";
     var cacheSymbol = /* @__PURE__ */ Symbol();
     function probe(file, fs9, callback) {
@@ -1274,9 +1274,9 @@ var require_mtime_precision = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/lockfile.js
+// node_modules/proper-lockfile/lib/lockfile.js
 var require_lockfile = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
+  "node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
     "use strict";
     var path11 = __require("path");
     var fs9 = require_graceful_fs();
@@ -1511,9 +1511,9 @@ var require_lockfile = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/adapter.js
+// node_modules/proper-lockfile/lib/adapter.js
 var require_adapter = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/lib/adapter.js"(exports, module) {
+  "node_modules/proper-lockfile/lib/adapter.js"(exports, module) {
     "use strict";
     var fs9 = require_graceful_fs();
     function createSyncFs(fs10) {
@@ -1576,9 +1576,9 @@ var require_adapter = __commonJS({
   }
 });
 
-// ../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/index.js
+// node_modules/proper-lockfile/index.js
 var require_proper_lockfile = __commonJS({
-  "../../../../../../../Users/alanoliv/code/team8/node_modules/proper-lockfile/index.js"(exports, module) {
+  "node_modules/proper-lockfile/index.js"(exports, module) {
     "use strict";
     var lockfile2 = require_lockfile();
     var { toPromise, toSync, toSyncOptions } = require_adapter();
