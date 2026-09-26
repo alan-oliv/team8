@@ -51,36 +51,36 @@ it('paints ten sharp nodes on the handoff ground, hidden from assistive tech', (
   expect(nodes[0].style.backgroundColor).toBe('rgb(147, 151, 171)');
 });
 
-it('drives every node from the rAF clock and calls onDone once at 4.4s', () => {
+it('drives every node from the rAF clock and calls onDone once at 2.2s', () => {
   const onDone = vi.fn();
   render(<Splash reduced={false} onDone={onDone} />);
   const nodes = screen.getAllByTestId('splash-node');
   expect(nodes[0].style.opacity).toBe('0');
 
-  tick(800);
+  tick(400);
   expect(nodes[0].style.opacity).toBe('1');
   expect(nodes[1].style.opacity).toBe('0');
   expect(onDone).not.toHaveBeenCalled();
 
-  tick(2450);
+  tick(1225);
   // jsdom may re-serialise the colour, so only the blur is pinned.
   expect(nodes[1].style.boxShadow).toContain('0 0 17px');
 
-  tick(4400);
+  tick(2200);
   expect(nodes[0].style.opacity).toBe('0');
   expect(onDone).toHaveBeenCalledTimes(1);
   // The loop stopped: nothing was scheduled after the final frame.
   expect(pending).toBeNull();
 });
 
-it('ends at 1.5s with the mark already assembled when reduced', () => {
+it('ends at 0.75s with the mark already assembled when reduced', () => {
   const onDone = vi.fn();
   render(<Splash reduced onDone={onDone} />);
   const nodes = screen.getAllByTestId('splash-node');
-  tick(750);
+  tick(375);
   expect(nodes[0].style.opacity).toBe('1');
   expect(nodes[0].style.transform).toBe('translate(0px, 0px) scale(1)');
-  tick(1500);
+  tick(750);
   expect(onDone).toHaveBeenCalledTimes(1);
 });
 

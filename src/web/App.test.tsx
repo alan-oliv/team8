@@ -1323,8 +1323,8 @@ it('covers the shell with the splash until it finishes, then unmounts it', () =>
     expect(screen.getByTestId('splash')).toBeTruthy();
     expect(screen.getAllByTestId('splash-node')).toHaveLength(10);
 
-    now.mockReturnValue(4400);
-    act(() => pending?.(4400));
+    now.mockReturnValue(2200);
+    act(() => pending?.(2200));
     expect(screen.queryByTestId('splash')).toBeNull();
     expect(screen.getByRole('main')).toBeTruthy();
   } finally {
@@ -1342,9 +1342,9 @@ it('plays the reduced splash when the console motion setting is off', () => {
   const now = vi.spyOn(performance, 'now').mockReturnValue(0);
   try {
     render(<App />);
-    // Reduced motion ends at 1.5s; the full timeline would still be mid-hold.
-    now.mockReturnValue(1500);
-    act(() => pending?.(1500));
+    // Reduced motion ends at 0.75s; the full timeline would still be mid-hold.
+    now.mockReturnValue(750);
+    act(() => pending?.(750));
     expect(screen.queryByTestId('splash')).toBeNull();
   } finally {
     now.mockRestore();
@@ -1360,14 +1360,14 @@ it('keeps the splash running across the first snapshot instead of restarting it'
   const now = vi.spyOn(performance, 'now').mockReturnValue(0);
   try {
     render(<App />);
-    now.mockReturnValue(2000);
-    act(() => pending?.(2000));
-    // Node 0 landed at 0.8s; the first snapshot swaps the shell underneath.
+    now.mockReturnValue(1000);
+    act(() => pending?.(1000));
+    // Node 0 landed at 0.4s; the first snapshot swaps the shell underneath.
     expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
     act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
     expect(screen.getAllByTestId('splash-node')[0].style.opacity).toBe('1');
-    now.mockReturnValue(4400);
-    act(() => pending?.(4400));
+    now.mockReturnValue(2200);
+    act(() => pending?.(2200));
     expect(screen.queryByTestId('splash')).toBeNull();
   } finally {
     now.mockRestore();
