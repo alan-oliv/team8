@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import type {
   WorkflowAgent,
   WorkflowAgentState,
@@ -13,6 +13,7 @@ import {
   liveCounts,
   phaseList,
   phaseTally,
+  runProgress,
   workflowGrid,
   WORK_ITEM_WIDTH,
 } from './workflow-grid';
@@ -348,6 +349,156 @@ function AgentRow({ agent, trail }: { agent: WorkflowAgent; trail: boolean }) {
   );
 }
 
+const DASHED: CSSProperties = { border: '1px dashed var(--color-neutral-800)' };
+
+// Three colours, per the design. `wait` has none there — a queued agent only
+// survives into a killed run's snapshot — so it borrows the not-reached stub.
+const BAND_CELL: Record<WorkflowAgentState, CSSProperties> = {
+  done: { background: 'var(--color-accent-600)' },
+  cache: { background: 'var(--color-accent-600)' },
+  run: { background: 'var(--color-accent-300)' },
+  fail: { background: 'var(--fail)' },
+  null: { background: 'var(--fail)' },
+  block: { background: 'var(--fail)' },
+  wait: DASHED,
+};
+
+const BAND_CELL_BOX: CSSProperties = { flex: 1, height: '7px', borderRadius: '2px', boxSizing: 'border-box' };
+
+function ProgressBand({
+  run,
+  selected,
+  onSelect,
+}: {
+  run: Run;
+  selected: number | undefined;
+  onSelect: (phaseIndex: number) => void;
+}) {
+  const [hover, setHover] = useState<number>();
+  const { where, finished, dispatched, running, segments } = runProgress(run);
+  return (
+    <div
+      data-testid="wf-progress"
+      style={{
+        flex: 'none',
+        padding: '10px 16px 12px',
+        background: 'var(--color-bg)',
+        borderBottom: '1px solid var(--color-neutral-900)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '9px',
+      }}
+    >
+      <div style={{ display: 'flex', gap: '12px', alignItems: 'baseline' }}>
+        <span style={{ flex: 'none', color: 'var(--color-neutral-700)', fontSize: '9.5px', letterSpacing: '.12em' }}>
+          PROGRESS
+        </span>
+        {where !== undefined && (
+          <span data-testid="wf-progress-where" style={{ flex: 'none', color: 'var(--color-neutral-400)', fontSize: '11px' }}>
+            {where}
+          </span>
+        )}
+        <span style={{ flex: 1, minWidth: '8px' }} />
+        <span
+          data-testid="wf-progress-totals"
+          style={{ color: 'var(--color-neutral-500)', fontSize: '10.5px', whiteSpace: 'nowrap' }}
+        >
+          {`${finished} of ${dispatched} finished · ${running} running`}
+        </span>
+        {!run.live && run.durationMs !== undefined && (
+          <span style={{ color: 'var(--color-text)', fontSize: '11px', whiteSpace: 'nowrap' }}>
+            {formatElapsed(run.durationMs)}
+          </span>
+        )}
+      </div>
+
+      {segments.length > 0 && (
+        <div style={{ display: 'flex', gap: '14px' }}>
+          {segments.map((s, i) => {
+            const reached = s.agents.length > 0;
+            const sel = selected === s.phase.index;
+            const glyph = !reached ? String(i + 1) : s.running ? GLYPH.run : s.finished === s.agents.length ? GLYPH.done : String(i + 1);
+            return (
+              <div
+                key={s.phase.index}
+                data-testid="wf-progress-segment"
+                onClick={() => onSelect(s.phase.index)}
+                onMouseEnter={() => setHover(s.phase.index)}
+                onMouseLeave={() => setHover(undefined)}
+                style={{
+                  flex: `${Math.max(s.agents.length, 2)} 1 0`,
+                  minWidth: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  padding: '4px 6px',
+                  margin: '-4px -6px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: sel
+                    ? 'var(--color-accent-900)'
+                    : hover === s.phase.index
+                      ? 'var(--color-neutral-900)'
+                      : 'transparent',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '2px' }}>
+                  {reached ? (
+                    s.agents.map((a) => (
+                      <span key={a.agentId} data-testid="wf-progress-cell" style={{ ...BAND_CELL_BOX, ...BAND_CELL[a.state] }} />
+                    ))
+                  ) : (
+                    <span data-testid="wf-progress-stub" style={{ ...BAND_CELL_BOX, ...DASHED }} />
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '7px', alignItems: 'baseline', minWidth: 0 }}>
+                  <span
+                    style={{
+                      flex: 'none',
+                      fontSize: '10.5px',
+                      color:
+                        glyph === GLYPH.done
+                          ? 'var(--color-accent-500)'
+                          : glyph === GLYPH.run
+                            ? 'var(--color-accent-300)'
+                            : 'var(--color-neutral-700)',
+                    }}
+                  >
+                    {glyph}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: sel
+                        ? 'var(--color-accent-300)'
+                        : reached
+                          ? 'var(--color-text)'
+                          : 'var(--color-neutral-500)',
+                    }}
+                  >
+                    {s.phase.title}
+                  </span>
+                  {s.bad && <span style={{ flex: 'none', color: 'var(--fail)', fontSize: '10.5px' }}>!</span>}
+                  <span style={{ flex: 1 }} />
+                  <span
+                    data-testid="wf-progress-count"
+                    style={{ flex: 'none', color: 'var(--color-neutral-500)', fontSize: '10.5px' }}
+                  >
+                    {reached ? `${s.finished}/${s.agents.length}` : '—'}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** 9-decisions.md row 12: the five states the AGENTS panel counts, always shown even at 0 — the design draws `cached 0`/`failed 0` rather than omitting them, unlike `phaseTally`'s per-phase omission of a state nobody used. */
 const AGENT_TALLY: Array<[WorkflowAgentState, string]> = [
   ['done', 'returned'],
@@ -368,6 +519,17 @@ export function WorkflowRun({ run, onOpenOutput }: { run: Run; onOpenOutput?: ()
   const showGrid = offered && layout === 'grid';
   const live = liveCounts(run);
 
+  const [selectedPhase, setSelectedPhase] = useState<number>();
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectPhase = (index: number) => {
+    setSelectedPhase(index);
+    setLayout('phases');
+    setExpandedPhases(new Set([index]));
+    requestAnimationFrame(() =>
+      listRef.current?.querySelector(`[data-phase="${index}"]`)?.scrollIntoView?.({ block: 'start' }),
+    );
+  };
+
   const togglePhase = (index: number) =>
     setExpandedPhases((prev) => {
       const next = new Set(prev);
@@ -387,390 +549,393 @@ export function WorkflowRun({ run, onOpenOutput }: { run: Run; onOpenOutput?: ()
   const wordCount = run.result !== undefined ? run.result.trim().split(/\s+/).filter(Boolean).length : 0;
 
   return (
-    <div data-testid="workflow-run" style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        {run.live ? (
-          <>
-            <div
-              data-testid="wf-live-note"
-              style={{
-                flex: 'none',
-                padding: '10px 16px',
-                borderBottom: '1px solid var(--color-neutral-900)',
-                color: 'var(--color-neutral-600)',
-                fontSize: '11px',
-                lineHeight: 1.5,
-              }}
-            >
-              this run is still going, so there is no grid to draw — the phases
-              and labels reach disk only in the snapshot, which is written once,
-              at termination. Until the run ends the journal knows which agents
-              started and which came back, and nothing else. Drawn below instead:
-              every agent that has started, in dispatch order.
-            </div>
-            <WorkflowAgents agents={run.agents} />
-          </>
-        ) : (
-          <>
-            {returnedAt !== undefined && run.result !== undefined && (
+    <div data-testid="workflow-run" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <ProgressBand run={run} selected={selectedPhase} onSelect={selectPhase} />
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {run.live ? (
+            <>
               <div
-                data-testid="wf-returned"
+                data-testid="wf-live-note"
                 style={{
                   flex: 'none',
-                  margin: '10px 16px 0',
-                  padding: '10px 12px',
-                  border: '1px solid var(--color-neutral-900)',
-                  borderRadius: '5px',
+                  padding: '10px 16px',
+                  borderBottom: '1px solid var(--color-neutral-900)',
+                  color: 'var(--color-neutral-600)',
+                  fontSize: '11px',
+                  lineHeight: 1.5,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
-                  <span style={{ color: 'var(--color-accent-400)', fontSize: '11.5px' }}>
-                    {`${GLYPH.done} Returned`}
-                    <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', marginLeft: '8px' }}>
-                      {`returned ${clockLabel(returnedAt)} · ${formatElapsed(run.durationMs ?? 0)}`}
+                this run is still going, so there is no grid to draw — the phases
+                and labels reach disk only in the snapshot, which is written once,
+                at termination. Until the run ends the journal knows which agents
+                started and which came back, and nothing else. Drawn below instead:
+                every agent that has started, in dispatch order.
+              </div>
+              <WorkflowAgents agents={run.agents} />
+            </>
+          ) : (
+            <>
+              {returnedAt !== undefined && run.result !== undefined && (
+                <div
+                  data-testid="wf-returned"
+                  style={{
+                    flex: 'none',
+                    margin: '10px 16px 0',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-neutral-900)',
+                    borderRadius: '5px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '10px' }}>
+                    <span style={{ color: 'var(--color-accent-400)', fontSize: '11.5px' }}>
+                      {`${GLYPH.done} Returned`}
+                      <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', marginLeft: '8px' }}>
+                        {`returned ${clockLabel(returnedAt)} · ${formatElapsed(run.durationMs ?? 0)}`}
+                      </span>
                     </span>
-                  </span>
-                  <span style={{ display: 'flex', gap: '8px', flex: 'none' }}>
-                    <button
-                      type="button"
-                      data-testid="wf-copy-return"
-                      onClick={() => void navigator.clipboard?.writeText(run.result ?? '')}
-                      style={{ ...TAB, color: 'var(--color-neutral-500)', border: '1px solid var(--color-neutral-800)', borderRadius: '4px' }}
-                    >
-                      copy return
-                    </button>
-                    {onOpenOutput && (
+                    <span style={{ display: 'flex', gap: '8px', flex: 'none' }}>
                       <button
                         type="button"
-                        data-testid="wf-open-output"
-                        onClick={onOpenOutput}
+                        data-testid="wf-copy-return"
+                        onClick={() => void navigator.clipboard?.writeText(run.result ?? '')}
                         style={{ ...TAB, color: 'var(--color-neutral-500)', border: '1px solid var(--color-neutral-800)', borderRadius: '4px' }}
                       >
-                        open output
+                        copy return
                       </button>
-                    )}
-                  </span>
-                </div>
-                {/* 9-decisions.md row 3: the claims/sources/contradictions summary
-                    line the artboard draws above this prose is left out on
-                    purpose — nothing parses that structure out of `result`. */}
-                {/* Clamped, not dumped whole: this box sits above the phase list,
-                    and a multi-thousand-word return (a script that hands back a
-                    structured object stringifies to exactly that) would push the
-                    run itself off-screen. The footer line below says where the
-                    unclamped text lives. */}
-                <div
-                  style={{
-                    color: 'var(--color-neutral-300)',
-                    fontSize: '11px',
-                    lineHeight: 1.5,
-                    marginTop: '8px',
-                    display: '-webkit-box',
-                    WebkitBoxOrient: 'vertical',
-                    WebkitLineClamp: 6,
-                    overflow: 'hidden',
-                  }}
-                >
-                  {run.result}
-                </div>
-                <div style={{ color: 'var(--color-neutral-700)', fontSize: '10px', marginTop: '8px' }}>
-                  {`full return — ${wordCount} word${wordCount === 1 ? '' : 's'} — in the output tab`}
-                </div>
-              </div>
-            )}
-
-            {offered ? (
-              <div data-testid="wf-layout" style={{ flex: 'none', display: 'flex', padding: '8px 12px 0' }}>
-                {(['phases', 'grid'] as const).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    data-testid={`wf-layout-${id}`}
-                    onClick={() => setLayout(id)}
+                      {onOpenOutput && (
+                        <button
+                          type="button"
+                          data-testid="wf-open-output"
+                          onClick={onOpenOutput}
+                          style={{ ...TAB, color: 'var(--color-neutral-500)', border: '1px solid var(--color-neutral-800)', borderRadius: '4px' }}
+                        >
+                          open output
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                  {/* 9-decisions.md row 3: the claims/sources/contradictions summary
+                      line the artboard draws above this prose is left out on
+                      purpose — nothing parses that structure out of `result`. */}
+                  {/* Clamped, not dumped whole: this box sits above the phase list,
+                      and a multi-thousand-word return (a script that hands back a
+                      structured object stringifies to exactly that) would push the
+                      run itself off-screen. The footer line below says where the
+                      unclamped text lives. */}
+                  <div
                     style={{
-                      ...TAB,
-                      color: layout === id ? 'var(--color-accent-400)' : 'var(--color-neutral-600)',
+                      color: 'var(--color-neutral-300)',
+                      fontSize: '11px',
+                      lineHeight: 1.5,
+                      marginTop: '8px',
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 6,
+                      overflow: 'hidden',
                     }}
                   >
-                    {id === 'phases' ? 'BY PHASE' : 'ITEM GRID'}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              // A control that silently is not there reads as one the console
-              // forgot. The grid is derived from a naming convention, so when
-              // the convention does not hold, say that rather than nothing.
-              <div
-                data-testid="wf-no-grid"
-                style={{ flex: 'none', padding: '9px 16px 0', color: 'var(--color-neutral-700)', fontSize: '10px' }}
-              >
-                no item grid for this run — its labels do not resolve to one set
-                of work items shared across the phases
-              </div>
-            )}
+                    {run.result}
+                  </div>
+                  <div style={{ color: 'var(--color-neutral-700)', fontSize: '10px', marginTop: '8px' }}>
+                    {`full return — ${wordCount} word${wordCount === 1 ? '' : 's'} — in the output tab`}
+                  </div>
+                </div>
+              )}
 
-            {showGrid ? (
-          <>
-            <div style={HEAD}>
-              <span
-                style={{
-                  width: `${WORK_ITEM_WIDTH}px`,
-                  flex: 'none',
-                  color: 'var(--color-neutral-600)',
-                  fontSize: '10px',
-                  letterSpacing: '.12em',
-                }}
-              >
-                WORK ITEM
-              </span>
-              {columns.map((phase, i) => (
-                <PhaseHead
-                  key={phase.index}
-                  run={run}
-                  phase={phase}
-                  style={{ flex: 1, minWidth: `${PHASE_MIN}px`, ...(i > 0 ? RULE : null) }}
-                />
-              ))}
-            </div>
-
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              {rows.map((row) => (
-                <div
-                  key={row.key}
-                  data-testid="wf-row"
-                  style={{
-                    display: 'flex',
-                    gap: '10px',
-                    padding: '7px 16px',
-                    borderBottom: '1px solid var(--color-neutral-900)',
-                    alignItems: 'stretch',
-                  }}
-                >
-                  <span data-testid="wf-item" style={{ ...IDENTITY, alignSelf: 'center' }}>
-                    {row.key}
-                  </span>
-                  {row.cells.map((agent, i) => (
-                    <Cell key={columns[i].index} agent={agent} rule={i > 0} />
+              {offered ? (
+                <div data-testid="wf-layout" style={{ flex: 'none', display: 'flex', padding: '8px 12px 0' }}>
+                  {(['phases', 'grid'] as const).map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      data-testid={`wf-layout-${id}`}
+                      onClick={() => setLayout(id)}
+                      style={{
+                        ...TAB,
+                        color: layout === id ? 'var(--color-accent-400)' : 'var(--color-neutral-600)',
+                      }}
+                    >
+                      {id === 'phases' ? 'BY PHASE' : 'ITEM GRID'}
+                    </button>
                   ))}
                 </div>
-              ))}
-            </div>
+              ) : (
+                // A control that silently is not there reads as one the console
+                // forgot. The grid is derived from a naming convention, so when
+                // the convention does not hold, say that rather than nothing.
+                <div
+                  data-testid="wf-no-grid"
+                  style={{ flex: 'none', padding: '9px 16px 0', color: 'var(--color-neutral-700)', fontSize: '10px' }}
+                >
+                  no item grid for this run — its labels do not resolve to one set
+                  of work items shared across the phases
+                </div>
+              )}
 
-            <Legend />
-          </>
-        ) : (
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-            {/* 9-decisions.md row 16: a shared item's row grows a trail glyph
-                once its key has already been seen under an earlier phase. */}
-            {(() => {
-              const seenKeys = new Set<string>();
-              // 9-decisions.md row 4: 9a/9b keep a fully-`returned` phase
-              // expanded while the REST of the run is still going — Fetch's
-              // "25 returned 1 null" still lists every URL. It is the run
-              // having returned, not a phase finishing early, that collapses
-              // anything, matching 9c.
-              const collapsible = !run.live && run.status === 'completed';
-              return groups.map(({ phase, clusters }) => {
-                const isOpen = !collapsible || expandedPhases.has(phase.index);
-                const keysThisPhase = new Set<string>();
-                const body = isOpen && (
-                  <>
-                    {clusters.map((cluster) => {
-                      // 9-decisions.md row 14: a large fan-out shows a handful
-                      // of rows and folds the rest, but only when every folded
-                      // agent is terminal — a truncation that hides a running
-                      // agent would misreport the phase as further along than
-                      // it is.
-                      const CLUSTER_PREVIEW = 5;
-                      const hidden = cluster.agents.slice(CLUSTER_PREVIEW);
-                      const shown = hidden.length > 0 ? cluster.agents.slice(0, CLUSTER_PREVIEW) : cluster.agents;
-                      const foldedRow = (agent: WorkflowAgent) => {
-                        const key = itemKeyOf(agent.label, agent.agentId);
-                        const trail = seenKeys.has(key);
-                        keysThisPhase.add(key);
-                        return <AgentRow key={agent.agentId} agent={agent} trail={trail} />;
-                      };
-                      return (
-                        <div key={cluster.agents[0].agentId}>
-                          {/* Only ever said of a cluster of two or more. A singleton
-                              is not evidence of sequential dispatch, so it says
-                              nothing at all rather than the opposite. */}
-                          {cluster.together && (
-                            <div
-                              data-testid="wf-dispatch"
-                              style={{ padding: '5px 16px 1px', color: 'var(--color-neutral-600)', fontSize: '10px' }}
-                            >
-                              {/* 9-decisions.md row 13: the cluster's shared queuedAt, formatted. */}
-                              {`${cluster.agents.length} dispatched together${
-                                cluster.agents[0].queuedAt !== undefined
-                                  ? ` · ${clockLabel(cluster.agents[0].queuedAt)}`
-                                  : ''
-                              }`}
-                            </div>
-                          )}
-                          {shown.map(foldedRow)}
-                          {hidden.length > 0 &&
-                            (hidden.every((a) => a.state === 'done') ? (
-                              <div
-                                data-testid="wf-more"
-                                style={{ padding: '6px 16px', color: 'var(--color-neutral-600)', fontSize: '10px' }}
-                              >
-                                {`+ ${hidden.length} more, all returned`}
-                              </div>
-                            ) : (
-                              hidden.map(foldedRow)
-                            ))}
-                        </div>
-                      );
-                    })}
-                  </>
-                );
-                for (const key of keysThisPhase) seenKeys.add(key);
-                return (
-                  <div key={phase.index} data-testid="wf-phase-group">
-                    <PhaseHead
-                      run={run}
-                      phase={phase}
-                      onToggle={collapsible ? () => togglePhase(phase.index) : undefined}
-                      style={{
-                        padding: '10px 16px 8px',
-                        borderTop: '1px solid var(--color-neutral-900)',
-                      }}
-                    />
-                    {body}
-                  </div>
-                );
-              });
-            })()}
-
-            {groups.length === 0 && unphased.length === 0 && (
-              <div style={{ padding: '14px 16px', color: 'var(--color-neutral-700)', fontSize: '11px' }}>
-                no agents — this run spawned none
+              {showGrid ? (
+            <>
+              <div style={HEAD}>
+                <span
+                  style={{
+                    width: `${WORK_ITEM_WIDTH}px`,
+                    flex: 'none',
+                    color: 'var(--color-neutral-600)',
+                    fontSize: '10px',
+                    letterSpacing: '.12em',
+                  }}
+                >
+                  WORK ITEM
+                </span>
+                {columns.map((phase, i) => (
+                  <PhaseHead
+                    key={phase.index}
+                    run={run}
+                    phase={phase}
+                    style={{ flex: 1, minWidth: `${PHASE_MIN}px`, ...(i > 0 ? RULE : null) }}
+                  />
+                ))}
               </div>
-            )}
-          </div>
-            )}
-          </>
-        )}
 
-        {/* Live, EVERY agent is unphased — phases arrive with the snapshot — so
-            the strip would fire on all of them and blame a script nobody read.
-            It means "the script called agent() without phase()", which is only
-            knowable once the phases have actually landed. */}
-        {!run.live && unphased.length > 0 && (
-          <div
-            data-testid="wf-unphased"
-            style={{
-              flex: 'none',
-              borderTop: '1px solid var(--color-neutral-900)',
-              padding: '9px 16px',
-              color: 'var(--color-neutral-600)',
-              fontSize: '10px',
-            }}
-          >
-            {`${unphased.length} agent${unphased.length === 1 ? '' : 's'} outside every phase — the script called agent() without phase()`}
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          width: '268px',
-          flex: 'none',
-          borderLeft: '1px solid var(--color-neutral-900)',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-        }}
-      >
-        <div style={SIDE_PANEL}>
-          <div style={SIDE_LABEL}>RUN TOTALS</div>
-          <div data-testid="wf-totals" style={SIDE_BODY}>
-            {run.live ? (
-              <>
-                <SideRow label="started" value={`${live.started}`} />
-                <SideRow
-                  label="returned"
-                  value={`${live.returned}`}
-                  note="tokens, tool calls and duration land with the snapshot, at the end"
-                />
-              </>
-            ) : (
-              <>
-                <SideRow label="final context" value={formatTokens(run.totalTokens ?? 0)} />
-                <SideRow label="tool calls" value={`${run.totalToolCalls ?? 0}`} />
-                <SideRow label="agents" value={`${run.agentCount ?? run.agents.length}`} />
-                {/* Budget is deliberately absent: it exists nowhere on disk, and
-                    totalTokens counts this run's agents while budget.spent() is a
-                    session-level counter — showing one as the other under-reports. */}
-                <SideRow
-                  label="budget"
-                  value="—"
-                  note="no budget on disk · this is the run's own spend, not the session's"
-                />
-              </>
-            )}
-          </div>
-        </div>
-
-        <div style={SIDE_PANEL}>
-          <div style={SIDE_LABEL}>AGENTS</div>
-          <div data-testid="wf-agents" style={SIDE_BODY}>
-            {/* 9-decisions.md row 12: the count and the bar are both derivable
-                on a live run too — `run.agents` is populated from the journal
-                as it goes, this doesn't wait for the snapshot. */}
-            <div style={{ fontFamily: 'inherit', letterSpacing: '.05em', color: 'var(--color-neutral-500)' }}>
-              {meterCells((run.live ? live.started : (run.agentCount ?? run.agents.length)) / 1000)}
-            </div>
-            <div style={{ marginTop: '6px', color: 'var(--color-neutral-600)', fontSize: '10px' }}>
-              {AGENT_TALLY.map(
-                ([state, word]) => `${word} ${run.agents.filter((a) => a.state === state).length}`,
-              ).join(' · ')}
-            </div>
-          </div>
-        </div>
-
-        <div style={SIDE_PANEL}>
-          <div style={SIDE_LABEL}>LIMITS</div>
-          <div data-testid="wf-limits" style={SIDE_BODY}>
-            {/* The cap is resolved from the HOST's cpu count at launch and never
-                written to the snapshot. This browser's own core count is a
-                different machine's number, so the figure is named as missing
-                rather than substituted — the formula is the only value there is. */}
-            <SideRow
-              label="concurrency"
-              value="—"
-              note="min(16, CPUs − 2) agents at once · the slot count itself is not recorded — only the formula is known"
-            />
-            <SideRow
-              label="lifetime cap"
-              value={`${run.live ? live.started : (run.agentCount ?? run.agents.length)} of 1000 agents`}
-              note="the cap is for the whole run"
-            />
-          </div>
-        </div>
-
-        <div style={{ ...SIDE_PANEL, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div style={SIDE_LABEL}>NARRATION</div>
-          <div data-testid="wf-log" style={{ ...SIDE_BODY, flex: 1, minHeight: 0, overflow: 'auto' }}>
-            {run.logs.length > 0
-              ? run.logs.map((line, i) => (
-                  <div key={`${i}-${line}`} style={{ marginBottom: '12px' }}>
-                    {line}
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                {rows.map((row) => (
+                  <div
+                    key={row.key}
+                    data-testid="wf-row"
+                    style={{
+                      display: 'flex',
+                      gap: '10px',
+                      padding: '7px 16px',
+                      borderBottom: '1px solid var(--color-neutral-900)',
+                      alignItems: 'stretch',
+                    }}
+                  >
+                    <span data-testid="wf-item" style={{ ...IDENTITY, alignSelf: 'center' }}>
+                      {row.key}
+                    </span>
+                    {row.cells.map((agent, i) => (
+                      <Cell key={columns[i].index} agent={agent} rule={i > 0} />
+                    ))}
                   </div>
-                ))
-              : run.live
-                ? // log() output reaches disk only in the snapshot, so an empty
-                  // list mid-run is silence about the script, not silence FROM it.
-                  'the narration arrives with the snapshot — nothing to read yet'
-                : 'the script called log() nowhere'}
-          </div>
+                ))}
+              </div>
+
+              <Legend />
+            </>
+          ) : (
+            <div ref={listRef} style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+              {/* 9-decisions.md row 16: a shared item's row grows a trail glyph
+                  once its key has already been seen under an earlier phase. */}
+              {(() => {
+                const seenKeys = new Set<string>();
+                // 9-decisions.md row 4: 9a/9b keep a fully-`returned` phase
+                // expanded while the REST of the run is still going — Fetch's
+                // "25 returned 1 null" still lists every URL. It is the run
+                // having returned, not a phase finishing early, that collapses
+                // anything, matching 9c.
+                const collapsible = !run.live && run.status === 'completed';
+                return groups.map(({ phase, clusters }) => {
+                  const isOpen = !collapsible || expandedPhases.has(phase.index);
+                  const keysThisPhase = new Set<string>();
+                  const body = isOpen && (
+                    <>
+                      {clusters.map((cluster) => {
+                        // 9-decisions.md row 14: a large fan-out shows a handful
+                        // of rows and folds the rest, but only when every folded
+                        // agent is terminal — a truncation that hides a running
+                        // agent would misreport the phase as further along than
+                        // it is.
+                        const CLUSTER_PREVIEW = 5;
+                        const hidden = cluster.agents.slice(CLUSTER_PREVIEW);
+                        const shown = hidden.length > 0 ? cluster.agents.slice(0, CLUSTER_PREVIEW) : cluster.agents;
+                        const foldedRow = (agent: WorkflowAgent) => {
+                          const key = itemKeyOf(agent.label, agent.agentId);
+                          const trail = seenKeys.has(key);
+                          keysThisPhase.add(key);
+                          return <AgentRow key={agent.agentId} agent={agent} trail={trail} />;
+                        };
+                        return (
+                          <div key={cluster.agents[0].agentId}>
+                            {/* Only ever said of a cluster of two or more. A singleton
+                                is not evidence of sequential dispatch, so it says
+                                nothing at all rather than the opposite. */}
+                            {cluster.together && (
+                              <div
+                                data-testid="wf-dispatch"
+                                style={{ padding: '5px 16px 1px', color: 'var(--color-neutral-600)', fontSize: '10px' }}
+                              >
+                                {/* 9-decisions.md row 13: the cluster's shared queuedAt, formatted. */}
+                                {`${cluster.agents.length} dispatched together${
+                                  cluster.agents[0].queuedAt !== undefined
+                                    ? ` · ${clockLabel(cluster.agents[0].queuedAt)}`
+                                    : ''
+                                }`}
+                              </div>
+                            )}
+                            {shown.map(foldedRow)}
+                            {hidden.length > 0 &&
+                              (hidden.every((a) => a.state === 'done') ? (
+                                <div
+                                  data-testid="wf-more"
+                                  style={{ padding: '6px 16px', color: 'var(--color-neutral-600)', fontSize: '10px' }}
+                                >
+                                  {`+ ${hidden.length} more, all returned`}
+                                </div>
+                              ) : (
+                                hidden.map(foldedRow)
+                              ))}
+                          </div>
+                        );
+                      })}
+                    </>
+                  );
+                  for (const key of keysThisPhase) seenKeys.add(key);
+                  return (
+                    <div key={phase.index} data-testid="wf-phase-group" data-phase={phase.index}>
+                      <PhaseHead
+                        run={run}
+                        phase={phase}
+                        onToggle={collapsible ? () => togglePhase(phase.index) : undefined}
+                        style={{
+                          padding: '10px 16px 8px',
+                          borderTop: '1px solid var(--color-neutral-900)',
+                        }}
+                      />
+                      {body}
+                    </div>
+                  );
+                });
+              })()}
+
+              {groups.length === 0 && unphased.length === 0 && (
+                <div style={{ padding: '14px 16px', color: 'var(--color-neutral-700)', fontSize: '11px' }}>
+                  no agents — this run spawned none
+                </div>
+              )}
+            </div>
+              )}
+            </>
+          )}
+
+          {/* Live, EVERY agent is unphased — phases arrive with the snapshot — so
+              the strip would fire on all of them and blame a script nobody read.
+              It means "the script called agent() without phase()", which is only
+              knowable once the phases have actually landed. */}
+          {!run.live && unphased.length > 0 && (
+            <div
+              data-testid="wf-unphased"
+              style={{
+                flex: 'none',
+                borderTop: '1px solid var(--color-neutral-900)',
+                padding: '9px 16px',
+                color: 'var(--color-neutral-600)',
+                fontSize: '10px',
+              }}
+            >
+              {`${unphased.length} agent${unphased.length === 1 ? '' : 's'} outside every phase — the script called agent() without phase()`}
+            </div>
+          )}
         </div>
 
-        <div style={{ ...SIDE_PANEL, borderBottom: 'none', borderTop: '1px solid var(--color-neutral-900)' }}>
-          <div data-testid="wf-not-in-loop" style={{ color: 'var(--color-neutral-600)', fontSize: '10px', lineHeight: 1.5 }}>
-            you are not in the loop — a workflow opts in at launch and reports at
-            the end. Nothing here steers it.
+        <div
+          style={{
+            width: '268px',
+            flex: 'none',
+            borderLeft: '1px solid var(--color-neutral-900)',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+          }}
+        >
+          <div style={SIDE_PANEL}>
+            <div style={SIDE_LABEL}>RUN TOTALS</div>
+            <div data-testid="wf-totals" style={SIDE_BODY}>
+              {run.live ? (
+                <>
+                  <SideRow label="started" value={`${live.started}`} />
+                  <SideRow
+                    label="returned"
+                    value={`${live.returned}`}
+                    note="tokens, tool calls and duration land with the snapshot, at the end"
+                  />
+                </>
+              ) : (
+                <>
+                  <SideRow label="final context" value={formatTokens(run.totalTokens ?? 0)} />
+                  <SideRow label="tool calls" value={`${run.totalToolCalls ?? 0}`} />
+                  <SideRow label="agents" value={`${run.agentCount ?? run.agents.length}`} />
+                  {/* Budget is deliberately absent: it exists nowhere on disk, and
+                      totalTokens counts this run's agents while budget.spent() is a
+                      session-level counter — showing one as the other under-reports. */}
+                  <SideRow
+                    label="budget"
+                    value="—"
+                    note="no budget on disk · this is the run's own spend, not the session's"
+                  />
+                </>
+              )}
+            </div>
+          </div>
+
+          <div style={SIDE_PANEL}>
+            <div style={SIDE_LABEL}>AGENTS</div>
+            <div data-testid="wf-agents" style={SIDE_BODY}>
+              {/* 9-decisions.md row 12: the count and the bar are both derivable
+                  on a live run too — `run.agents` is populated from the journal
+                  as it goes, this doesn't wait for the snapshot. */}
+              <div style={{ fontFamily: 'inherit', letterSpacing: '.05em', color: 'var(--color-neutral-500)' }}>
+                {meterCells((run.live ? live.started : (run.agentCount ?? run.agents.length)) / 1000)}
+              </div>
+              <div style={{ marginTop: '6px', color: 'var(--color-neutral-600)', fontSize: '10px' }}>
+                {AGENT_TALLY.map(
+                  ([state, word]) => `${word} ${run.agents.filter((a) => a.state === state).length}`,
+                ).join(' · ')}
+              </div>
+            </div>
+          </div>
+
+          <div style={SIDE_PANEL}>
+            <div style={SIDE_LABEL}>LIMITS</div>
+            <div data-testid="wf-limits" style={SIDE_BODY}>
+              {/* The cap is resolved from the HOST's cpu count at launch and never
+                  written to the snapshot. This browser's own core count is a
+                  different machine's number, so the figure is named as missing
+                  rather than substituted — the formula is the only value there is. */}
+              <SideRow
+                label="concurrency"
+                value="—"
+                note="min(16, CPUs − 2) agents at once · the slot count itself is not recorded — only the formula is known"
+              />
+              <SideRow
+                label="lifetime cap"
+                value={`${run.live ? live.started : (run.agentCount ?? run.agents.length)} of 1000 agents`}
+                note="the cap is for the whole run"
+              />
+            </div>
+          </div>
+
+          <div style={{ ...SIDE_PANEL, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={SIDE_LABEL}>NARRATION</div>
+            <div data-testid="wf-log" style={{ ...SIDE_BODY, flex: 1, minHeight: 0, overflow: 'auto' }}>
+              {run.logs.length > 0
+                ? run.logs.map((line, i) => (
+                    <div key={`${i}-${line}`} style={{ marginBottom: '12px' }}>
+                      {line}
+                    </div>
+                  ))
+                : run.live
+                  ? // log() output reaches disk only in the snapshot, so an empty
+                    // list mid-run is silence about the script, not silence FROM it.
+                    'the narration arrives with the snapshot — nothing to read yet'
+                  : 'the script called log() nowhere'}
+            </div>
+          </div>
+
+          <div style={{ ...SIDE_PANEL, borderBottom: 'none', borderTop: '1px solid var(--color-neutral-900)' }}>
+            <div data-testid="wf-not-in-loop" style={{ color: 'var(--color-neutral-600)', fontSize: '10px', lineHeight: 1.5 }}>
+              you are not in the loop — a workflow opts in at launch and reports at
+              the end. Nothing here steers it.
+            </div>
           </div>
         </div>
       </div>

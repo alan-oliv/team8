@@ -204,19 +204,24 @@ function clustersOf(agents: readonly WorkflowAgent[]): DispatchCluster[] {
 }
 
 /**
- * The reader's word for each state. `null` is spelled out because "returned
- * null" is a RESULT — the operator skipped it and the script saw null — and the
- * design is explicit that it is a state and not an error row. A count of
- * `failed` is an error row, so it is read out before it.
+ * No longer running, whatever it returned — failed and null included. The one
+ * definition the progress band, its segment counts and the phase headers all
+ * use; the design's first draft counted null as finished in the band and not
+ * in the header, and the two disagreed on the same phase. A queued agent has
+ * not run yet, so it is neither.
  */
-const TALLY_ORDER: Array<[WorkflowAgentState, string]> = [
-  ['done', 'returned'],
-  ['run', 'running'],
+export const isFinished = (state: WorkflowAgentState): boolean => state !== 'run' && state !== 'wait';
+
+/**
+ * The finished states other than a plain return, read out beside the finished
+ * count. `null` is spelled out because "returned null" is a RESULT — the
+ * operator skipped it and the script saw null — and not an error row.
+ */
+const FINISHED_KINDS: Array<[WorkflowAgentState, string]> = [
   ['cache', 'cached'],
   ['fail', 'failed'],
   ['block', 'blocked'],
   ['null', 'returned null'],
-  ['wait', 'queued'], // ruling 11, same word the agents view uses
 ];
 
 /**
@@ -227,8 +232,69 @@ const TALLY_ORDER: Array<[WorkflowAgentState, string]> = [
 export function phaseTally(agents: readonly WorkflowAgent[], phaseIndex: number): string {
   const mine = agents.filter((a) => a.phaseIndex === phaseIndex);
   if (mine.length === 0) return 'queued';
-  return TALLY_ORDER.flatMap(([state, word]) => {
-    const n = mine.filter((a) => a.state === state).length;
-    return n === 0 ? [] : [`${n} ${word}`];
-  }).join(' · ');
+  const count = (state: WorkflowAgentState) => mine.filter((a) => a.state === state).length;
+  const finished = mine.filter((a) => isFinished(a.state)).length;
+  const kinds = FINISHED_KINDS.flatMap(([state, word]) => (count(state) ? [`${count(state)} ${word}`] : []));
+  return [
+    finished && `${finished} finished`,
+    count('run') && `${count('run')} running`,
+    count('wait') && `${count('wait')} queued`, // ruling 11, same word the agents view uses
+    kinds.length > 0 && `(${kinds.join(', ')})`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export interface ProgressSegment {
+  phase: WorkflowPhase;
+  /** In dispatch order — cells append and never reorder. Empty = not reached. */
+  agents: WorkflowAgent[];
+  finished: number;
+  running: boolean;
+  /** Holds a failed, blocked or null agent. */
+  bad: boolean;
+}
+
+export interface RunProgress {
+  /** `phase i of n · name`, the run's terminal status, or undefined while live. */
+  where: string | undefined;
+  finished: number;
+  dispatched: number;
+  running: number;
+  segments: ProgressSegment[];
+}
+
+/**
+ * The progress band. A live run has no phases on disk, so it gets totals and no
+ * segments; a terminated run names its status instead of a phase, and only
+ * `completed` is a return.
+ */
+export function runProgress(run: WorkflowRun): RunProgress {
+  const segments = [...run.phases].sort((a, b) => a.index - b.index).map((phase) => {
+    // Straight from run.agents, not phaseList's clusters: a cluster pulls a
+    // later agent forward to join an earlier one, which would reorder cells.
+    const agents = run.agents.filter((a) => a.phaseIndex === phase.index);
+    return {
+      phase,
+      agents,
+      finished: agents.filter((a) => isFinished(a.state)).length,
+      running: agents.some((a) => a.state === 'run'),
+      bad: agents.some((a) => a.state === 'fail' || a.state === 'block' || a.state === 'null'),
+    };
+  });
+  const current = segments.findIndex((s) => s.running);
+  const where = run.live
+    ? undefined
+    : run.status !== 'running'
+      ? run.status === 'completed' ? 'returned' : run.status
+      : current === -1
+        ? undefined
+        : `phase ${current + 1} of ${segments.length} · ${segments[current].phase.title}`;
+  return {
+    where,
+    finished: run.agents.filter((a) => isFinished(a.state)).length,
+    dispatched: run.agents.length,
+    running: run.agents.filter((a) => a.state === 'run').length,
+    segments,
+  };
 }
