@@ -3826,6 +3826,7 @@ function phasesOf(snapshot, progress) {
 }
 function parseWorkflowJournal(runId, lines) {
   const byId = /* @__PURE__ */ new Map();
+  const phases = [];
   for (const line of lines) {
     if (!line.trim()) continue;
     let rec;
@@ -3838,9 +3839,18 @@ function parseWorkflowJournal(runId, lines) {
     if (!agentId) continue;
     const existing = byId.get(agentId);
     if (rec.type === "result") {
-      byId.set(agentId, { agentId, state: "done", ...opt("result", resultText2(rec.result)) });
+      byId.set(agentId, { ...existing, agentId, state: "done", ...opt("result", resultText2(rec.result)) });
     } else if (rec.type === "started" && !existing) {
-      byId.set(agentId, { agentId, state: "run" });
+      const title = str2(rec.phase);
+      let phase = phases.find((p) => p.title === title);
+      if (title && !phase) phases.push(phase = { index: phases.length + 1, title });
+      byId.set(agentId, {
+        agentId,
+        state: "run",
+        ...opt("label", str2(rec.label)),
+        ...opt("phaseIndex", phase?.index),
+        ...opt("phaseTitle", title)
+      });
     }
   }
   return {
@@ -3848,7 +3858,7 @@ function parseWorkflowJournal(runId, lines) {
     status: "running",
     live: true,
     agents: [...byId.values()],
-    phases: [],
+    phases,
     logs: []
   };
 }
