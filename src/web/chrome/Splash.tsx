@@ -8,6 +8,9 @@ export function prefersReducedMotion(): boolean {
     : false;
 }
 
+/** The timeline is authored at 4.4s; it plays at double speed. */
+const SPEED = 2;
+
 const SKIP_KEY = 'team8.splash.skipNext';
 
 /** The picker's `/s/:id` switch is a full page load, but not an app load, so it skips the splash. */
@@ -52,7 +55,7 @@ export function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => vo
     const start = performance.now();
     let handle = 0;
     const step = (now: number) => {
-      const elapsed = (now - start) / 1000;
+      const elapsed = ((now - start) / 1000) * SPEED;
       setT(elapsed);
       if (splashFrame(elapsed, reduced).done) {
         onDoneRef.current();
