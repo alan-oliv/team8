@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import type { Task, TaskState } from '../../shared/domain';
 import { TASK_STATUS } from '../../shared/status';
 import { useCast } from '../state/useCast';
@@ -89,7 +89,224 @@ function stepTitle(task: Task): string {
   return `${LADDER} · at step ${STEP[task.state]} of 4${deps}`;
 }
 
-function ProgressStrip({ tasks }: { tasks: Task[] }) {
+// The board's columns are the same ladder the STATE stepper climbs, keyed off
+// the same derived state, so a card can never sit where its row disagrees.
+// Plan approval and failed are claimed work: they stay in progress, flagged.
+const BOARD: Array<{ label: string; color: string; sub: string; states: TaskState[] }> = [
+  { label: 'blocked', color: 'var(--warn)', sub: 'waiting on a dependency', states: ['blocked'] },
+  { label: 'ready', color: 'var(--color-neutral-400)', sub: 'unblocked, not claimed', states: ['pending'] },
+  {
+    label: 'in progress',
+    color: 'var(--color-accent-300)',
+    sub: 'claimed by an agent',
+    states: ['in_progress', 'plan_pending', 'failed'],
+  },
+  { label: 'completed', color: 'var(--color-accent-500)', sub: '', states: ['completed'] },
+];
+
+const CARD_EDGE: Partial<Record<TaskState, string>> = {
+  plan_pending: 'var(--warn)',
+  failed: 'var(--fail)',
+};
+
+const CARD_TINT: Partial<Record<TaskState, string>> = {
+  blocked: 'var(--warn)',
+  completed: 'var(--color-accent-500)',
+};
+
+type TaskView = 'rows' | 'board';
+
+// View-local and per operator, like the appearance settings: the team being
+// watched has no say in how this machine prefers to read its list.
+export const TASK_VIEW_KEY = 'console.tasks.view';
+
+function readTaskView(): TaskView {
+  try {
+    return window.localStorage.getItem(TASK_VIEW_KEY) === 'rows' ? 'rows' : 'board';
+  } catch {
+    return 'board';
+  }
+}
+
+function needs(task: Task): string {
+  if (task.blockedBy.length === 0) return '';
+  const open = task.openBlockedBy ?? task.blockedBy;
+  return `needs ${task.blockedBy.join(', ')} · ${task.blockedBy.length - open.length}/${task.blockedBy.length} done`;
+}
+
+function ViewToggle({ view, onChange }: { view: TaskView; onChange: (view: TaskView) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '2px', flex: 'none' }}>
+      {(['board', 'rows'] as const).map((mode) => {
+        const on = mode === view;
+        return (
+          <button
+            key={mode}
+            type="button"
+            data-testid="tasks-view-toggle"
+            aria-pressed={on}
+            onClick={() => onChange(mode)}
+            style={{
+              padding: '1px 8px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              font: 'inherit',
+              fontSize: '11px',
+              whiteSpace: 'nowrap',
+              boxShadow: `inset 0 0 0 1px ${on ? 'var(--color-accent-700)' : 'transparent'}`,
+              background: on ? 'var(--color-accent-900)' : 'transparent',
+              color: on ? 'var(--color-accent-300)' : 'var(--color-neutral-600)',
+            }}
+          >
+            {mode}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Board({ tasks }: { tasks: Task[] }) {
+  const { asChar } = useCast();
+  return (
+    <div
+      data-testid="tasks-board"
+      className="tscroll"
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gap: '10px',
+        padding: '12px 16px',
+        alignItems: 'start',
+      }}
+    >
+      {BOARD.map((column) => {
+        const cards = tasks.filter((t) => column.states.includes(t.state));
+        return (
+          <div
+            key={column.label}
+            data-testid="board-column"
+            style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}
+          >
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline', padding: '0 2px 4px' }}>
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '2px',
+                  background: column.color,
+                  flex: 'none',
+                  alignSelf: 'center',
+                }}
+              />
+              <span style={{ color: 'var(--color-text)', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+                {column.label}
+              </span>
+              <span data-testid="board-count" style={{ color: 'var(--color-neutral-500)', fontSize: '10.5px' }}>
+                {cards.length}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span
+                style={{
+                  color: 'var(--color-neutral-700)',
+                  fontSize: '9.5px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  minWidth: 0,
+                }}
+              >
+                {column.sub}
+              </span>
+            </div>
+
+            {cards.map((task) => {
+              const flagged = task.state === 'plan_pending' || task.state === 'failed';
+              return (
+                <div
+                  key={task.id}
+                  data-testid="board-card"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '5px',
+                    padding: '8px 10px',
+                    background: CARD_TINT[task.state]
+                      ? `color-mix(in srgb, ${CARD_TINT[task.state]} 8%, var(--color-bg))`
+                      : 'var(--color-bg)',
+                    border: `1px solid ${CARD_EDGE[task.state] ?? 'var(--color-neutral-900)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline' }}>
+                    <span style={{ color: 'var(--color-neutral-600)', fontSize: '10.5px' }}>{task.id}</span>
+                    {flagged && (
+                      <span
+                        data-testid="card-note"
+                        style={{ color: TASK_STATUS[task.state].color, fontSize: '10px', whiteSpace: 'nowrap' }}
+                      >
+                        {TASK_STATUS[task.state].label}
+                      </span>
+                    )}
+                    <span style={{ flex: 1 }} />
+                    <span
+                      style={{
+                        color: task.metadata?.model ? 'var(--color-neutral-500)' : 'var(--color-neutral-700)',
+                        fontSize: '10px',
+                      }}
+                    >
+                      {task.metadata?.model ?? '—'}
+                    </span>
+                  </div>
+                  <span style={{ color: 'var(--color-neutral-300)', fontSize: '11.5px', lineHeight: 1.45, textWrap: 'pretty' }}>
+                    {task.subject}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'baseline', fontSize: '10px' }}>
+                    <span style={{ color: 'var(--color-neutral-500)', whiteSpace: 'nowrap' }}>
+                      {task.owner ? asChar(task.owner).display : 'unassigned'}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span
+                      data-testid="card-deps"
+                      style={{
+                        color: 'var(--color-neutral-600)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0,
+                      }}
+                    >
+                      {needs(task)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {cards.length === 0 && (
+              <span
+                style={{
+                  padding: '10px',
+                  border: '1px dashed var(--color-neutral-900)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--color-neutral-700)',
+                  fontSize: '10.5px',
+                }}
+              >
+                none
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProgressStrip({ tasks, toggle }: { tasks: Task[]; toggle: ReactNode }) {
   // One count feeds both the legend number and the segment width, so the
   // drawing cannot contradict the figure printed beside it.
   const counts = SEGMENTS.map((s) => tasks.filter((t) => s.states.includes(t.state)).length);
@@ -98,6 +315,7 @@ function ProgressStrip({ tasks }: { tasks: Task[] }) {
   return (
     <div style={STRIP}>
       <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'nowrap', gap: '10px' }}>
+        {toggle}
         <span style={{ color: 'var(--color-neutral-600)', fontSize: '10px', letterSpacing: '.12em', flex: 'none' }}>
           PROGRESS
         </span>
@@ -149,6 +367,15 @@ export function Tasks({
   teamName: string;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
+  const [view, setView] = useState<TaskView>(readTaskView);
+  const pickView = (next: TaskView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(TASK_VIEW_KEY, next);
+    } catch {
+      // A blocked store costs the remembered choice, nothing else.
+    }
+  };
   // The OWNER cell only. Ids, states and dependency ids are readouts.
   const { asChar } = useCast();
 
@@ -162,8 +389,11 @@ export function Tasks({
           flexDirection: 'column',
         }}
       >
-        {tasks.length > 0 && <ProgressStrip tasks={tasks} />}
+        {tasks.length > 0 && (
+          <ProgressStrip tasks={tasks} toggle={<ViewToggle view={view} onChange={pickView} />} />
+        )}
 
+        {view === 'board' && tasks.length > 0 ? <Board tasks={tasks} /> : <>
         <div style={COLUMN_HEAD}>
           <span style={{ width: '44px' }}>TASK</span>
           <span style={{ flex: 1 }}>DESCRIPTION</span>
@@ -277,11 +507,12 @@ export function Tasks({
             </div>
           )}
         </div>
+        </>}
 
         <div data-testid="tasks-footer" style={FOOTER}>
           <span>{`~/.claude/tasks/${teamName}/`}</span>
           <span style={{ flex: 1 }} />
-          <span>claiming is file-locked · completing a task unblocks its dependents</span>
+          <span>claiming is file-locked · completing a task unblocks its dependents · cards move when the file does</span>
         </div>
       </div>
 
