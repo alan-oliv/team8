@@ -6,7 +6,7 @@ import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
 import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
-import { Splash, prefersReducedMotion } from './chrome/Splash';
+import { Splash, prefersReducedMotion, splashSkipped } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
 import { readStoredFolders, scopedRows } from './chrome/TeamSelect';
@@ -37,9 +37,9 @@ export function App() {
   const appearance = useSettings(store.state?.folder);
   const [now, setNow] = useState(() => Date.now());
   const [teamsOpen, setTeamsOpen] = useState(false);
-  // The entry splash plays once per page load over whichever shell renders
+  // The entry splash plays once per app load over whichever shell renders
   // underneath, and is unmounted the moment it reports done.
-  const [splashDone, setSplashDone] = useState(false);
+  const [splashDone, setSplashDone] = useState(splashSkipped);
 
   // The theme lives on the console root, but the page behind it is the body's,
   // and an overscroll on a light theme would otherwise flash the dark default.

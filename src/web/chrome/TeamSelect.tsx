@@ -4,6 +4,7 @@ import { ALL_FOLDERS, inFolder } from '../../shared/domain';
 import { postJson } from '../api';
 import { diffStat, formatElapsed, shortPath } from '../format';
 import { useWatch } from '../state/useWatch';
+import { skipNextSplash } from './Splash';
 
 // Derived, not chosen: 2 border + 12 padding + 120.03 ("session-" + 8 hex at the
 // bar's 12.5px) + 6 gap + 6 caret. Fixed so a longer team name ellipsizes instead
@@ -361,6 +362,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, now
       // one to navigate with, falling back to `name` when it's absent.
       // Task #4's route is what carries it, and its own mount effect fires
       // the `/api/select-session/<id>` POST once the URL lands there.
+      skipNextSplash();
       window.location.assign(`/s/${encodeURIComponent(leadSessionId ?? name)}`);
       return;
     }

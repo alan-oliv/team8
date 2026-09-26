@@ -8,6 +8,28 @@ export function prefersReducedMotion(): boolean {
     : false;
 }
 
+const SKIP_KEY = 'team8.splash.skipNext';
+
+/** The picker's `/s/:id` switch is a full page load, but not an app load, so it skips the splash. */
+export function skipNextSplash(): void {
+  try {
+    window.sessionStorage.setItem(SKIP_KEY, '1');
+  } catch {
+    // Storage blocked: the splash just plays again.
+  }
+}
+
+// Read once at module load, not in a useState initializer, which StrictMode runs twice.
+export const splashSkipped = (() => {
+  try {
+    const skip = window.sessionStorage.getItem(SKIP_KEY) === '1';
+    window.sessionStorage.removeItem(SKIP_KEY);
+    return skip;
+  } catch {
+    return false;
+  }
+})();
+
 /** Authored at 1920×1080 with a 600px bloom; a shorter side under 600px scales the whole stage down. */
 function fitScale(): number {
   return Math.min(1, Math.min(window.innerWidth, window.innerHeight) / BLOOM);
