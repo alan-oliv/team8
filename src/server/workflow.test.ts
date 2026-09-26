@@ -181,6 +181,25 @@ describe('parseWorkflowJournal', () => {
     expect(run.agents[0]).not.toHaveProperty('tokens');
   });
 
+  it('builds phases in first-seen order from the phase and label a started line carries, and keeps them past the result', () => {
+    const run = parseWorkflowJournal('wf_live', [
+      line({ type: 'started', key: 'v2:a', agentId: 'a1', label: 'review:x', phase: 'Review' }),
+      line({ type: 'started', key: 'v2:b', agentId: 'a2', label: 'review:y', phase: 'Review' }),
+      line({ type: 'result', key: 'v2:a', agentId: 'a1', result: 'ok' }),
+      line({ type: 'started', key: 'v2:c', agentId: 'a3', label: 'verify', phase: 'Verify' }),
+    ]);
+
+    expect(run.phases).toEqual([
+      { index: 1, title: 'Review' },
+      { index: 2, title: 'Verify' },
+    ]);
+    expect(run.agents).toEqual([
+      { agentId: 'a1', state: 'done', label: 'review:x', phaseIndex: 1, phaseTitle: 'Review', result: 'ok' },
+      { agentId: 'a2', state: 'run', label: 'review:y', phaseIndex: 1, phaseTitle: 'Review' },
+      { agentId: 'a3', state: 'run', label: 'verify', phaseIndex: 2, phaseTitle: 'Verify' },
+    ]);
+  });
+
   it('keeps one entry per agent when the journal repeats an id', () => {
     const retried = line({ type: 'started', key: 'v2:bbb', agentId: 'a111' });
     const run = parseWorkflowJournal('wf_live', [STARTED, retried, RESULT]);

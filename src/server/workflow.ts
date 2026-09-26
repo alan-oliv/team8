@@ -110,9 +110,10 @@ function phasesOf(snapshot: Bag, progress: Bag[]): WorkflowPhase[] {
 
 /**
  * `subagents/workflows/<runId>/journal.jsonl` — the only source that exists
- * WHILE a run is in flight, and the reason a live run degrades to a flat agent
- * list. Every line is `{type, key, agentId}` plus `result` on a return: no
- * timestamp, no phase, no label, no usage, so none of those are invented here.
+ * WHILE a run is in flight. Every line is `{type, key, agentId}` plus `result`
+ * on a return; a `started` also carries `label` and `phase` (a title) when the
+ * script gave them. No timestamp and no usage, so none are invented here, and
+ * phases are numbered in first-seen order — a phase not reached yet is unknown.
  *
  * Two shapes of imprecision are inherent and are not worked around:
  *   - a `started` with no `result` is a running agent OR one that returned
@@ -123,6 +124,7 @@ function phasesOf(snapshot: Bag, progress: Bag[]): WorkflowPhase[] {
  */
 export function parseWorkflowJournal(runId: string, lines: readonly string[]): WorkflowRun {
   const byId = new Map<string, WorkflowAgent>();
+  const phases: WorkflowPhase[] = [];
 
   for (const line of lines) {
     if (!line.trim()) continue;
@@ -139,9 +141,18 @@ export function parseWorkflowJournal(runId: string, lines: readonly string[]): W
     // `result` already seen.
     const existing = byId.get(agentId);
     if (rec.type === 'result') {
-      byId.set(agentId, { agentId, state: 'done', ...opt('result', resultText(rec.result)) });
+      byId.set(agentId, { ...existing, agentId, state: 'done', ...opt('result', resultText(rec.result)) });
     } else if (rec.type === 'started' && !existing) {
-      byId.set(agentId, { agentId, state: 'run' });
+      const title = str(rec.phase);
+      let phase = phases.find((p) => p.title === title);
+      if (title && !phase) phases.push((phase = { index: phases.length + 1, title }));
+      byId.set(agentId, {
+        agentId,
+        state: 'run',
+        ...opt('label', str(rec.label)),
+        ...opt('phaseIndex', phase?.index),
+        ...opt('phaseTitle', title),
+      });
     }
   }
 
@@ -150,7 +161,7 @@ export function parseWorkflowJournal(runId: string, lines: readonly string[]): W
     status: 'running',
     live: true,
     agents: [...byId.values()],
-    phases: [],
+    phases,
     logs: [],
   };
 }
