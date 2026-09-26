@@ -256,7 +256,7 @@ export interface ProgressSegment {
 }
 
 export interface RunProgress {
-  /** `phase i of n · name`, the run's terminal status, or undefined while live. */
+  /** `phase i of n · name`, the run's terminal status, or undefined between phases. */
   where: string | undefined;
   finished: number;
   dispatched: number;
@@ -265,8 +265,8 @@ export interface RunProgress {
 }
 
 /**
- * The progress band. A live run has no phases on disk, so it gets totals and no
- * segments; a terminated run names its status instead of a phase, and only
+ * The progress band. A live run from an older journal has no phases, so it gets
+ * totals and no segments; a terminated run names its status instead of a phase, and only
  * `completed` is a return.
  */
 export function runProgress(run: WorkflowRun): RunProgress {
@@ -283,9 +283,7 @@ export function runProgress(run: WorkflowRun): RunProgress {
     };
   });
   const current = segments.findIndex((s) => s.running);
-  const where = run.live
-    ? undefined
-    : run.status !== 'running'
+  const where = run.status !== 'running'
       ? run.status === 'completed' ? 'returned' : run.status
       : current === -1
         ? undefined

@@ -553,7 +553,7 @@ export function WorkflowRun({ run, onOpenOutput }: { run: Run; onOpenOutput?: ()
       <ProgressBand run={run} selected={selectedPhase} onSelect={selectPhase} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          {run.live ? (
+          {run.live && run.phases.length === 0 ? (
             <>
               <div
                 data-testid="wf-live-note"
