@@ -340,7 +340,9 @@ export function useTeamState(url = '/stream'): TeamStateStore {
     };
   }, [url]);
 
-  const lead = state?.leadSessionId ?? null;
+  // A watched session is what a reload must land back on: a re-keyed team's
+  // lead id belongs to no session, so /s/<lead> would open nothing.
+  const lead = (state?.watching?.kind === 'session' ? state.watching.id : state?.leadSessionId) ?? null;
   useEffect(() => {
     writeUrlState(view, agent, team, run, lead);
   }, [view, agent, team, run, lead]);

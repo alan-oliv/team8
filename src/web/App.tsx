@@ -385,6 +385,7 @@ export function App() {
           onTeamsOpenChange={setTeamsOpen}
           appearance={appearance}
           subagents={state.subagents}
+          build={state.build}
         />
       </div>
       </WatchContext.Provider>
@@ -417,6 +418,7 @@ export function App() {
         appearance={appearance}
         solo={solo}
         hasSubagents={hasSubagents}
+        build={state.build}
       />
       <main className="console-body">
         {/* Hiding wins over dismissal: a session taken out of the picker has no
