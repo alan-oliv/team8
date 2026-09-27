@@ -20,7 +20,7 @@ import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
-import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
+import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState, Watching } from '../shared/domain';
 import { ALL_FOLDERS } from '../shared/domain';
 
 const execFileAsync = promisify(execFile);
@@ -1346,6 +1346,17 @@ export async function main(argv: string[]): Promise<number> {
   // A switch is reading its target in, and the select routes answer 409 until
   // it lands. Declared ahead of `publish`, which the boot sweep already calls.
   let switching = false;
+  // What the operator asked to see. currentTeam/currentSession below record what
+  // is SHOWN; the follower moves that toward this. --session wins over --team: an
+  // older launcher passed both, and its team came from that same session.
+  let watching: Watching = cli.session
+    ? { kind: 'session', id: cli.session }
+    : cli.team
+      ? { kind: 'team', name: cli.team }
+      : { kind: 'auto' };
+  const watch = (next: Watching): void => {
+    watching = next;
+  };
 
   const publish = (): TeamState => {
     const events = store.replay();
@@ -1368,6 +1379,7 @@ export async function main(argv: string[]): Promise<number> {
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
       switching,
+      watching,
       workflows,
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
@@ -1433,11 +1445,6 @@ export async function main(argv: string[]): Promise<number> {
   let ingest = startIngest(generation, teamName, leadSessionId);
   await ingest.sweep();
 
-  // Set the moment the operator picks a team themselves. The follower below
-  // only ever corrects the console's OWN guess — once a human has chosen, a
-  // team appearing elsewhere must not yank them off what they are reading.
-  // `--session` is that choice made up front, by /console or the launcher.
-  let pinned = cli.session !== undefined;
   /**
    * Session name and branch read off disk for the CURRENT team, refreshed by
    * the follower. A floor under the `statusline` hook, which is optional.
@@ -1494,7 +1501,7 @@ export async function main(argv: string[]): Promise<number> {
     // A rebuild for nothing is visible, not just wasteful: a fresh ingest has no
     // config until its sweep lands, so the console would blink empty.
     if (team === currentTeam) {
-      pinned = true;
+      watch({ kind: 'team', name: team });
       return { ok: true, changed: false };
     }
     // Claimed synchronously with the check, before the reads below await — a
@@ -1524,8 +1531,7 @@ export async function main(argv: string[]): Promise<number> {
         };
       }
       await retarget(team, typeof config.leadSessionId === 'string' ? config.leadSessionId : '');
-      // The operator has chosen; the follower stops correcting from here on.
-      pinned = true;
+      watch({ kind: 'team', name: team });
       return { ok: true, changed: true };
     } finally {
       // In a finally, so a throw cannot wedge the console into permanent 409s.
@@ -1562,14 +1568,28 @@ export async function main(argv: string[]): Promise<number> {
     hub.publish();
   };
 
-  const selectSession = async (sessionId: string): Promise<SelectTeamOutcome> => {
-    // In team mode the id a `/s/<lead>` reload carries is the FRAME's lead, so
-    // that is what the no-op check compares against — not `leadSessionId`,
-    // which onLeadSession re-points at the adopted driver.
-    if (sessionId === currentSession || (currentTeam !== '' && sessionId === publish().leadSessionId)) {
-      pinned = true;
-      return { ok: true, changed: false };
+  type Target = { team: string; lead: string } | { session: string };
+
+  /** Where the watch says the console should be; undefined means stay put. */
+  const targetOf = async (walk: TeamWalk): Promise<Target | undefined> => {
+    if (watching.kind === 'team') return undefined;
+    if (watching.kind === 'session') {
+      const id = watching.id;
+      const team = teamOfSession(walk.teams, walk.drivers, await forkChainOf(projectsRoot, id));
+      return team ? { team: team.name, lead: team.leadSessionId || id } : { session: id };
     }
+    if (walk.teams.some((t) => t.name === currentTeam && t.members >= 2 && t.live)) return undefined;
+    const team = autoTeam(walk.teams);
+    return team ? { team: team.name, lead: team.leadSessionId } : undefined;
+  };
+
+  const shows = (target: Target): boolean =>
+    'team' in target ? target.team === currentTeam : currentTeam === '' && target.session === currentSession;
+
+  const moveTo = (target: Target): Promise<void> =>
+    'team' in target ? retarget(target.team, target.lead) : retargetSession(target.session);
+
+  const selectSession = async (sessionId: string): Promise<SelectTeamOutcome> => {
     if (switching) {
       return {
         ok: false,
@@ -1579,24 +1599,16 @@ export async function main(argv: string[]): Promise<number> {
     }
     switching = true;
     try {
-      const sessions = await readSessions(sessionsRoot);
-      const dir = await sessionProjectDir(projectsRoot, sessionId, sessions.cwds.get(sessionId));
-      if (!dir) return { ok: false, reason: 'missing', message: `no session ${sessionId}` };
-      // A session that drives a team dir is opened as that team, so `/s/<lead>`
-      // can stand in for the team row on reload. walkTeams, not
-      // listTeamSummaries: no diffstat spawns, no session rows.
       const walk = await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot);
-      const team = teamOfSession(walk.teams, walk.drivers, [sessionId]);
-      // A re-keyed team's frame carries config.leadSessionId, a fresh id, so the
-      // no-op check above misses the session really driving it; rebuilding the
-      // same team would blank the screen for a whole sweep.
-      if (team && team.name === currentTeam) {
-        pinned = true;
-        return { ok: true, changed: false };
+      const team = teamOfSession(walk.teams, walk.drivers, await forkChainOf(projectsRoot, sessionId));
+      if (!team && !(await sessionProjectDir(projectsRoot, sessionId, walk.sessions.cwds.get(sessionId)))) {
+        return { ok: false, reason: 'missing', message: `no session ${sessionId}` };
       }
-      if (team) await retarget(team.name, team.leadSessionId || sessionId);
-      else await retargetSession(sessionId);
-      pinned = true;
+      watch({ kind: 'session', id: sessionId });
+      const target: Target = team ? { team: team.name, lead: team.leadSessionId || sessionId } : { session: sessionId };
+      // Rebuilding what is already on screen would blank it for a whole sweep.
+      if (shows(target)) return { ok: true, changed: false };
+      await moveTo(target);
       return { ok: true, changed: true };
     } finally {
       switching = false;
@@ -1670,9 +1682,8 @@ export async function main(argv: string[]): Promise<number> {
    * one — so without this the console sat on whatever it guessed at startup
    * while the real team filled up beside it, and teammates never appeared.
    *
-   * Only corrects its own guess, and only towards a REAL team (two or more
-   * members, the same bar the launcher uses), so a lead-only leftover cannot
-   * steal the view from a team that is actually working.
+   * Moves what is shown toward the watch (`targetOf`): a watched session to the
+   * team it drives, auto to the newest live team. A held team is never moved.
    */
   const followRealTeam = async (): Promise<void> => {
     if (switching) return;
@@ -1700,27 +1711,20 @@ export async function main(argv: string[]): Promise<number> {
     // below it showed the real name. A session picked from another folder has
     // no row in this listing at all, so its facts come off its own transcript.
     const mine = teams.find((t) => t.current);
-    leadFacts = mine
+    const facts = mine
       ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode }
       : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
-
+    // A switch that landed while the reads above awaited has set its own facts;
+    // these are the previous target's.
     if (gen !== generation) return;
-    // A session that has since formed a team is shown as that team. That is
-    // the pin followed, not the operator yanked off it.
-    let target = currentTeam === '' && currentSession !== '' ? teamOfSession(walk.teams, walk.drivers, [currentSession]) : undefined;
-    if (target && target.members < 2) target = undefined;
-    if (!target) {
-      if (pinned) return;
-      if (teams.some((t) => t.name === currentTeam && t.members >= 2 && t.live)) return;
-      // Sorted live-first, then by most recent activity, so the first real team
-      // is the one worth watching.
-      target = teams.find((t) => t.members >= 2 && t.live);
-    }
-    if (!target || target.name === currentTeam) return;
+    leadFacts = facts;
+
+    const target = await targetOf(walk);
+    if (gen !== generation || !target || shows(target)) return;
     switching = true;
     try {
-      logInfo(`following ${target.name} (${target.members} members)`);
-      await retarget(target.name, target.leadSessionId);
+      logInfo(`following ${'team' in target ? target.team : target.session}`);
+      await moveTo(target);
     } catch (err) {
       logError('follow', err);
     } finally {

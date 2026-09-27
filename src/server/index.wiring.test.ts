@@ -83,6 +83,16 @@ async function layout(): Promise<string> {
     path.join(FIXTURES, 'config-4-members.json'),
     path.join(dir, 'teams', TEAM, 'config.json'),
   );
+  // Team A's lead sits in a folder of its own with a known branch, not in
+  // whichever checkout runs the tests: branchOf() reads <cwd>/.git/HEAD, so the
+  // fixture's cwd made team A's branch that of the machine running the suite.
+  const repoA = path.join(dir, 'repo-a');
+  await fs.mkdir(path.join(repoA, '.git'), { recursive: true });
+  await fs.writeFile(path.join(repoA, '.git', 'HEAD'), 'ref: refs/heads/fixture-branch-a\n');
+  const configA = path.join(dir, 'teams', TEAM, 'config.json');
+  const parsedA = JSON.parse(await fs.readFile(configA, 'utf8')) as { members: { cwd?: string }[] };
+  for (const member of parsedA.members) member.cwd = repoA;
+  await fs.writeFile(configA, JSON.stringify(parsedA));
 
   const sidecars = JSON.parse(
     await fs.readFile(path.join(FIXTURES, 'meta-sidecars.json'), 'utf8'),
@@ -732,6 +742,24 @@ describe('which team a console boots onto', () => {
     return team;
   }
 
+  async function waitForTeamNamed(url: string, name: string, deadlineMs: number): Promise<string> {
+    const until = Date.now() + deadlineMs;
+    let team = await teamOf(url);
+    while (team !== name && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 100));
+      team = await teamOf(url);
+    }
+    return team;
+  }
+
+  async function liveSession(dir: string, sessionId: string) {
+    await fs.writeFile(path.join(dir, 'projects', SLUG, `${sessionId}.jsonl`), '');
+    await fs.writeFile(
+      path.join(dir, 'sessions', `${process.pid}.json`),
+      JSON.stringify({ sessionId, pid: process.pid, cwd: process.cwd() }),
+    );
+  }
+
   it('a bare boot over leftover teams shows none of them, then or after the follower looks', async () => {
     const dir = await emptyHome();
     await leftover(dir, 'aaa-oldest', 'gone-session-1');
@@ -800,5 +828,92 @@ describe('which team a console boots onto', () => {
 
     const res = (await (await selectSession(url, SOLO_SESSION)).json()) as { changed?: boolean };
     expect(res.changed).toBe(false);
+  }, 20_000);
+
+  it('a watched session follows its lead-only team to the re-keyed one', async () => {
+    const dir = await emptyHome();
+    await fs.mkdir(path.join(dir, 'projects', SLUG), { recursive: true });
+    await liveSession(dir, SOLO_SESSION);
+    await fs.mkdir(path.join(dir, 'teams', 'session-8f2a1c00'), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'teams', 'session-8f2a1c00', 'config.json'),
+      JSON.stringify({ name: 'session-8f2a1c00', leadSessionId: SOLO_SESSION, members: [{ agentId: 'team-lead', name: 'team-lead' }] }),
+    );
+    const url = await boot(dir, ['--session', SOLO_SESSION], null);
+    expect(await teamOf(url)).toBe('session-8f2a1c00');
+
+    // The re-key: Claude Code writes a new directory under a fresh lead id and
+    // only the first teammate's sidecar still names the session driving it.
+    await fs.rm(path.join(dir, 'teams', 'session-8f2a1c00'), { recursive: true });
+    await writeTeamConfig(dir, 'session-ffff0000', 'fresh-id-nobody-has', 'probe-rk');
+    const subagents = path.join(dir, 'projects', SLUG, SOLO_SESSION, 'subagents');
+    await fs.mkdir(subagents, { recursive: true });
+    await fs.writeFile(
+      path.join(subagents, 'agent-aprobe-rk-0123456789abcdef.meta.json'),
+      JSON.stringify({
+        agentType: 'probe-rk',
+        description: 'the first teammate',
+        name: 'probe-rk',
+        spawnDepth: 0,
+        model: 'claude-opus-5',
+        taskKind: 'in_process_teammate',
+        teamName: 'session-ffff0000',
+        color: 'green',
+      } satisfies Sidecar),
+    );
+
+    expect(await waitForTeamNamed(url, 'session-ffff0000', FOLLOW_INTERVAL_MS * 3)).toBe('session-ffff0000');
+  }, 20_000);
+
+  it("a watched session that is a /branch of a lead shows that lead's team, marked current in the picker", async () => {
+    const dir = await emptyHome();
+    const ANCESTOR = 'a1b2c3d4-0000-4000-8000-000000000001';
+    await writeTeamConfig(dir, 'session-aaaa1111', ANCESTOR, 'probe-anc');
+    await fs.mkdir(path.join(dir, 'projects', SLUG), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'projects', SLUG, `${SOLO_SESSION}.jsonl`),
+      `${JSON.stringify({ forkedFrom: { sessionId: ANCESTOR } })}\n`,
+    );
+    // The parent's transcript sits beside the fork's, which is what puts its
+    // team in this folder's picker.
+    await fs.writeFile(path.join(dir, 'projects', SLUG, `${ANCESTOR}.jsonl`), '');
+
+    const url = await boot(dir, ['--session', SOLO_SESSION], null);
+
+    expect(await teamOf(url)).toBe('session-aaaa1111');
+    const listing = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
+    expect(listing.teams.filter((t) => t.current).map((t) => t.name)).toEqual(['session-aaaa1111']);
+  }, 20_000);
+
+  it('selecting the session already on screen changes nothing but the watch', async () => {
+    home = await layout();
+    const url = await boot(home);
+
+    const res = (await (await selectSession(url, LEAD_SESSION)).json()) as { changed?: boolean };
+
+    expect(res.changed).toBe(false);
+    expect((await snapshot(url)).watching).toEqual({ kind: 'session', id: LEAD_SESSION });
+  }, 20_000);
+
+  it('selecting another session switches the running console without a restart', async () => {
+    home = await layout();
+    const url = await boot(home);
+    const running = child;
+
+    const res = (await (await selectSession(url, LEAD_SESSION_B)).json()) as { changed?: boolean };
+
+    expect(res.changed).toBe(true);
+    expect(await teamOf(url)).toBe(TEAM_B);
+    expect(running?.exitCode).toBeNull();
+  }, 20_000);
+
+  it('a console held on a team stays there when a newer team appears', async () => {
+    home = await layout();
+    const url = await boot(home);
+    await writeTeamConfig(home, 'session-newer999', 'newer-session', 'probe-new');
+
+    await new Promise((r) => setTimeout(r, FOLLOW_INTERVAL_MS + 1000));
+
+    expect(await teamOf(url)).toBe(TEAM);
   }, 20_000);
 });

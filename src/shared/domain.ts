@@ -372,6 +372,8 @@ export interface TeamState {
   plan?: PlanProgress;
   /** A session switch is reading its target in; the select routes answer 409 until it lands. */
   switching?: boolean;
+  /** What the console was asked to show; a tab rewrites its address from a session watch. */
+  watching?: Watching;
   /** See {@link TeamSummary.mode}: the batch's decided mode, for the trigger's badge. */
   decidedMode?: DecidedMode;
 }
