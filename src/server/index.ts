@@ -1347,22 +1347,25 @@ export async function main(argv: string[]): Promise<number> {
   // A switch is reading its target in, and the select routes answer 409 until
   // it lands. Declared ahead of `publish`, which the boot sweep already calls.
   let switching = false;
+  let build = await readBuildInfo(fileURLToPath(import.meta.url), cli.claudeHome);
   // What the operator asked to see. currentTeam/currentSession below record what
   // is SHOWN; the follower moves that toward this. --session wins over --team: an
   // older launcher passed both, and its team came from that same session.
-  let build = await readBuildInfo(fileURLToPath(import.meta.url), cli.claudeHome);
   let watching: Watching = cli.session
     ? { kind: 'session', id: cli.session }
     : cli.team
       ? { kind: 'team', name: cli.team }
       : { kind: 'auto' };
   const record = recordPathFor(cli.dbPath);
+  // Chained so two quick watch changes cannot rename out of order and leave the older one on disk.
+  let recording = Promise.resolve();
   const watch = (next: Watching): void => {
     watching = next;
+    const entry = { pid: process.pid, port, version: build.version, watching };
     // What console-restart.sh and console-hint.sh reopen after a crash or an upgrade.
-    void writeConsoleRecord(record, { pid: process.pid, port, version: build.version, watching }).catch((err: unknown) =>
-      logError('console record', err),
-    );
+    recording = recording
+      .then(() => writeConsoleRecord(record, entry))
+      .catch((err: unknown) => logError('console record', err));
   };
   watch(watching);
 
@@ -1725,8 +1728,11 @@ export async function main(argv: string[]): Promise<number> {
     if (gen !== generation) return;
     leadFacts = facts;
 
+    // A select can claim `switching` and move the watch while the reads above
+    // await, before its retarget bumps `generation`; moving now would race it.
+    const asked = watching;
     const target = await targetOf(walk);
-    if (gen !== generation || !target || shows(target)) return;
+    if (switching || gen !== generation || watching !== asked || !target || shows(target)) return;
     switching = true;
     try {
       logInfo(`following ${'team' in target ? target.team : target.session}`);

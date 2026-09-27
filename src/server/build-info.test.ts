@@ -29,6 +29,11 @@ describe('isOlderBuild', () => {
   it('is false for the same release', () => {
     expect(isOlderBuild('1.0.43', '1.0.43')).toBe(false);
   });
+
+  it('is false when either side is not a release', () => {
+    expect(isOlderBuild('dev', '1.0.44')).toBe(false);
+    expect(isOlderBuild('1.0.44', 'dev')).toBe(false);
+  });
 });
 
 describe('pluginRootOf', () => {

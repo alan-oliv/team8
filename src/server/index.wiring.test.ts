@@ -752,16 +752,18 @@ describe('which team a console boots onto', () => {
     return team;
   }
 
-  async function readRecord(dir: string): Promise<{ port: number; watching: unknown }> {
+  /** Polls until the record names `watching`, so an earlier record on disk cannot pass for it. */
+  async function readRecord(dir: string, watching: unknown): Promise<{ port: number; watching: unknown }> {
     const file = path.join(dir, 'team8', 'console.json');
     const until = Date.now() + 2000;
     for (;;) {
       try {
-        return JSON.parse(await fs.readFile(file, 'utf8')) as { port: number; watching: unknown };
+        const rec = JSON.parse(await fs.readFile(file, 'utf8')) as { port: number; watching: unknown };
+        if (JSON.stringify(rec.watching) === JSON.stringify(watching) || Date.now() > until) return rec;
       } catch (err) {
         if (Date.now() > until) throw err;
-        await new Promise((r) => setTimeout(r, 50));
       }
+      await new Promise((r) => setTimeout(r, 50));
     }
   }
 
@@ -934,10 +936,12 @@ describe('which team a console boots onto', () => {
     home = await layout();
     const url = await boot(home);
 
-    expect(await readRecord(home)).toMatchObject({ port: Number(new URL(url).port), watching: { kind: 'team', name: TEAM } });
+    const held = { kind: 'team', name: TEAM };
+    expect(await readRecord(home, held)).toMatchObject({ port: Number(new URL(url).port), watching: held });
 
     await selectSession(url, LEAD_SESSION_B);
-    expect((await readRecord(home)).watching).toEqual({ kind: 'session', id: LEAD_SESSION_B });
+    const followed = { kind: 'session', id: LEAD_SESSION_B };
+    expect((await readRecord(home, followed)).watching).toEqual(followed);
   }, 20_000);
 
   it('a console that fails while starting exits instead of holding the port', async () => {
