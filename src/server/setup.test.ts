@@ -347,25 +347,27 @@ describe('mergeHookBlock / removeHookBlock', () => {
 });
 
 describe('checkClaudeVersion', () => {
-  it('accepts the pinned version', () => {
+  it('accepts the floor and anything newer', () => {
     expect(PINNED_CLAUDE_VERSION).toBe('2.1.231');
-    expect(checkClaudeVersion('2.1.231 (Claude Code)')).toEqual({
-      ok: true,
-      message: 'claude 2.1.231 matches the pinned contract',
-    });
+    for (const v of ['2.1.231', '2.1.283', '2.2.0']) {
+      expect(checkClaudeVersion(`${v} (Claude Code)`)).toEqual({
+        ok: true,
+        message: `claude ${v} is at or above 2.1.231`,
+      });
+    }
   });
 
-  it('warns on any other version', () => {
-    expect(checkClaudeVersion('2.2.0 (Claude Code)')).toEqual({
+  it('warns below the floor', () => {
+    expect(checkClaudeVersion('2.1.200 (Claude Code)')).toEqual({
       ok: false,
-      message: 'claude 2.2.0 does not match the pinned 2.1.231; the control plane writes internal protocols and may be wrong',
+      message: 'claude 2.1.200 is older than 2.1.231; the control plane writes internal protocols and may be wrong',
     });
   });
 
   it('warns when the version cannot be read', () => {
     expect(checkClaudeVersion(null)).toEqual({
       ok: false,
-      message: 'could not read `claude --version`; the console is pinned to 2.1.231 internals',
+      message: 'could not read `claude --version`; the console needs 2.1.231 or newer',
     });
     expect(checkClaudeVersion('command not found').ok).toBe(false);
   });

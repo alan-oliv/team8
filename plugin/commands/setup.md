@@ -39,7 +39,7 @@ profile.
 ## 0. Check the machine can run it
 
 ```bash
-claude --version                                      # console pins 2.1.231 internals
+claude --version                                      # console needs 2.1.231 or newer
 node --version                                        # 22 or newer
 claude plugin list 2>/dev/null | grep -A3 team8 || echo 'PLUGIN MISSING'
 ```
@@ -52,7 +52,7 @@ claude plugin marketplace add alan-oliv/team8
 claude plugin install team8@team8
 ```
 
-If `claude --version` is not the pinned one, say so and carry on: the console reads
+If `claude --version` is older than 2.1.231, say so and carry on: the console reads
 on-disk shapes that an experimental feature may have changed, and the server prints
 the same warning at startup.
 
