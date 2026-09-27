@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +28,7 @@ interface Run {
  * OCTO_NO_SPAWN keeps the launcher from starting a real server, so what is
  * under test is only its GATE — which payloads it wakes for.
  */
-function launch(payload: unknown): Promise<Run> {
+function launch(payload: unknown, env: Record<string, string> = {}): Promise<Run> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       LAUNCHER,
@@ -37,6 +38,7 @@ function launch(payload: unknown): Promise<Run> {
           CLAUDE_CONFIG_DIR: claudeDir,
           OCTO_NO_SPAWN: '1',
           OCTO_ROOT: path.dirname(path.dirname(LAUNCHER)),
+          ...env,
         },
       },
       (err, stdout) => {
@@ -103,7 +105,7 @@ describe('console-launch.sh', () => {
     expect(run.stdout).not.toContain('session-neighbour');
   });
 
-  it("links a /branch'd lead's workflow to the team its ancestor leads", async () => {
+  it("links a /branch'd lead's workflow to its own session, which the console follows to the ancestor's team", async () => {
     const teamDir = path.join(claudeDir, 'teams', 'session-ancestor');
     await fs.mkdir(teamDir, { recursive: true });
     await fs.writeFile(
@@ -119,7 +121,31 @@ describe('console-launch.sh', () => {
 
     const run = await launch({ hook_event_name: 'PostToolUse', session_id: SESSION, tool_name: 'Workflow' });
 
-    expect(run.stdout).toContain('?team=session-ancestor');
+    expect(run.stdout).toContain(`/s/${SESSION}`);
+    expect(run.stdout).not.toContain('?team=');
+  });
+
+  it('starts a workflow console on its session alone', async () => {
+    const root = path.join(claudeDir, 'fake-root');
+    await fs.mkdir(path.join(root, 'dist', 'server'), { recursive: true });
+    const argsFile = path.join(claudeDir, 'server-args.json');
+    await fs.writeFile(
+      path.join(root, 'dist', 'server', 'index.js'),
+      `require('node:fs').writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));\n`,
+    );
+    const srv = net.createServer();
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const port = String((srv.address() as net.AddressInfo).port);
+    await new Promise((r) => srv.close(r));
+
+    await launch(
+      { hook_event_name: 'PostToolUse', session_id: SESSION, tool_name: 'Workflow' },
+      { OCTO_NO_SPAWN: '', OCTO_ROOT: root, OCTO_PORT: port },
+    );
+
+    const until = Date.now() + 3000;
+    while (Date.now() < until && !(await fs.stat(argsFile).catch(() => null))) await new Promise((r) => setTimeout(r, 50));
+    expect(JSON.parse(await fs.readFile(argsFile, 'utf8'))).toEqual(['--port', port, '--session', SESSION]);
   });
 
   it('stays asleep for an ordinary subagent, which carries no name', async () => {

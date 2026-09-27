@@ -22,7 +22,7 @@ CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # project, not this checkout. CLAUDE_PLUGIN_ROOT is set when we are installed
 # as a plugin; otherwise this script sits in <root>/bin.
 ROOT="${OCTO_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}}"
-HEALTH="http://127.0.0.1:$PORT/health"
+. "$(dirname "$0")/console-lib.sh"
 
 bail() { echo '{}'; exit 0; }
 
@@ -205,29 +205,20 @@ case "$event" in
 esac
 fi
 
-# Start the server if it is not already answering.
-if ! curl -sf -m 1 "$HEALTH" >/dev/null 2>&1; then
+if ! console_up; then
   if [ "${OCTO_NO_SPAWN:-}" != "1" ]; then
-    # Prefer the bundle (fast cold start). Fall back to tsx when it has not
-    # been built, so a fresh checkout still works without `npm run build`.
-    # An unresolved team is passed as NO flag, never as a guess: a server
-    # pinned to a team that does not exist shows an empty wall, while one with
-    # no team discovers it and follows the real one as it appears.
-    set -- --port "$PORT"
-    [ -n "$team" ] && set -- "$@" --team "$team"
-    # A session that only ran workflows has no config.json to discover, so
-    # this is the only thing that scopes its runs. Harmless alongside --team.
-    [ "$workflow" = 1 ] && set -- "$@" --session "$session"
-    if [ -f "$ROOT/dist/server/index.js" ]; then
-      nohup node "$ROOT/dist/server/index.js" "$@" \
-        >>"$CLAUDE_DIR/team8.log" 2>&1 &
+    # A workflow names its session and nothing else: the server follows the
+    # session to whatever team it drives, /branch ancestors included.
+    if [ "$workflow" = 1 ]; then
+      start_console --session "$session"
+    elif [ -n "$team" ]; then
+      start_console --team "$team"
     else
-      nohup npx --prefix "$ROOT/.." tsx "$ROOT/../src/server/index.ts" "$@" \
-        >>"$CLAUDE_DIR/team8.log" 2>&1 &
+      start_console
     fi
     i=0
     while [ "$i" -lt 15 ]; do
-      curl -sf -m 1 "$HEALTH" >/dev/null 2>&1 && break
+      console_up && break
       sleep 0.1
       i=$((i + 1))
     done
@@ -250,12 +241,10 @@ marker="$markerdir/${team:-session-$short}"
 mkdir -p "$markerdir" 2>/dev/null
 : > "$marker" 2>/dev/null || bail
 
-# Link straight to the team when it is known. When it is not, link to the
-# console itself rather than to `?team=` a name we made up.
-if [ -n "$team" ]; then
-  printf '{"systemMessage":"team8 → http://127.0.0.1:%s/?team=%s"}\n' "$PORT" "$team"
-elif [ "$workflow" = 1 ]; then
+if [ "$workflow" = 1 ]; then
   printf '{"systemMessage":"Workflow console → http://127.0.0.1:%s/s/%s"}\n' "$PORT" "$session"
+elif [ -n "$team" ]; then
+  printf '{"systemMessage":"team8 → http://127.0.0.1:%s/?team=%s"}\n' "$PORT" "$team"
 else
   printf '{"systemMessage":"team8 → http://127.0.0.1:%s/"}\n' "$PORT"
 fi
