@@ -253,6 +253,6 @@ npm run build      # rebuilds plugin/dist
 ```
 
 `plugin/dist` is committed on purpose: the plugin ships as files and nothing
-builds on the user's machine. Run `npm run build` and commit the result with
-any source change. CI fails if `plugin/dist` is stale, and bumps the plugin's
-patch version on every green push to `main`.
+builds on the user's machine. You don't commit it yourself: every green push to
+`main` rebuilds it and commits it with the patch version bump. A local
+`npm run build` leaves it modified; discard that with `git checkout -- plugin/dist`.
