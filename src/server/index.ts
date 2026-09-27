@@ -12,7 +12,7 @@ import { setTeamsRoot } from './control/mailbox';
 import { createBriefs } from './brief';
 import { createStream } from './stream';
 import { foldWorkflows, modeOf } from './workflow';
-import { createHttpServer, listen, type SelectTeamOutcome } from './http';
+import { createBootingServer, createHttpHandler, listen, type SelectTeamOutcome } from './http';
 import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
@@ -126,20 +126,11 @@ function toDiscovered(config: TeamConfig): DiscoveredTeam {
   };
 }
 
-// A session file can outlive the process it describes (crash, kill -9), so a
-// name match alone is not enough — the pid inside it has to still be running.
-async function isSessionLive(sessionsRoot: string, sessionId: string): Promise<boolean> {
-  if (!sessionId) return false;
-  const session = await readJsonSafe<{ sessionId?: string; pid?: number }>(
-    path.join(sessionsRoot, `${sessionId}.json`),
-  );
-  return typeof session?.pid === 'number' && isPidAlive(session.pid);
-}
-
 export async function discoverTeam(
   teamsRoot: string,
   sessionsRoot: string,
   explicitTeam?: string,
+  opts: { session?: string; projectsRoot?: string } = {},
 ): Promise<DiscoveredTeam | null> {
   if (explicitTeam) {
     // The launcher can name a team before its directory exists at all (it
@@ -150,53 +141,33 @@ export async function discoverTeam(
     return config ? toDiscovered(config) : null;
   }
 
-  let entries: string[];
-  try {
-    entries = await fs.readdir(teamsRoot);
-  } catch {
-    return null;
+  const walk = await walkTeams(teamsRoot, sessionsRoot, '', opts.projectsRoot);
+  const { teams } = walk;
+  let best: TeamSummary | undefined;
+  if (opts.session) {
+    // A named session is shown as itself unless it drives a team — any other
+    // team on the machine is somebody else's work.
+    best = teamDrivenBy(walk, opts.session);
+  } else {
+    // The picker's and the follower's `live`. Claude Code leaves team
+    // directories behind, so the newest config.json on disk is routinely a
+    // team whose lead exited days ago. A lead-only roster is not a real team,
+    // so it is only a fallback, and a solo session still shows itself.
+    const live = teams.filter((t) => t.live);
+    const real = live.filter((t) => t.members >= 2);
+    best = (real.length > 0 ? real : live).sort(
+      (a, b) => Number(b.leadAlive) - Number(a.leadAlive) || b.createdAt - a.createdAt,
+    )[0];
   }
-  // Dirent.isDirectory() reflects the entry's own type, which is false for a
-  // symlink even when it points at a directory — fs.stat follows the link.
-  const dirs: string[] = [];
-  for (const name of entries) {
-    try {
-      if ((await fs.stat(path.join(teamsRoot, name))).isDirectory()) dirs.push(name);
-    } catch {
-      // Vanished between readdir and stat, or a broken symlink — skip it.
-    }
-  }
-
-  const configs: TeamConfig[] = [];
-  for (const name of dirs) {
-    const config = await readJsonSafe<TeamConfig>(path.join(teamsRoot, name, 'config.json'));
-    if (config) configs.push(config);
-  }
-  if (configs.length === 0) return null;
-
-  // A lead-only roster is not a real team — matches the launcher's own
-  // members.length >= 2 gate. Only fall back to lead-only teams when nothing
-  // else exists, so a solo session still shows itself.
-  const realTeams = configs.filter((c) => c.members.length >= 2);
-  const candidates = realTeams.length > 0 ? realTeams : configs;
-
-  let best: TeamConfig | null = null;
-  let bestLive = false;
-  for (const config of candidates) {
-    const live = realTeams.length > 0 && (await isSessionLive(sessionsRoot, config.leadSessionId));
-    const better = !best || (live && !bestLive) || (live === bestLive && config.createdAt > best.createdAt);
-    if (better) {
-      best = config;
-      bestLive = live;
-    }
-  }
-  return best ? toDiscovered(best) : null;
+  if (!best) return null;
+  const config = await readJsonSafe<TeamConfig>(path.join(teamsRoot, best.name, 'config.json'));
+  return config ? toDiscovered(config) : null;
 }
 
 /**
  * Session ids whose recorded pid is still running. The file is named for the
- * PID and carries the session id INSIDE it — `sessions/<sessionId>.json`, which
- * isSessionLive above reads, does not exist on a real machine.
+ * PID and carries the session id INSIDE it — `sessions/<sessionId>.json` does
+ * not exist on a real machine.
  */
 interface SessionFacts {
   live: Set<string>;
@@ -985,7 +956,7 @@ export async function listTeamSummaries(
   current: string,
   projectsRoot?: string,
   cwd?: string,
-  shared?: { folders: FolderSummary[]; walk: TeamWalk },
+  shared?: { folders?: FolderSummary[]; walk: TeamWalk },
 ): Promise<TeamsResponse> {
   const walk = shared?.walk ?? (await walkTeams(teamsRoot, sessionsRoot, current, projectsRoot));
   const { sessions, now, leadSessions, needsDiffstat, adopted } = walk;
@@ -1059,8 +1030,21 @@ interface TeamWalk {
   now: number;
   teams: TeamSummary[];
   leadSessions: Map<string, string>;
+  /** `leadSessions` before adoptByCwd: only a sidecar or config.leadSessionId. */
+  drivers: Map<string, string>;
   needsDiffstat: Map<string, string>;
   adopted: Set<string>;
+}
+
+/**
+ * The team a session drives on direct evidence. Not adoptByCwd's guess: that
+ * also hands a session any team rooted in its folder that moved in the last
+ * few minutes, which is how a session was shown a neighbour's finished team.
+ */
+function teamDrivenBy(walk: TeamWalk, sessionId: string): TeamSummary | undefined {
+  return walk.teams
+    .filter((t) => t.leadSessionId === sessionId || walk.drivers.get(t.name) === sessionId)
+    .sort((a, b) => b.members - a.members)[0];
 }
 
 async function walkTeams(
@@ -1170,6 +1154,7 @@ async function walkTeams(
 
   // Runs first: a session it hands a team to is represented by that team's row
   // and must not also appear in a listing as a bare session.
+  const drivers = new Map(leadSessions);
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
   // After adoption, against every identity the session on screen can carry:
   // `/s/<uuid>` hands over a session id, and the only row for a session that
@@ -1181,7 +1166,7 @@ async function walkTeams(
       current !== '' &&
       (t.name === current || t.leadSessionId === current || leadSessions.get(t.name) === current);
   }
-  return { sessions, now, teams, leadSessions, needsDiffstat, adopted };
+  return { sessions, now, teams, leadSessions, drivers, needsDiffstat, adopted };
 }
 
 /**
@@ -1302,12 +1287,25 @@ export async function main(argv: string[]): Promise<number> {
   const guard = checkClaudeVersion(await readClaudeVersion());
   console.log(guard.ok ? guard.message : `warning: ${guard.message}`);
 
+  // Claimed before the store and the boot sweep, which take seconds on a busy
+  // ~/.claude. A closed port for that long sends every hook's POST on to
+  // console-restart.sh, and each restart it spawned raced this one for the port,
+  // writing into the team log before it lost.
+  const server = createBootingServer();
+  let port: number;
+  try {
+    port = await listen(server, cli.port);
+  } catch (err) {
+    logError(`port ${cli.port} unavailable, exiting`, err);
+    process.exit(1);
+  }
+
   const teamsRoot = path.join(cli.claudeHome, 'teams');
   const sessionsRoot = path.join(cli.claudeHome, 'sessions');
   const projectsRoot = path.join(cli.claudeHome, 'projects');
   setTeamsRoot(teamsRoot);
 
-  const discovered = await discoverTeam(teamsRoot, sessionsRoot, cli.team);
+  const discovered = await discoverTeam(teamsRoot, sessionsRoot, cli.team, { session: cli.session, projectsRoot });
   // --team can name a team whose config.json has not been written yet (the
   // launcher announces before the spawn that creates it); discoverTeam then
   // reports unknown rather than guessing, so fall back to the name itself —
@@ -1396,6 +1394,7 @@ export async function main(argv: string[]): Promise<number> {
       teamName: team,
       leadSessionId: lead,
       sessionOnly: team === undefined && lead !== undefined,
+      adoptExistingTeams: false,
       onTeam: (info) => {
         if (gen !== generation) return;
         store.setTeam(info.teamName);
@@ -1418,7 +1417,8 @@ export async function main(argv: string[]): Promise<number> {
   // Set the moment the operator picks a team themselves. The follower below
   // only ever corrects the console's OWN guess — once a human has chosen, a
   // team appearing elsewhere must not yank them off what they are reading.
-  let pinned = false;
+  // `--session` is that choice made up front, by /console or the launcher.
+  let pinned = cli.session !== undefined;
   /**
    * Session name and branch read off disk for the CURRENT team, refreshed by
    * the follower. A floor under the `statusline` hook, which is optional.
@@ -1566,9 +1566,14 @@ export async function main(argv: string[]): Promise<number> {
       // A session that drives a team dir is opened as that team, so `/s/<lead>`
       // can stand in for the team row on reload. walkTeams, not
       // listTeamSummaries: no diffstat spawns, no session rows.
-      const team = (await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot)).teams.find(
-        (t) => t.current,
-      );
+      const team = teamDrivenBy(await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot), sessionId);
+      // A re-keyed team's frame carries config.leadSessionId, a fresh id, so the
+      // no-op check above misses the session really driving it; rebuilding the
+      // same team would blank the screen for a whole sweep.
+      if (team && team.name === currentTeam) {
+        pinned = true;
+        return { ok: true, changed: false };
+      }
       if (team) await retarget(team.name, team.leadSessionId || sessionId);
       else await retargetSession(sessionId);
       pinned = true;
@@ -1593,7 +1598,8 @@ export async function main(argv: string[]): Promise<number> {
     process.exit(0);
   };
 
-  const server = createHttpServer({
+  server.removeAllListeners('request');
+  server.on('request', createHttpHandler({
     permits,
     hooks: createHookHandlers({
       store: live,
@@ -1633,9 +1639,7 @@ export async function main(argv: string[]): Promise<number> {
       return briefs.generate({ agents: state.agents, tasks: state.tasks });
     },
     onShutdown: stop,
-  });
-
-  const port = await listen(server, cli.port);
+  }));
   console.log(`team8 on http://127.0.0.1:${port}${cli.readOnly ? ' (read-only)' : ''}`);
 
   /**
@@ -1658,12 +1662,14 @@ export async function main(argv: string[]): Promise<number> {
     // though it also resets `switching` back to false before we resume — the
     // same bug `onTeam`'s `gen !== generation` check guards against.
     const gen = generation;
+    const walk = await walkTeams(teamsRoot, sessionsRoot, currentTeam || currentSession, projectsRoot);
     const { teams } = await listTeamSummaries(
       teamsRoot,
       sessionsRoot,
       currentTeam || currentSession,
       projectsRoot,
       cli.cwd,
+      { walk },
     );
 
     // The listing already resolved both of these off disk for every row, so
@@ -1678,11 +1684,18 @@ export async function main(argv: string[]): Promise<number> {
       ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode }
       : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
 
-    if (pinned || gen !== generation) return;
-    if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
-    // Sorted live-first, then by most recent activity, so the first real team
-    // is the one worth watching.
-    const target = teams.find((t) => t.members >= 2 && t.live);
+    if (gen !== generation) return;
+    // A session that has since formed a team is shown as that team. That is
+    // the pin followed, not the operator yanked off it.
+    let target = currentTeam === '' && currentSession !== '' ? teamDrivenBy(walk, currentSession) : undefined;
+    if (target && target.members < 2) target = undefined;
+    if (!target) {
+      if (pinned) return;
+      if (teams.some((t) => t.name === currentTeam && t.members >= 2 && t.live)) return;
+      // Sorted live-first, then by most recent activity, so the first real team
+      // is the one worth watching.
+      target = teams.find((t) => t.members >= 2 && t.live);
+    }
     if (!target || target.name === currentTeam) return;
     switching = true;
     try {

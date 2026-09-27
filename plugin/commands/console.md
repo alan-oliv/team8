@@ -40,52 +40,38 @@ If `STILL UP` is printed, something else holds the port. Say so and stop rather
 than starting a second server against it. If `pgrep` still lists processes after
 the health check fails, they are orphans holding no port — say how many.
 
-## 2. Which team, if any, is live?
-
-This decides what goes in the URL. It does **not** decide whether to start —
-step 3 runs either way, so the console is up and waiting before the next team
-exists rather than after it.
-
-A team is live only when its `config.json` lists two or more members. Ordinary
-subagents never appear there, so an empty result means no team yet.
+## 2. Start the installed build on this session
 
 ```bash
-for c in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/teams/*/config.json; do
-  [ -f "$c" ] || continue
-  n=$(grep -o '"agentId"' "$c" | wc -l | tr -d ' ')
-  [ "$n" -ge 2 ] && echo "$(basename "$(dirname "$c")") $n"
-done
-```
-
-Nothing printed is a normal outcome, not a failure. Carry on to step 3.
-
-## 3. Start the installed build
-
-```bash
-nohup node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" --port 4823 \
+nohup node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" --port 4823 --session "${CLAUDE_SESSION_ID}" \
   >>"${CLAUDE_CONFIG_DIR:-$HOME/.claude}/team8.log" 2>&1 &
-sleep 2
-curl -sf -m 2 http://127.0.0.1:4823/health
+for i in $(seq 1 30); do curl -sf -m 2 http://127.0.0.1:4823/health && break; sleep 1; done
 ```
 
-If `${CLAUDE_PLUGIN_ROOT}` came through unsubstituted, say so rather than
-guessing a path — the plugin is not installed the way this command expects.
+The loop is not impatience: the server holds the port from its first second
+but answers 503 until it has read `~/.claude`, which takes a while on a machine
+with many transcripts.
 
-On success, with a team:
+`--session` points the console at the session running this command, or at the
+team that session leads. Without it the server guesses, and Claude Code leaves
+old team directories behind, so the guess was routinely a team whose session
+had exited days earlier.
 
-> Console restarted: http://127.0.0.1:4823/?team=TEAM — N agents.
+If `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_SESSION_ID}` came through unsubstituted,
+say so rather than guessing — the plugin is not installed the way this command
+expects.
 
-With no team, say so plainly and give the bare URL, because an empty wall would
-otherwise read as a broken console:
+On success:
 
-> Console restarted: http://127.0.0.1:4823/ — no team yet, it binds to the next
-> one you spawn.
+> Console restarted: http://127.0.0.1:4823/s/${CLAUDE_SESSION_ID}
 
-Use the `team` from the health response, not from step 2, and drop the `?team=`
-part when it is empty. If the health check fails, print the last few lines of
+Always give that `/s/` URL, never a `?team=` one. Any other session's hook can
+restart the console in the second after step 1, and then this start exits
+because the port is taken; opening the `/s/` URL still switches the console to
+this session. If the health check fails, print the last few lines of
 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/team8.log` and stop.
 
-**Say this too when there was no team:** a server with nothing to watch reaps
+**Say this too when the health response names no team:** a server with no team to watch reaps
 itself after its idle grace window, roughly ten minutes, so an unused console
 will not be there later. That is the server's own lifecycle, not a crash — run
 the command again, or just spawn a team and it starts itself.

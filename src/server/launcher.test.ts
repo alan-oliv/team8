@@ -81,6 +81,47 @@ describe('console-launch.sh', () => {
     expect(run.stdout).toContain('127.0.0.1');
   });
 
+  it('links a workflow to the session that ran it, not to a team guessed from the folder', async () => {
+    // A team rooted in the same folder belongs to some other session.
+    const teamDir = path.join(claudeDir, 'teams', 'session-neighbour');
+    await fs.mkdir(teamDir, { recursive: true });
+    await fs.writeFile(
+      path.join(teamDir, 'config.json'),
+      JSON.stringify({
+        name: 'session-neighbour',
+        leadSessionId: 'neighbour-session',
+        members: [
+          { agentId: 'team-lead', cwd: process.cwd() },
+          { agentId: 'agent-1', cwd: process.cwd() },
+        ],
+      }),
+    );
+
+    const run = await launch({ hook_event_name: 'PostToolUse', session_id: SESSION, tool_name: 'Workflow' });
+
+    expect(run.stdout).toContain(`/s/${SESSION}`);
+    expect(run.stdout).not.toContain('session-neighbour');
+  });
+
+  it("links a /branch'd lead's workflow to the team its ancestor leads", async () => {
+    const teamDir = path.join(claudeDir, 'teams', 'session-ancestor');
+    await fs.mkdir(teamDir, { recursive: true });
+    await fs.writeFile(
+      path.join(teamDir, 'config.json'),
+      JSON.stringify({ name: 'session-ancestor', leadSessionId: 'ancestor-session', members: [{ agentId: 'team-lead' }] }),
+    );
+    const projectDir = path.join(claudeDir, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.writeFile(
+      path.join(projectDir, `${SESSION}.jsonl`),
+      `${JSON.stringify({ forkedFrom: { sessionId: 'ancestor-session' } })}\n`,
+    );
+
+    const run = await launch({ hook_event_name: 'PostToolUse', session_id: SESSION, tool_name: 'Workflow' });
+
+    expect(run.stdout).toContain('?team=session-ancestor');
+  });
+
   it('stays asleep for an ordinary subagent, which carries no name', async () => {
     const run = await launch({
       hook_event_name: 'PreToolUse',

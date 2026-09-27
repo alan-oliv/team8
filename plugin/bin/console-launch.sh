@@ -163,7 +163,10 @@ done
 if [ -z "$team" ] && [ -f "$CLAUDE_DIR/teams/session-$short/config.json" ]; then
   team="session-$short"
 fi
-[ -n "$team" ] || team=$(find_team_by_cwd || true)
+# Not for a workflow: this matches any team rooted in the same folder, which is
+# as likely a neighbour's, and a workflow's console falls back to its own
+# session instead.
+[ -n "$team" ] || [ "$workflow" = 1 ] || team=$(find_team_by_cwd || true)
 
 if [ "$workflow" = 0 ]; then
 case "$event" in
@@ -252,7 +255,7 @@ mkdir -p "$markerdir" 2>/dev/null
 if [ -n "$team" ]; then
   printf '{"systemMessage":"team8 → http://127.0.0.1:%s/?team=%s"}\n' "$PORT" "$team"
 elif [ "$workflow" = 1 ]; then
-  printf '{"systemMessage":"Workflow console → http://127.0.0.1:%s/"}\n' "$PORT"
+  printf '{"systemMessage":"Workflow console → http://127.0.0.1:%s/s/%s"}\n' "$PORT" "$session"
 else
   printf '{"systemMessage":"team8 → http://127.0.0.1:%s/"}\n' "$PORT"
 fi

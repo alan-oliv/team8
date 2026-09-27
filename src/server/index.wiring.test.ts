@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentNameFrom } from './ingest/hooks';
 import { agentOfTranscript, TAIL_POLL_MS } from './ingest/files';
+import { FOLLOW_INTERVAL_MS } from './index';
 import type { TeamState, TeamsResponse } from '../shared/domain';
 import type { Sidecar } from '../shared/roster';
 
@@ -146,8 +147,8 @@ async function writeTeamConfig(dir: string, team: string, leadSessionId: string,
   );
 }
 
-async function boot(claudeHome: string, extra: string[] = []): Promise<string> {
-  const args = [TSX, ENTRY, '--claude-home', claudeHome, '--team', TEAM, '--port', '0', ...extra];
+async function boot(claudeHome: string, extra: string[] = [], team: string | null = TEAM): Promise<string> {
+  const args = [TSX, ENTRY, '--claude-home', claudeHome, ...(team ? ['--team', team] : []), '--port', '0', ...extra];
   const proc = spawn(process.execPath, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -700,5 +701,104 @@ describe('the plan on the wire', () => {
     const res = await fetch(`${url}/api/plan-task?n=1`);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { text: string }).text.startsWith('### Task 1: Add the type')).toBe(true);
+  }, 20_000);
+});
+
+describe('which team a console boots onto', () => {
+  async function emptyHome(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-boot-'));
+    home = dir;
+    for (const d of ['teams', 'tasks', 'sessions', 'projects']) await fs.mkdir(path.join(dir, d), { recursive: true });
+    return dir;
+  }
+
+  async function leftover(dir: string, team: string, leadSessionId: string) {
+    await writeTeamConfig(dir, team, leadSessionId, 'probe-old');
+    const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await fs.utimes(path.join(dir, 'teams', team, 'config.json'), old, old);
+  }
+
+  async function teamOf(url: string): Promise<string> {
+    return ((await (await fetch(`${url}/health`)).json()) as { team: string }).team;
+  }
+
+  async function waitForTeam(url: string, deadlineMs: number): Promise<string> {
+    const until = Date.now() + deadlineMs;
+    let team = await teamOf(url);
+    while (team === '' && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 100));
+      team = await teamOf(url);
+    }
+    return team;
+  }
+
+  it('a bare boot over leftover teams shows none of them, then or after the follower looks', async () => {
+    const dir = await emptyHome();
+    await leftover(dir, 'aaa-oldest', 'gone-session-1');
+    await leftover(dir, 'session-zzz-newest', 'gone-session-2');
+
+    const url = await boot(dir, [], null);
+
+    expect(await teamOf(url)).toBe('');
+    expect(await waitForTeam(url, FOLLOW_INTERVAL_MS + 1000)).toBe('');
+  }, 20_000);
+
+  it('a console started on a session shows the team that session forms later', async () => {
+    const dir = await emptyHome();
+    const url = await boot(dir, ['--session', SOLO_SESSION], null);
+    expect(await teamOf(url)).toBe('');
+
+    await writeTeamConfig(dir, 'session-8f2a1c00', SOLO_SESSION, 'probe-new');
+
+    expect(await waitForTeam(url, FOLLOW_INTERVAL_MS * 3)).toBe('session-8f2a1c00');
+  }, 20_000);
+
+  it('a second console on a taken port exits without touching the team log', async () => {
+    home = await layout();
+    const url = await boot(home);
+    const log = path.join(home, 'team8', 'logs', `${TEAM}.jsonl`);
+    const before = await fs.readFile(log, 'utf8');
+
+    const code = await new Promise<number | null>((resolve) => {
+      const args = [TSX, ENTRY, '--claude-home', home, '--team', TEAM, '--port', new URL(url).port];
+      spawn(process.execPath, args, { stdio: 'ignore' }).on('exit', resolve);
+    });
+
+    expect(code).toBe(1);
+    expect(await fs.readFile(log, 'utf8')).toBe(before);
+    await expect(fs.stat(`${log}.owner`)).resolves.toBeTruthy();
+  }, 20_000);
+
+  it('opening /s/<session> for the re-keyed team already on screen changes nothing', async () => {
+    const dir = await emptyHome();
+    // Re-keyed: config.leadSessionId is a fresh id no session carries, and only
+    // the teammate's sidecar ties the team to the session driving it.
+    await writeTeamConfig(dir, 'rekeyed-team', 'fresh-id-nobody-has', 'probe-rk');
+    const subagents = path.join(dir, 'projects', SLUG, SOLO_SESSION, 'subagents');
+    await fs.mkdir(subagents, { recursive: true });
+    await fs.writeFile(
+      path.join(subagents, 'agent-aprobe-rk-0123456789abcdef.meta.json'),
+      JSON.stringify({
+        agentType: 'probe-rk',
+        description: 'a re-keyed teammate',
+        name: 'probe-rk',
+        spawnDepth: 0,
+        model: 'claude-opus-5',
+        taskKind: 'in_process_teammate',
+        teamName: 'rekeyed-team',
+        color: 'green',
+      } satisfies Sidecar),
+    );
+    await fs.writeFile(path.join(dir, 'projects', SLUG, `${SOLO_SESSION}.jsonl`), '');
+    await fs.writeFile(
+      path.join(dir, 'sessions', `${process.pid}.json`),
+      JSON.stringify({ sessionId: SOLO_SESSION, pid: process.pid, cwd: process.cwd() }),
+    );
+
+    const url = await boot(dir, ['--session', SOLO_SESSION], null);
+    expect(await teamOf(url)).toBe('rekeyed-team');
+
+    const res = (await (await selectSession(url, SOLO_SESSION)).json()) as { changed?: boolean };
+    expect(res.changed).toBe(false);
   }, 20_000);
 });
