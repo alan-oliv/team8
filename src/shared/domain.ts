@@ -317,6 +317,13 @@ export interface PlanProgress {
   tasks: PlanTask[];
 }
 
+/**
+ * What the operator asked the console to show. A session is followed to
+ * whatever team it drives; a team is held even after it ends; auto shows the
+ * newest live team.
+ */
+export type Watching = { kind: 'session'; id: string } | { kind: 'team'; name: string } | { kind: 'auto' };
+
 export interface TeamState {
   teamName: string;
   /**

@@ -15,6 +15,7 @@ import { foldWorkflows, modeOf } from './workflow';
 import { createBootingServer, createHttpHandler, listen, type SelectTeamOutcome } from './http';
 import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
+import { autoTeam, teamOfSession } from './watch';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
@@ -142,23 +143,11 @@ export async function discoverTeam(
   }
 
   const walk = await walkTeams(teamsRoot, sessionsRoot, '', opts.projectsRoot);
-  const { teams } = walk;
-  let best: TeamSummary | undefined;
-  if (opts.session) {
-    // A named session is shown as itself unless it drives a team — any other
-    // team on the machine is somebody else's work.
-    best = teamDrivenBy(walk, opts.session);
-  } else {
-    // The picker's and the follower's `live`. Claude Code leaves team
-    // directories behind, so the newest config.json on disk is routinely a
-    // team whose lead exited days ago. A lead-only roster is not a real team,
-    // so it is only a fallback, and a solo session still shows itself.
-    const live = teams.filter((t) => t.live);
-    const real = live.filter((t) => t.members >= 2);
-    best = (real.length > 0 ? real : live).sort(
-      (a, b) => Number(b.leadAlive) - Number(a.leadAlive) || b.createdAt - a.createdAt,
-    )[0];
-  }
+  // A named session is shown as itself unless it drives a team — any other
+  // team on the machine is somebody else's work.
+  const best = opts.session
+    ? teamOfSession(walk.teams, walk.drivers, await forkChainOf(opts.projectsRoot, opts.session))
+    : autoTeam(walk.teams);
   if (!best) return null;
   const config = await readJsonSafe<TeamConfig>(path.join(teamsRoot, best.name, 'config.json'));
   return config ? toDiscovered(config) : null;
@@ -726,6 +715,47 @@ export async function sessionProjectDir(
   return null;
 }
 
+/** The `forkedFrom` header Claude Code writes as a `/branch`'d transcript's first record. */
+async function forkParentOf(transcript: string): Promise<string | undefined> {
+  let head: string;
+  try {
+    const fh = await fs.open(transcript, 'r');
+    try {
+      const buf = Buffer.alloc(65536);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      head = buf.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return undefined;
+  }
+  try {
+    const first = JSON.parse(head.split('\n', 1)[0]) as { forkedFrom?: { sessionId?: unknown } };
+    const parent = first.forkedFrom?.sessionId;
+    return typeof parent === 'string' && parent !== '' ? parent : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The session, then each `/branch` ancestor. `/branch` gives the fork a new id
+ * but never touches config.json, so a forked lead's team is keyed on an
+ * ancestor. Capped at 20 hops, like the launcher's walk.
+ */
+export async function forkChainOf(projectsRoot: string | undefined, sessionId: string): Promise<string[]> {
+  const chain = [sessionId];
+  if (!projectsRoot) return chain;
+  while (chain.length <= 20) {
+    const dir = await sessionProjectDir(projectsRoot, chain[chain.length - 1]);
+    const parent = dir ? await forkParentOf(`${dir}.jsonl`) : undefined;
+    if (!parent || chain.includes(parent)) break;
+    chain.push(parent);
+  }
+  return chain;
+}
+
 /**
  * Live sessions that never formed a team, as picker rows.
  *
@@ -1036,17 +1066,6 @@ interface TeamWalk {
   adopted: Set<string>;
 }
 
-/**
- * The team a session drives on direct evidence. Not adoptByCwd's guess: that
- * also hands a session any team rooted in its folder that moved in the last
- * few minutes, which is how a session was shown a neighbour's finished team.
- */
-function teamDrivenBy(walk: TeamWalk, sessionId: string): TeamSummary | undefined {
-  return walk.teams
-    .filter((t) => t.leadSessionId === sessionId || walk.drivers.get(t.name) === sessionId)
-    .sort((a, b) => b.members - a.members)[0];
-}
-
 async function walkTeams(
   teamsRoot: string,
   sessionsRoot: string,
@@ -1164,7 +1183,7 @@ async function walkTeams(
   for (const t of teams) {
     t.current =
       current !== '' &&
-      (t.name === current || t.leadSessionId === current || leadSessions.get(t.name) === current);
+      (t.name === current || t.leadSessionId === current || drivers.get(t.name) === current);
   }
   return { sessions, now, teams, leadSessions, drivers, needsDiffstat, adopted };
 }
@@ -1566,7 +1585,8 @@ export async function main(argv: string[]): Promise<number> {
       // A session that drives a team dir is opened as that team, so `/s/<lead>`
       // can stand in for the team row on reload. walkTeams, not
       // listTeamSummaries: no diffstat spawns, no session rows.
-      const team = teamDrivenBy(await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot), sessionId);
+      const walk = await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot);
+      const team = teamOfSession(walk.teams, walk.drivers, [sessionId]);
       // A re-keyed team's frame carries config.leadSessionId, a fresh id, so the
       // no-op check above misses the session really driving it; rebuilding the
       // same team would blank the screen for a whole sweep.
@@ -1687,7 +1707,7 @@ export async function main(argv: string[]): Promise<number> {
     if (gen !== generation) return;
     // A session that has since formed a team is shown as that team. That is
     // the pin followed, not the operator yanked off it.
-    let target = currentTeam === '' && currentSession !== '' ? teamDrivenBy(walk, currentSession) : undefined;
+    let target = currentTeam === '' && currentSession !== '' ? teamOfSession(walk.teams, walk.drivers, [currentSession]) : undefined;
     if (target && target.members < 2) target = undefined;
     if (!target) {
       if (pinned) return;
