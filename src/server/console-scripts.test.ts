@@ -210,3 +210,62 @@ describe('console-hint.sh', () => {
     expect(await starts()).toEqual([]);
   });
 });
+
+describe('console-open.sh', () => {
+  const opener = async () => {
+    const file = path.join(root, 'open.sh');
+    await fs.writeFile(file, `#!/bin/sh\necho "$1" >> ${JSON.stringify(path.join(root, 'opened.log'))}\n`, { mode: 0o755 });
+    return { OCTO_OPEN: file };
+  };
+  const url = (id: string) => `http://127.0.0.1:${port}/s/${id}`;
+  const lastLine = (s: string) => s.trim().split('\n').at(-1);
+
+  it('switches a running console of the same build to this session, without a restart', async () => {
+    await fake({ health: { version: '1.0.44', build: 'installed', tabs: 1 }, plugin: '1.0.44' });
+    await startRunning();
+
+    const run = await script('console-open.sh', ['session-two'], '', await opener());
+
+    expect(run.code).toBe(0);
+    expect(lastLine(run.stdout)).toBe(url('session-two'));
+    expect(await posts()).toContain('/api/select-session/session-two');
+    expect(await starts()).toHaveLength(1);
+    expect(await lines('opened.log')).toEqual([]);
+  });
+
+  it('replaces an older console with this build, started on this session', async () => {
+    await fake({ health: { version: '1.0.43', build: 'installed', tabs: 1 }, plugin: '1.0.44' });
+    await startRunning();
+
+    const run = await script('console-open.sh', ['session-two'], '', await opener());
+
+    expect(run.code).toBe(0);
+    expect((await starts())[1]).toBe(`--port ${port} --session session-two`);
+  });
+
+  it('starts one on this session when none runs, and opens a tab when none is open', async () => {
+    const run = await script('console-open.sh', ['session-two'], '', await opener());
+
+    expect(run.code).toBe(0);
+    expect(await starts()).toEqual([`--port ${port} --session session-two`]);
+    expect(await lines('opened.log')).toEqual([url('session-two')]);
+  });
+
+  it('never replaces a dev console, only switches it', async () => {
+    await fake({ health: { version: '1.0.1', build: 'dev', tabs: 1 }, plugin: '1.0.44' });
+    await startRunning();
+
+    await script('console-open.sh', ['session-two'], '', await opener());
+
+    expect(await starts()).toHaveLength(1);
+    expect(await posts()).toContain('/api/select-session/session-two');
+  });
+
+  it('refuses a session id that was never substituted', async () => {
+    const run = await script('console-open.sh', ['${CLAUDE_SESSION_ID}']);
+
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain('not substituted');
+    expect(await starts()).toEqual([]);
+  });
+});
