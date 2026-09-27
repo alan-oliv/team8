@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { openStore, type Store, type EventKind, type StoredEvent } from './store';
 import { project, transcriptHistory, transcriptLineText } from './project';
 import { startFileIngest } from './ingest/files';
@@ -16,6 +17,7 @@ import { createBootingServer, createHttpHandler, listen, type SelectTeamOutcome 
 import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
 import { autoTeam, teamOfSession } from './watch';
+import { installedVersion, readBuildInfo, withInstalled } from './build-info';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
 import { logError, logInfo } from './log';
@@ -1349,6 +1351,7 @@ export async function main(argv: string[]): Promise<number> {
   // What the operator asked to see. currentTeam/currentSession below record what
   // is SHOWN; the follower moves that toward this. --session wins over --team: an
   // older launcher passed both, and its team came from that same session.
+  let build = await readBuildInfo(fileURLToPath(import.meta.url), cli.claudeHome);
   let watching: Watching = cli.session
     ? { kind: 'session', id: cli.session }
     : cli.team
@@ -1380,6 +1383,7 @@ export async function main(argv: string[]): Promise<number> {
       decidedMode: leadFacts.mode,
       switching,
       watching,
+      build,
       workflows,
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
@@ -1702,6 +1706,8 @@ export async function main(argv: string[]): Promise<number> {
       cli.cwd,
       { walk },
     );
+    // `claude plugin update` can land a newer build while this one serves.
+    build = withInstalled(build, await installedVersion(cli.claudeHome));
 
     // The listing already resolved both of these off disk for every row, so
     // caching the current team's costs nothing. The frame's own copies come

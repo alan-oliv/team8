@@ -279,7 +279,16 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
 
         if (method === 'GET' && route === '/health') {
           const s = deps.state();
-          json(res, 200, { ok: true, team: s.teamName, agents: s.agents.length });
+          json(res, 200, {
+            ok: true,
+            team: s.teamName,
+            agents: s.agents.length,
+            version: s.build?.version,
+            build: s.build?.kind,
+            sha: s.build?.sha,
+            watching: s.watching,
+            tabs: deps.stream.clients,
+          });
           return;
         }
 
