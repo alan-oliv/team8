@@ -21,3 +21,4 @@ pr: <url, at close>
 - actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
 - estimate vs actual: <one line>
 - went wrong / change next time: <one line each, or "nothing">
+- checked by hand (port 4834, real ~/.claude): start + tab opened yes · tab followed switch without restart yes · restart restored watch yes
