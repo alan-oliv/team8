@@ -49,8 +49,8 @@ When `/team8:console` runs in session S:
 
 ### The watch
 
-`src/server/index.ts` keeps one value in place of `pinned`, `currentTeam` and
-`currentSession`:
+`src/server/index.ts` keeps one value in place of `pinned`; `currentTeam` and
+`currentSession` keep recording what is shown:
 
 ```ts
 type Watching = { kind: 'session'; id: string } | { kind: 'team'; name: string } | { kind: 'auto' };
@@ -99,8 +99,8 @@ current is always the one on screen, and clicking any other row switches.
 
 ### Tabs follow
 
-- The frame carries `watchedSession?: string` when the watch is a session.
-- `writeUrlState` writes `/s/<watchedSession>` when present, else the existing
+- The frame carries `watching`.
+- `writeUrlState` writes `/s/<id>` for a session watch, else the existing
   `/s/<lead>`. A re-keyed team's frame lead is a fresh id no session carries, so
   the session id is what makes a reload land back on it.
 - A tab announces its `/s/` route only on page load (unchanged), so a tab that
@@ -177,7 +177,7 @@ Every test below is written to fail before its change.
   watch.
 - **Scripts:** `console-restart.sh` treats a 503 as up and restores the recorded
   flags; `console-hint.sh` replaces only an older build.
-- **Web:** a frame whose `watchedSession` changes rewrites the tab's address to
+- **Web:** a frame whose watched session changes rewrites the tab's address to
   `/s/<id>`.
 - **F3:** assign `leadFacts` in `followRealTeam` only after the generation check;
   point the wiring fixture's team at a temp directory with its own `.git/HEAD`.
