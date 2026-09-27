@@ -752,6 +752,19 @@ describe('which team a console boots onto', () => {
     return team;
   }
 
+  async function readRecord(dir: string): Promise<{ port: number; watching: unknown }> {
+    const file = path.join(dir, 'team8', 'console.json');
+    const until = Date.now() + 2000;
+    for (;;) {
+      try {
+        return JSON.parse(await fs.readFile(file, 'utf8')) as { port: number; watching: unknown };
+      } catch (err) {
+        if (Date.now() > until) throw err;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  }
+
   async function liveSession(dir: string, sessionId: string) {
     await fs.writeFile(path.join(dir, 'projects', SLUG, `${sessionId}.jsonl`), '');
     await fs.writeFile(
@@ -915,5 +928,27 @@ describe('which team a console boots onto', () => {
     await new Promise((r) => setTimeout(r, FOLLOW_INTERVAL_MS + 1000));
 
     expect(await teamOf(url)).toBe(TEAM);
+  }, 20_000);
+
+  it('records what it watches, and rewrites the record when the watch moves', async () => {
+    home = await layout();
+    const url = await boot(home);
+
+    expect(await readRecord(home)).toMatchObject({ port: Number(new URL(url).port), watching: { kind: 'team', name: TEAM } });
+
+    await selectSession(url, LEAD_SESSION_B);
+    expect((await readRecord(home)).watching).toEqual({ kind: 'session', id: LEAD_SESSION_B });
+  }, 20_000);
+
+  it('a console that fails while starting exits instead of holding the port', async () => {
+    const dir = await emptyHome();
+    // A file where the store's directory belongs, so opening the store throws.
+    await fs.writeFile(path.join(dir, 'team8'), 'not a directory');
+
+    const code = await new Promise<number | null>((resolve) => {
+      spawn(process.execPath, [TSX, ENTRY, '--claude-home', dir, '--port', '0'], { stdio: 'ignore' }).on('exit', resolve);
+    });
+
+    expect(code).toBe(1);
   }, 20_000);
 });

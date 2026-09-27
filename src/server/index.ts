@@ -18,8 +18,9 @@ import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
 import { autoTeam, teamOfSession } from './watch';
 import { installedVersion, readBuildInfo, withInstalled } from './build-info';
+import { recordPathFor, writeConsoleRecord } from './console-record';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
-import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
+import { isPidAlive, recycledSpares } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
 import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState, Watching } from '../shared/domain';
@@ -29,10 +30,8 @@ const execFileAsync = promisify(execFile);
 
 export const DEFAULT_PORT = 4823;
 /**
- * How long the machine may be quiet before the reaper exits, and — reused by
- * the team listing — how recently a team must have moved to still read as
- * live. One window, so "live" in the dropdown and "live" to the reaper cannot
- * drift apart.
+ * How recently a team's files must have moved for it to read as live, in the
+ * picker and for the `auto` watch.
  */
 export const IDLE_GRACE_MS = 10 * 60 * 1000;
 /**
@@ -1357,9 +1356,15 @@ export async function main(argv: string[]): Promise<number> {
     : cli.team
       ? { kind: 'team', name: cli.team }
       : { kind: 'auto' };
+  const record = recordPathFor(cli.dbPath);
   const watch = (next: Watching): void => {
     watching = next;
+    // What console-restart.sh and console-hint.sh reopen after a crash or an upgrade.
+    void writeConsoleRecord(record, { pid: process.pid, port, version: build.version, watching }).catch((err: unknown) =>
+      logError('console record', err),
+    );
   };
+  watch(watching);
 
   const publish = (): TeamState => {
     const events = store.replay();
@@ -1551,9 +1556,7 @@ export async function main(argv: string[]): Promise<number> {
    * `setTeam` is what clears the previous target's events, and a session id
    * passes its name gate, so the session gets the per-target log every team
    * already gets. `currentTeam` stays empty — there is no team to highlight in
-   * the picker, and a name with no `teams/<name>` directory behind it would
-   * read as a deleted team and have the idle reaper exit the console out from
-   * under the operator.
+   * the picker.
    */
   const retargetSession = async (sessionId: string): Promise<void> => {
     hub.publish();
@@ -1620,12 +1623,10 @@ export async function main(argv: string[]): Promise<number> {
     }
   };
 
-  let reaper: { stop(): void } | null = null;
   let stopping = false;
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    reaper?.stop();
     clearInterval(follower);
     ingest.close();
     hub.close();
@@ -1643,7 +1644,6 @@ export async function main(argv: string[]): Promise<number> {
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
       onAgentActivity: (agent) => void ingest.drainAgent(agent),
-      onShutdown: stop,
     }),
     stream: hub,
     state: publish,
@@ -1743,16 +1743,6 @@ export async function main(argv: string[]): Promise<number> {
   follower.unref();
   void followRealTeam();
 
-  reaper = startIdleReaper({
-    watchedTeam: () => currentTeam,
-    teamsRoot,
-    graceMs: IDLE_GRACE_MS,
-    onIdle: () => {
-      logInfo('nothing live to show — exiting');
-      process.exit(0);
-    },
-  });
-
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
@@ -1760,5 +1750,11 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
-  void main(process.argv.slice(2));
+  // The port is held from the first second, so a throw while reading
+  // ~/.claude would otherwise leave it answering 503 with nothing behind it,
+  // and no hook would ever restart it.
+  main(process.argv.slice(2)).catch((err: unknown) => {
+    logError('boot failed', err);
+    process.exit(1);
+  });
 }

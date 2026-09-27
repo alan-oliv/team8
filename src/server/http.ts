@@ -140,7 +140,7 @@ export interface HttpDeps {
    * brief for another would be answered from state nobody here holds.
    */
   generateBrief?: (sessionId: string) => Promise<Brief | null>;
-  /** Spec §5.4's shutdown action, shared with the SessionEnd hook handler. */
+  /** Spec §5.4's shutdown action: `/api/shutdown`, which a newer build uses to replace this one. */
   onShutdown?: () => void;
   /** Directory holding the built web bundle (default: {@link DEFAULT_WEB_DIST}). */
   webDist?: string;

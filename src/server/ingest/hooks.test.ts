@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -344,49 +344,32 @@ describe('hooks from a foreign session with no agent_id', () => {
   });
 
   it('is not dropped for a SessionEnd, so a foreign session end still reaches the SessionEnd branch', async () => {
-    const ended: string[] = [];
     const withLead = createHookHandlers({
       store,
       permits,
       leadSessionId: () => 'lead-session-id',
-      onShutdown: () => ended.push('shutdown'),
     });
 
     await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'some-other-session' });
     await new Promise((r) => setTimeout(r, 400));
 
-    expect(ended).toEqual([]);
     expect(of(store.replay(), 'hook')).toHaveLength(1);
   });
 });
 
 describe('SessionEnd', () => {
-  it('exits only for the lead session', async () => {
-    // The hooks live in ~/.claude/settings.json — user scope — so every session
-    // on the machine posts SessionEnd here.
-    const ended: string[] = [];
-    const withLead = createHookHandlers({
-      store,
-      permits,
-      leadSessionId: () => 'lead-session-id',
-      onShutdown: () => ended.push('shutdown'),
-    });
+  it("never shuts the console down, not even for the lead's own session", async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    try {
+      const withLead = createHookHandlers({ store, permits, leadSessionId: () => 'lead-session-id' });
+      await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'lead-session-id' });
+      await new Promise((r) => setTimeout(r, 400));
 
-    await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'some-other-session' });
-    await new Promise((r) => setTimeout(r, 400));
-    expect(ended).toEqual([]);
-
-    await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'lead-session-id' });
-    await new Promise((r) => setTimeout(r, 400));
-    expect(ended).toEqual(['shutdown']);
-  });
-
-  it('does not exit while the lead session is still unknown', async () => {
-    const ended: string[] = [];
-    const noLead = createHookHandlers({ store, permits, onShutdown: () => ended.push('shutdown') });
-    await noLead.hook({ hook_event_name: 'SessionEnd', session_id: 'anything' });
-    await new Promise((r) => setTimeout(r, 400));
-    expect(ended).toEqual([]);
+      expect(exit).not.toHaveBeenCalled();
+      expect(of(store.replay(), 'hook')).toHaveLength(1);
+    } finally {
+      exit.mockRestore();
+    }
   });
 });
 
