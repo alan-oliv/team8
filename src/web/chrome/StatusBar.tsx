@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react';
-import type { BuildInfo, TeamState, ViewId } from '../../shared/domain';
+import type { TeamState, ViewId } from '../../shared/domain';
 import type { SettingsStore } from '../state/useSettings';
 import { formatCost, formatElapsed, formatTokens, meterCells } from '../format';
 import { soloViews, VIEW_IDS, withPlan } from '../state/useTeamState';
@@ -66,12 +66,11 @@ export interface StatusBarProps {
   solo?: boolean;
   /** Whether `trace` has anything to draw — see {@link soloViews}. */
   hasSubagents?: boolean;
-  build?: BuildInfo;
 }
 
 export function StatusBar({
   state, view, onViewChange, now, teamsOpen, onTeamsOpenChange, onSelectRun, appearance, solo,
-  hasSubagents = false, build,
+  hasSubagents = false,
 }: StatusBarProps) {
   const done = state.tasks.filter((t) => t.state === 'completed').length;
   // Team context occupancy — what the meter has always looked like it meant.
@@ -208,7 +207,7 @@ export function StatusBar({
       metrics={solo ? soloMetrics : metrics}
       metricRank={solo ? SOLO_METRIC_RANK : METRIC_RANK}
       appearance={appearance}
-      build={build}
+      build={state.build}
     />
   );
 }
