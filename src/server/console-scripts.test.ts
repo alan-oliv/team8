@@ -43,11 +43,11 @@ async function fake(opts: { status?: number; health?: Record<string, unknown>; p
   await fs.writeFile(path.join(root, '.claude-plugin', 'plugin.json'), JSON.stringify({ version: opts.plugin ?? '1.0.44' }));
 }
 
-async function record(watching: unknown) {
+async function record(watching: unknown, forPort = port) {
   await fs.mkdir(path.join(claudeDir, 'team8'), { recursive: true });
   await fs.writeFile(
-    path.join(claudeDir, 'team8', 'console.json'),
-    JSON.stringify({ pid: 1, port, version: '1.0.44', watching }),
+    path.join(claudeDir, 'team8', `console-${forPort}.json`),
+    JSON.stringify({ pid: 1, port: forPort, version: '1.0.44', watching }),
   );
 }
 
@@ -136,6 +136,16 @@ describe('console-restart.sh', () => {
   });
 
   it('never starts a console that has never run on this machine', async () => {
+    const run = await script('console-restart.sh');
+    await new Promise((r) => setTimeout(r, 500));
+
+    expect(run).toEqual({ code: 0, stdout: '', stderr: '' });
+    expect(await starts()).toEqual([]);
+  });
+
+  it("ignores a record left by a console on a different port", async () => {
+    await record({ kind: 'session', id: 'session-one' }, port + 1);
+
     const run = await script('console-restart.sh');
     await new Promise((r) => setTimeout(r, 500));
 
@@ -257,6 +267,17 @@ describe('console-open.sh', () => {
 
     await script('console-open.sh', ['session-two'], '', await opener());
 
+    expect(await starts()).toHaveLength(1);
+    expect(await posts()).toContain('/api/select-session/session-two');
+  });
+
+  it('leaves a newer console running and only switches it', async () => {
+    await fake({ health: { version: '1.0.45', build: 'installed', tabs: 1 }, plugin: '1.0.44' });
+    await startRunning();
+
+    const run = await script('console-open.sh', ['session-two'], '', await opener());
+
+    expect(run.code).toBe(0);
     expect(await starts()).toHaveLength(1);
     expect(await posts()).toContain('/api/select-session/session-two');
   });

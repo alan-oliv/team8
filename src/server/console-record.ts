@@ -9,9 +9,11 @@ export interface ConsoleRecord {
   watching: Watching;
 }
 
-/** Beside the store, under <claude home>/team8/. */
-export function recordPathFor(dbPath: string): string {
-  return path.join(path.dirname(dbPath), 'console.json');
+/** Beside the store, under <claude home>/team8/, keyed by port: every console on
+ * the same claude home shares that directory, and a record any port could
+ * overwrite would have the next console restart on a stranger's watch. */
+export function recordPathFor(dbPath: string, port: number): string {
+  return path.join(path.dirname(dbPath), `console-${port}.json`);
 }
 
 let seq = 0;

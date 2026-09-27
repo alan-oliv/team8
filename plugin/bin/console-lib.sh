@@ -5,7 +5,10 @@
 # $ROOT at plugin roots that hold only dist/.
 
 HEALTH="http://127.0.0.1:$PORT/health"
-RECORD="$CLAUDE_DIR/team8/console.json"
+# Keyed by port: every console under this claude home shares the directory,
+# and an unkeyed record would have one console's restart land on another
+# console's watch.
+RECORD="$CLAUDE_DIR/team8/console-$PORT.json"
 
 # Anything answering counts, a 503 included: a console still reading ~/.claude
 # is up, and starting another would only race it for the port.
@@ -24,6 +27,12 @@ health_field() {
         if (v !== undefined && v !== null) process.stdout.write(String(v));
       } catch {}
     });' "$1" 2>/dev/null
+}
+
+# This build's own version, from $ROOT/.claude-plugin/plugin.json.
+plugin_version() {
+  node -e 'try { process.stdout.write(String(require(process.argv[1]).version || "")) } catch {}' \
+    "$ROOT/.claude-plugin/plugin.json" 2>/dev/null
 }
 
 # Exit 0 when release $1 is older than release $2.

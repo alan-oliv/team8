@@ -753,8 +753,8 @@ describe('which team a console boots onto', () => {
   }
 
   /** Polls until the record names `watching`, so an earlier record on disk cannot pass for it. */
-  async function readRecord(dir: string, watching: unknown): Promise<{ port: number; watching: unknown }> {
-    const file = path.join(dir, 'team8', 'console.json');
+  async function readRecord(dir: string, port: number, watching: unknown): Promise<{ port: number; watching: unknown }> {
+    const file = path.join(dir, 'team8', `console-${port}.json`);
     const until = Date.now() + 2000;
     for (;;) {
       try {
@@ -936,12 +936,13 @@ describe('which team a console boots onto', () => {
     home = await layout();
     const url = await boot(home);
 
+    const port = Number(new URL(url).port);
     const held = { kind: 'team', name: TEAM };
-    expect(await readRecord(home, held)).toMatchObject({ port: Number(new URL(url).port), watching: held });
+    expect(await readRecord(home, port, held)).toMatchObject({ port, watching: held });
 
     await selectSession(url, LEAD_SESSION_B);
     const followed = { kind: 'session', id: LEAD_SESSION_B };
-    expect((await readRecord(home, followed)).watching).toEqual(followed);
+    expect((await readRecord(home, port, followed)).watching).toEqual(followed);
   }, 20_000);
 
   it('a console that fails while starting exits instead of holding the port', async () => {

@@ -12,8 +12,7 @@ ROOT="${OCTO_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.."
 . "$(dirname "$0")/console-lib.sh"
 cat >/dev/null 2>&1
 
-mine=$(node -e 'try { process.stdout.write(String(require(process.argv[1]).version || "")) } catch {}' \
-  "$ROOT/.claude-plugin/plugin.json" 2>/dev/null)
+mine=$(plugin_version)
 
 # `ok` only comes from a console that has finished starting and can name its build.
 if [ -n "$mine" ] && [ -n "$(health_field ok)" ]; then

@@ -1356,7 +1356,7 @@ export async function main(argv: string[]): Promise<number> {
     : cli.team
       ? { kind: 'team', name: cli.team }
       : { kind: 'auto' };
-  const record = recordPathFor(cli.dbPath);
+  const record = recordPathFor(cli.dbPath, port);
   // Chained so two quick watch changes cannot rename out of order and leave the older one on disk.
   let recording = Promise.resolve();
   const watch = (next: Watching): void => {

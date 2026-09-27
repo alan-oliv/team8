@@ -19,8 +19,7 @@ case "$SESSION" in
     ;;
 esac
 
-mine=$(node -e 'try { process.stdout.write(String(require(process.argv[1]).version || "")) } catch {}' \
-  "$ROOT/.claude-plugin/plugin.json" 2>/dev/null)
+mine=$(plugin_version)
 
 # A console still starting cannot name its build yet; give it the time it needs.
 wait_ready() {

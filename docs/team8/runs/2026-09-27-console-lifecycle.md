@@ -21,4 +21,4 @@ pr: <url, at close>
 - actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
 - estimate vs actual: <one line>
 - went wrong / change next time: <one line each, or "nothing">
-- checked by hand (port 4834, real ~/.claude): start + tab opened yes · tab followed switch without restart yes · restart restored watch yes
+- checked by hand (port 4834, real ~/.claude): start + tab opened yes · tab followed switch without restart yes · restart restored watch: first attempt came back `auto` — the record was `<claude home>/team8/console.json`, one file shared by every port, so the 4823 console's own boot/writes clobbered 4834's watch; fixed by keying the record filename on port (`console-<port>.json`); re-ran with the fix built and the restart correctly restored `watching` to the switched-to session
