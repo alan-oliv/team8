@@ -143,3 +143,70 @@ describe('console-restart.sh', () => {
     expect(await starts()).toEqual([]);
   });
 });
+
+describe('console-hint.sh', () => {
+  const systemMessage = (stdout: string) => (JSON.parse(stdout) as { systemMessage: string }).systemMessage;
+
+  it('replaces a console running an older build, on the watch it recorded', async () => {
+    await fake({ health: { version: '1.0.43', build: 'installed' }, plugin: '1.0.44' });
+    await record({ kind: 'session', id: 'session-one' });
+    await startRunning();
+
+    const run = await script('console-hint.sh', [], '{}');
+
+    expect(run.code).toBe(0);
+    expect(systemMessage(run.stdout)).toContain('1.0.44');
+    expect(await waitFor(async () => (await starts())[1] === `--port ${port} --session session-one`, 3000)).toBe(true);
+  });
+
+  it('replaces a console from before builds reported themselves', async () => {
+    await fake({ health: {}, plugin: '1.0.44' });
+    await record({ kind: 'auto' });
+    await startRunning();
+
+    await script('console-hint.sh', [], '{}');
+
+    expect(await waitFor(async () => (await starts()).length === 2, 3000)).toBe(true);
+  });
+
+  it('leaves a console of the same or a newer build alone', async () => {
+    for (const version of ['1.0.44', '1.0.45']) {
+      await fake({ health: { version, build: 'installed' }, plugin: '1.0.44' });
+      await startRunning();
+
+      const run = await script('console-hint.sh', [], '{}');
+
+      expect(systemMessage(run.stdout)).toContain('/team8:console');
+      await new Promise((r) => setTimeout(r, 300));
+      expect(await starts()).toHaveLength(1);
+      await new Promise((r) => execFile('pkill', ['-f', `dist/server/index.js --port ${port}`], r));
+      await fs.rm(path.join(root, 'starts.log'), { force: true });
+      await waitFor(async () => (await fetch(`http://127.0.0.1:${port}/health`).catch(() => null)) === null, 3000);
+    }
+  });
+
+  it('never replaces a dev console, or one still starting', async () => {
+    await fake({ health: { version: '1.0.1', build: 'dev' }, plugin: '1.0.44' });
+    await startRunning();
+    await script('console-hint.sh', [], '{}');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await starts()).toHaveLength(1);
+  });
+
+  it('leaves a console that is still starting alone', async () => {
+    await fake({ status: 503, plugin: '1.0.44' });
+    await startRunning();
+    await script('console-hint.sh', [], '{}');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await starts()).toHaveLength(1);
+  });
+
+  it('never starts a console that is not running', async () => {
+    const run = await script('console-hint.sh', [], '{}');
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(run.code).toBe(0);
+    expect(systemMessage(run.stdout)).toContain('/team8:console');
+    expect(await starts()).toEqual([]);
+  });
+});
