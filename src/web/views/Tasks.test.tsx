@@ -380,6 +380,20 @@ describe('Tasks — board', () => {
     expect(screen.getAllByTestId('tasks-view-toggle').map((b) => b.textContent)).toEqual(['board', 'rows']);
   });
 
+  it('fills an in-progress card to its reported progress', () => {
+    const tasks = [{ ...TASKS[1], id: '4', state: 'in_progress' as const, metadata: { progress: 60 } }];
+    const card = within(openBoard(tasks)[2]).getByTestId('board-card');
+    const label = within(card).getByTestId('card-progress');
+    expect(label.textContent).toBe('60%');
+    expect(card.style.background).toContain('60%');
+  });
+
+  it('renders an in-progress card with no progress exactly as before', () => {
+    const tasks = [{ ...TASKS[1], id: '4', state: 'in_progress' as const }];
+    const card = within(openBoard(tasks)[2]).getByTestId('board-card');
+    expect(within(card).queryByTestId('card-progress')).toBeNull();
+  });
+
   it('remembers the chosen view across mounts', () => {
     openBoard();
     expect(window.localStorage.getItem(TASK_VIEW_KEY)).toBe('board');

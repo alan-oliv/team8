@@ -3,10 +3,10 @@ import type { Task, TaskState } from '../../shared/domain';
 import { TASK_STATUS } from '../../shared/status';
 import { useCast } from '../state/useCast';
 
-// Task completion is countable — done over total — so a bar is honest here in
-// a way a per-task percentage never would be. It is segmented by STATE rather
-// than by an estimate, and `blocked` folds in plan approval and failed so the
-// four segments always sum to the task count.
+// Task completion is countable — done over total — so a bar of what's
+// observable is honest here. It is segmented by STATE rather than by an
+// estimate, and `blocked` folds in plan approval and failed so the four
+// segments always sum to the task count.
 const SEGMENTS: Array<{ label: string; color: string; states: TaskState[] }> = [
   { label: 'completed', color: 'var(--color-accent-500)', states: ['completed'] },
   { label: 'in progress', color: 'var(--color-accent-300)', states: ['in_progress'] },
@@ -14,9 +14,10 @@ const SEGMENTS: Array<{ label: string; color: string; states: TaskState[] }> = [
   { label: 'pending', color: 'var(--color-neutral-800)', states: ['pending'] },
 ];
 
-// The ladder every task actually climbs. A percentage would be invented — an
-// agent never reports how far through a task it is — but the step it has
-// reached is observable.
+// The ladder every task actually climbs — the step it has reached is
+// observable. A per-card fill (see board-card below) is different: it's the
+// executor's own report of its planned work (metadata.progress), not
+// something the console estimates.
 const LADDER = 'created → unblocked → claimed → completed';
 
 const STEP: Record<TaskState, number> = {
@@ -225,6 +226,18 @@ function Board({ tasks }: { tasks: Task[] }) {
 
             {cards.map((task) => {
               const flagged = task.state === 'plan_pending' || task.state === 'failed';
+              const rawProgress = task.state === 'in_progress' ? task.metadata?.progress : undefined;
+              const progress =
+                typeof rawProgress === 'number' && Number.isFinite(rawProgress)
+                  ? Math.min(100, Math.max(0, rawProgress))
+                  : undefined;
+              const fill = 'color-mix(in srgb, var(--color-accent-300) 8%, var(--color-bg))';
+              const background =
+                progress !== undefined
+                  ? `linear-gradient(to right, ${fill} ${progress}%, var(--color-bg) ${progress}%)`
+                  : CARD_TINT[task.state]
+                    ? `color-mix(in srgb, ${CARD_TINT[task.state]} 8%, var(--color-bg))`
+                    : 'var(--color-bg)';
               return (
                 <div
                   key={task.id}
@@ -234,9 +247,7 @@ function Board({ tasks }: { tasks: Task[] }) {
                     flexDirection: 'column',
                     gap: '5px',
                     padding: '8px 10px',
-                    background: CARD_TINT[task.state]
-                      ? `color-mix(in srgb, ${CARD_TINT[task.state]} 8%, var(--color-bg))`
-                      : 'var(--color-bg)',
+                    background,
                     border: `1px solid ${CARD_EDGE[task.state] ?? 'var(--color-neutral-900)'}`,
                     borderRadius: 'var(--radius-sm)',
                   }}
@@ -268,6 +279,11 @@ function Board({ tasks }: { tasks: Task[] }) {
                     <span style={{ color: 'var(--color-neutral-500)', whiteSpace: 'nowrap' }}>
                       {task.owner ? asChar(task.owner).display : 'unassigned'}
                     </span>
+                    {progress !== undefined && (
+                      <span data-testid="card-progress" style={{ color: 'var(--color-neutral-500)', fontSize: '10px' }}>
+                        {progress}%
+                      </span>
+                    )}
                     <span style={{ flex: 1 }} />
                     <span
                       data-testid="card-deps"
