@@ -207,6 +207,7 @@ export function StatusBar({
       metrics={solo ? soloMetrics : metrics}
       metricRank={solo ? SOLO_METRIC_RANK : METRIC_RANK}
       appearance={appearance}
+      build={state.build}
     />
   );
 }

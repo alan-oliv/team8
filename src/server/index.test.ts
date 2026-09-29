@@ -8,6 +8,7 @@ import { ALL_FOLDERS } from '../shared/domain';
 import {
   parseArgs,
   discoverTeam,
+  forkChainOf,
   fencedSink,
   listFolders,
   listAllFolders, listTeamSummaries,
@@ -255,6 +256,91 @@ describe('discoverTeam', () => {
     const found = (await discoverTeam(teams(), sessions()))!;
     expect(found.teamName).toBe('session-newer-lead-only');
   });
+
+  async function age(name: string) {
+    const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await fs.utimes(path.join(teams(), name, 'config.json'), old, old);
+  }
+
+  it('ignores a team whose lead is gone and whose files stopped moving', async () => {
+    // Claude Code leaves team directories behind; a console restarted days
+    // later latched onto the newest of them and showed a dead team.
+    await writeTeam('session-long-dead', { createdAt: 2000, leadSessionId: 'dead-session', memberCount: 7 });
+    await age('session-long-dead');
+
+    expect(await discoverTeam(teams(), sessions())).toBeNull();
+  });
+
+  it("reads liveness from Claude Code's pid-named session files", async () => {
+    await writeTeam('session-running', { createdAt: 1000, leadSessionId: 'running-session', memberCount: 2 });
+    await writeTeam('session-newer-dead', { createdAt: 2000, leadSessionId: 'dead-session', memberCount: 2 });
+    await age('session-running');
+    await age('session-newer-dead');
+    await fs.mkdir(sessions(), { recursive: true });
+    await fs.writeFile(
+      path.join(sessions(), `${process.pid}.json`),
+      JSON.stringify({ sessionId: 'running-session', pid: process.pid }),
+    );
+
+    expect((await discoverTeam(teams(), sessions()))?.teamName).toBe('session-running');
+  });
+
+  it('--session opens the team that session leads, never a newer one elsewhere', async () => {
+    await writeTeam('session-mine', { createdAt: 1000, leadSessionId: 'my-session', memberCount: 2 });
+    await writeTeam('session-other', { createdAt: 2000, leadSessionId: 'other-session', memberCount: 5 });
+    await writeSession('other-session', process.pid);
+
+    const found = await discoverTeam(teams(), sessions(), undefined, { session: 'my-session' });
+    expect(found?.teamName).toBe('session-mine');
+  });
+
+  it("--session never inherits a finished neighbour's team from the folder they share", async () => {
+    const teamDir = path.join(teams(), 'session-aaaa1111');
+    await fs.mkdir(teamDir, { recursive: true });
+    await fs.writeFile(
+      path.join(teamDir, 'config.json'),
+      JSON.stringify({
+        name: 'session-aaaa1111',
+        createdAt: 1000,
+        leadAgentId: 'team-lead',
+        leadSessionId: 'exited-session',
+        members: [
+          { agentId: 'team-lead', name: 'team-lead', cwd: '/repo' },
+          { agentId: 'agent-1', name: 'agent-1', cwd: '/repo' },
+        ],
+      }),
+    );
+    await fs.mkdir(sessions(), { recursive: true });
+    await fs.writeFile(
+      path.join(sessions(), `${process.pid}.json`),
+      JSON.stringify({ sessionId: 'workflow-session', pid: process.pid, cwd: '/repo' }),
+    );
+
+    expect(await discoverTeam(teams(), sessions(), undefined, { session: 'workflow-session' })).toBeNull();
+  });
+
+  it("--session on a /branch'd lead opens the team its ancestor leads", async () => {
+    await writeTeam('session-parent', { createdAt: 1000, leadSessionId: 'parent-session', memberCount: 3 });
+    const slug = path.join(dir, 'projects', '-repo');
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(
+      path.join(slug, 'child-session.jsonl'),
+      `${JSON.stringify({ forkedFrom: { sessionId: 'parent-session' } })}\n`,
+    );
+
+    const found = await discoverTeam(teams(), sessions(), undefined, {
+      session: 'child-session',
+      projectsRoot: path.join(dir, 'projects'),
+    });
+    expect(found?.teamName).toBe('session-parent');
+  });
+
+  it('--session with no team of its own finds none, so the console opens the session itself', async () => {
+    await writeTeam('session-other', { createdAt: 2000, leadSessionId: 'other-session', memberCount: 5 });
+    await writeSession('other-session', process.pid);
+
+    expect(await discoverTeam(teams(), sessions(), undefined, { session: 'workflow-session' })).toBeNull();
+  });
 });
 
 describe('listTeamSummaries', () => {
@@ -452,8 +538,9 @@ describe('listTeamSummaries', () => {
     expect(row.leadAlive).toBe(true);
     expect(row.state).toBe('live');
     expect(row.goal).toBe('team8');
-    // The live session is the one on screen; its only row is the team it adopted.
-    expect(row.current).toBe(true);
+    // The folder guess is not evidence the session drives the team, so the
+    // console shows the session itself and this row is not the one on screen.
+    expect(row.current).toBe(false);
   });
 
   it('claims only the newest team in a directory, so yesterday\'s is not revived', async () => {
@@ -1476,5 +1563,32 @@ describe('workflowScriptOf', () => {
     await writeAsExecuted('// as executed');
     const found = await workflowScriptOf(sessionDir(), RUN, known);
     expect(found?.path.startsWith(path.join(sessionDir(), 'workflows'))).toBe(true);
+  });
+});
+
+describe('forkChainOf', () => {
+  async function transcript(id: string, first: unknown) {
+    const slug = path.join(dir, 'projects', '-repo');
+    await fs.mkdir(slug, { recursive: true });
+    await fs.writeFile(path.join(slug, `${id}.jsonl`), `${JSON.stringify(first)}\n`);
+  }
+
+  it("walks a /branch'd session back through its ancestors", async () => {
+    await transcript('child', { forkedFrom: { sessionId: 'parent' } });
+    await transcript('parent', { forkedFrom: { sessionId: 'root' } });
+    await transcript('root', { type: 'user' });
+
+    expect(await forkChainOf(path.join(dir, 'projects'), 'child')).toEqual(['child', 'parent', 'root']);
+  });
+
+  it('stops at a cycle instead of looping', async () => {
+    await transcript('a', { forkedFrom: { sessionId: 'b' } });
+    await transcript('b', { forkedFrom: { sessionId: 'a' } });
+
+    expect(await forkChainOf(path.join(dir, 'projects'), 'a')).toEqual(['a', 'b']);
+  });
+
+  it('is just the session when there is no projects root to read', async () => {
+    expect(await forkChainOf(undefined, 'solo')).toEqual(['solo']);
   });
 });

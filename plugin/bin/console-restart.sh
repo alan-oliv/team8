@@ -15,35 +15,16 @@ set -u
 PORT="${OCTO_PORT:-4823}"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 # Never the cwd: the hook inherits the Claude session's cwd — the user's
-# project, not this checkout. CLAUDE_PLUGIN_ROOT is set when we are installed
-# as a plugin; otherwise this script sits in <root>/bin.
+# project, not this checkout.
 ROOT="${OCTO_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}}"
-HEALTH="http://127.0.0.1:$PORT/health"
+. "$(dirname "$0")/console-lib.sh"
 
-# A POST can fail because the console is busy rather than absent — the event
-# hooks allow it 5 seconds and the permission hook 600. Only a health check
-# that also fails means there is nothing there to talk to.
-curl -sf -m 1 "$HEALTH" >/dev/null 2>&1 && exit 0
+console_up && exit 0
 
-# Never resurrect a console that was meant to stop. startIdleReaper() exits the
-# server once no team has been live for the grace window, and Claude Code
-# DELETES a team's directory when the session behind it ends — so with nothing
-# live, a refused connection is the resting state, not a fault to repair.
-# Without this gate the next tool call would restart the server, the reaper
-# would exit it again, and the pair would trade the port back and forth for as
-# long as the session lasted.
-live=0
-for cfg in "$CLAUDE_DIR"/teams/*/config.json; do
-  [ -f "$cfg" ] || continue
-  # Count members without a JSON parser: one "agentId" key per member. Ordinary
-  # subagents never reach config.json, so >= 2 is a real team, same rule as
-  # hasLiveTeam() and the launcher's PostToolUse gate.
-  members=$(tr -d ' \n' < "$cfg" 2>/dev/null | grep -o '"agentId"' | wc -l | tr -d ' ')
-  [ "${members:-0}" -ge 2 ] 2>/dev/null || continue
-  live=1
-  break
-done
-[ "$live" -eq 1 ] || exit 0
+# The console never stops on its own, so nothing answering means it crashed or
+# was killed. Without a record it has never run here: only a team spawn, a
+# workflow or /team8:console starts it the first time.
+[ -f "$RECORD" ] || exit 0
 
 # A burst of tool calls puts every hook on this line at the same instant, so the
 # spawn sits behind an atomic mkdir. A lock left behind by a killed hook would
@@ -54,24 +35,15 @@ mkdir -p "$CLAUDE_DIR/team8" 2>/dev/null
 [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$lock" 2>/dev/null
 mkdir "$lock" 2>/dev/null || exit 0
 
-# No --team flag: an unresolved team is never passed as a guess, because a
-# server pinned to a team that does not exist shows an empty wall. With no name
-# the server discovers the live team itself and follows the real one.
-# Prefer the bundle (fast cold start), falling back to tsx so a fresh checkout
-# still works without `npm run build`.
-if [ -f "$ROOT/dist/server/index.js" ]; then
-  nohup node "$ROOT/dist/server/index.js" --port "$PORT" \
-    >>"$CLAUDE_DIR/team8.log" 2>&1 &
-else
-  nohup npx --prefix "$ROOT/.." tsx "$ROOT/../src/server/index.ts" --port "$PORT" \
-    >>"$CLAUDE_DIR/team8.log" 2>&1 &
-fi
+# Word-split on purpose: recorded_flags prints one flag and one id.
+# shellcheck disable=SC2046
+start_console $(recorded_flags)
 
-# Hold the lock until it answers so a burst collapses into one spawn, then
-# release it — the next miss has to be able to try again.
+# Hold the lock until it answers so a burst collapses into one spawn; the
+# console holds its port within its first second.
 i=0
 while [ "$i" -lt 15 ]; do
-  curl -sf -m 1 "$HEALTH" >/dev/null 2>&1 && break
+  console_up && break
   sleep 0.1
   i=$((i + 1))
 done

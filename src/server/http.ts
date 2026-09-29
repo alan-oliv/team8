@@ -140,7 +140,7 @@ export interface HttpDeps {
    * brief for another would be answered from state nobody here holds.
    */
   generateBrief?: (sessionId: string) => Promise<Brief | null>;
-  /** Spec §5.4's shutdown action, shared with the SessionEnd hook handler. */
+  /** Spec §5.4's shutdown action: `/api/shutdown`, which a newer build uses to replace this one. */
   onShutdown?: () => void;
   /** Directory holding the built web bundle (default: {@link DEFAULT_WEB_DIST}). */
   webDist?: string;
@@ -245,12 +245,12 @@ function answersFor(heldInput: unknown, rawAnswers: unknown): Record<string, str
   return Object.keys(answers).length > 0 ? answers : undefined;
 }
 
-export function createHttpServer(deps: HttpDeps): Server {
+export function createHttpHandler(deps: HttpDeps): http.RequestListener {
   const leadName = deps.leadName ?? 'team-lead';
   const webDist = deps.webDist ?? DEFAULT_WEB_DIST;
   const team = () => deps.state().teamName;
 
-  return http.createServer((req, res) => {
+  return (req, res) => {
     void (async () => {
       try {
         const method = req.method ?? 'GET';
@@ -279,7 +279,16 @@ export function createHttpServer(deps: HttpDeps): Server {
 
         if (method === 'GET' && route === '/health') {
           const s = deps.state();
-          json(res, 200, { ok: true, team: s.teamName, agents: s.agents.length });
+          json(res, 200, {
+            ok: true,
+            team: s.teamName,
+            agents: s.agents.length,
+            version: s.build?.version,
+            build: s.build?.kind,
+            sha: s.build?.sha,
+            watching: s.watching,
+            tabs: deps.stream.clients,
+          });
           return;
         }
 
@@ -572,6 +581,22 @@ export function createHttpServer(deps: HttpDeps): Server {
         json(res, 500, { error: 'server error', message: (err as Error).message });
       }
     })();
+  };
+}
+
+export function createHttpServer(deps: HttpDeps): Server {
+  return http.createServer(createHttpHandler(deps));
+}
+
+/**
+ * Holds the port while the console boots, until main() swaps in the real
+ * handler. `{}` because a hook prints the body back to Claude Code, and `{}` is
+ * the one reply every hook event reads as "no decision".
+ */
+export function createBootingServer(): Server {
+  return http.createServer((_req, res) => {
+    res.writeHead(503, { 'content-type': 'application/json' });
+    res.end('{}');
   });
 }
 

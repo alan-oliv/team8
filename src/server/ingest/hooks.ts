@@ -1,6 +1,6 @@
 import type { Store } from '../store';
 import { holdMsFor, type Permits } from '../control/permits';
-import { debug, logError, logInfo } from '../log';
+import { logError } from '../log';
 import type { AskQuestion } from '../../shared/domain';
 
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 600_000;
@@ -22,8 +22,6 @@ export interface HookDeps {
    * exists, so the ingest may only learn it once config.json lands.
    */
   leadSessionId?: () => string | undefined;
-  /** Runs when the LEAD's session ends. Defaults to exiting the process. */
-  onShutdown?: () => void;
   /**
    * Read that agent's transcript now. A hook proves the agent just did
    * something, and the transcript is the one thing hooks never carry — so this
@@ -79,13 +77,6 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
       logError('drain on hook', err); // never throw into the turn
     }
   };
-  const shutdown =
-    deps.onShutdown ??
-    (() => {
-      logInfo('lead session ended — exiting');
-      process.exit(0);
-    });
-
   return {
     async hook(body) {
       // A thrown error or a hang here is a 10-minute stall of the agent's turn,
@@ -110,18 +101,6 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         // operator for ten minutes: the transcript explaining why the agent is
         // asking has to be on screen while they decide.
         touched(agent);
-
-        if (event === 'SessionEnd') {
-          // The hooks live in ~/.claude/settings.json — USER scope — so every
-          // session on the machine posts SessionEnd here. Only the lead's ends
-          // the console; the 10-minute idle reaper covers a crashed lead.
-          if (lead && sid === lead) {
-            // Respond first; a hook that never gets its 200 stalls the session's exit.
-            setTimeout(shutdown, 250);
-          } else {
-            debug('hook', `SessionEnd for ${sid ?? 'an unknown session'} is not the lead's`);
-          }
-        }
 
         // A held PermissionRequest only clears when the console's own
         // buttons call permits.resolve(). If the operator answers Claude

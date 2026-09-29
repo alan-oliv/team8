@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { teamNameFromSessionId, hasLiveTeam, startIdleReaper, sparePidsFrom } from './lifecycle';
+import { teamNameFromSessionId, sparePidsFrom } from './lifecycle';
 
 // Async execFile has no `input` option (only execFileSync/spawnSync do) — an
 // async execFile call with `input` silently ignores it, leaving the child's
@@ -38,28 +38,6 @@ afterEach(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-async function writeTeam(name: string, memberNames: string[]) {
-  const teamDir = path.join(dir, name);
-  await fs.mkdir(teamDir, { recursive: true });
-  await fs.writeFile(
-    path.join(teamDir, 'config.json'),
-    JSON.stringify({
-      name,
-      createdAt: 1787798107581,
-      leadAgentId: `team-lead@${name}`,
-      leadSessionId: '98b0b4a7-3206-455b-aaf6-a5a81ad1e283',
-      members: memberNames.map((n, i) => ({
-        agentId: `${n}@${name}`,
-        name: n,
-        joinedAt: 1787798107581 + i,
-        tmuxPaneId: n === 'team-lead' ? 'leader' : 'in-process',
-        subscriptions: [],
-        backendType: 'in-process',
-      })),
-    }),
-  );
-}
-
 describe('teamNameFromSessionId', () => {
   it('takes the first eight characters, matching the CLI rule', () => {
     expect(teamNameFromSessionId('98b0b4a7-3206-455b-aaf6-a5a81ad1e283')).toBe('session-98b0b4a7');
@@ -69,40 +47,6 @@ describe('teamNameFromSessionId', () => {
   it('returns an empty string for a missing or short id rather than a bogus team', () => {
     expect(teamNameFromSessionId('')).toBe('');
     expect(teamNameFromSessionId('abc')).toBe('');
-  });
-});
-
-describe('hasLiveTeam', () => {
-  it('is false when the team directory does not exist', async () => {
-    expect(await hasLiveTeam(dir, 'session-deadbeef')).toBe(false);
-  });
-
-  it('is false for a lead-only roster — an ordinary subagent must not wake the console', async () => {
-    await writeTeam('session-98b0b4a7', ['team-lead']);
-    expect(await hasLiveTeam(dir, 'session-98b0b4a7')).toBe(false);
-  });
-
-  it('is true once a real teammate has joined', async () => {
-    await writeTeam('session-98b0b4a7', ['team-lead', 'probe-alpha']);
-    expect(await hasLiveTeam(dir, 'session-98b0b4a7')).toBe(true);
-  });
-
-  it('matches the captured 4-member fixture', async () => {
-    const real = JSON.parse(
-      await fs.readFile(new URL('../../fixtures/config-4-members.json', import.meta.url), 'utf8'),
-    );
-    expect(real.members).toHaveLength(4);
-    const teamDir = path.join(dir, real.name);
-    await fs.mkdir(teamDir, { recursive: true });
-    await fs.writeFile(path.join(teamDir, 'config.json'), JSON.stringify(real));
-    expect(await hasLiveTeam(dir, real.name)).toBe(true);
-  });
-
-  it('is false on a torn or malformed config rather than throwing', async () => {
-    const teamDir = path.join(dir, 'session-98b0b4a7');
-    await fs.mkdir(teamDir, { recursive: true });
-    await fs.writeFile(path.join(teamDir, 'config.json'), '{"members":[{"na');
-    expect(await hasLiveTeam(dir, 'session-98b0b4a7')).toBe(false);
   });
 });
 
@@ -483,81 +427,6 @@ async function writeForkedFrom(projectsRoot: string, cwd: string, sessionId: str
     JSON.stringify({ forkedFrom: { sessionId: parentSessionId, messageUuid: 'x' } }) + '\n',
   );
 }
-
-
-describe('startIdleReaper', () => {
-  let root: string;
-
-  const teamDir = (name: string) => path.join(root, name);
-  const writeTeam = async (name: string, members: number) => {
-    await fs.mkdir(teamDir(name), { recursive: true });
-    await fs.writeFile(
-      path.join(teamDir(name), 'config.json'),
-      JSON.stringify({
-        name,
-        leadAgentId: `team-lead@${name}`,
-        leadSessionId: name.replace('session-', ''),
-        members: Array.from({ length: members }, (_, i) => ({ name: i === 0 ? 'team-lead' : `m${i}` })),
-      }),
-    );
-  };
-
-  // Real timers with a tiny tick: the reaper's own body awaits real filesystem
-  // I/O, which fake timers cannot flush.
-  const settle = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  beforeEach(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), 'reaper-'));
-  });
-  afterEach(async () => {
-    await fs.rm(root, { recursive: true, force: true });
-  });
-
-  // Claude Code deletes a team's directory when the session behind it exits, so
-  // the console was left serving a frozen wall for the whole grace window.
-  it('exits on the next tick when the team it is showing has been deleted', async () => {
-    await writeTeam('session-aaaaaaaa', 1);
-    let exited = false;
-    await fs.rm(teamDir('session-aaaaaaaa'), { recursive: true, force: true });
-    const reaper = startIdleReaper({
-      teamsRoot: root,
-      graceMs: 10 * 60 * 1000,
-      tickMs: 10,
-      watchedTeam: () => 'session-aaaaaaaa',
-      onIdle: () => {
-        exited = true;
-      },
-    });
-    try {
-      await settle(120);
-      expect(exited).toBe(true);
-    } finally {
-      reaper.stop();
-    }
-  });
-
-  it('waits out the grace window while its team is merely quiet', async () => {
-    await writeTeam('session-bbbbbbbb', 1);
-    let exited = false;
-    const reaper = startIdleReaper({
-      teamsRoot: root,
-      graceMs: 300,
-      tickMs: 10,
-      watchedTeam: () => 'session-bbbbbbbb',
-      onIdle: () => {
-        exited = true;
-      },
-    });
-    try {
-      await settle(120);
-      expect(exited).toBe(false);
-      await settle(400);
-      expect(exited).toBe(true);
-    } finally {
-      reaper.stop();
-    }
-  });
-});
 
 
 describe('sparePidsFrom', () => {

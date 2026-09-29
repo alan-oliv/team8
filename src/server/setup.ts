@@ -6,6 +6,7 @@ import { LAUNCH_SCRIPT, RESTART_SCRIPT, HINT_SCRIPT, PLUGIN_DIR } from './lifecy
 import { atomicWrite } from './control/mailbox';
 import { DEFAULT_PERMISSION_TIMEOUT_MS } from './ingest/hooks';
 import { readJsonSafe } from './watch/jsonfile';
+import { isOlderBuild } from './build-info';
 
 const run = promisify(execFile);
 
@@ -280,15 +281,15 @@ export function checkClaudeVersion(raw: string | null): { ok: boolean; message: 
   if (!version) {
     return {
       ok: false,
-      message: `could not read \`claude --version\`; the console is pinned to ${PINNED_CLAUDE_VERSION} internals`,
+      message: `could not read \`claude --version\`; the console needs ${PINNED_CLAUDE_VERSION} or newer`,
     };
   }
-  if (version === PINNED_CLAUDE_VERSION) {
-    return { ok: true, message: `claude ${version} matches the pinned contract` };
+  if (!isOlderBuild(version, PINNED_CLAUDE_VERSION)) {
+    return { ok: true, message: `claude ${version} is at or above ${PINNED_CLAUDE_VERSION}` };
   }
   return {
     ok: false,
-    message: `claude ${version} does not match the pinned ${PINNED_CLAUDE_VERSION}; the control plane writes internal protocols and may be wrong`,
+    message: `claude ${version} is older than ${PINNED_CLAUDE_VERSION}; the control plane writes internal protocols and may be wrong`,
   };
 }
 

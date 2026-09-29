@@ -94,6 +94,13 @@ export interface IngestConfig {
    * that team's lead, which drops the session's own transcript from scope.
    */
   sessionOnly?: boolean;
+  /**
+   * False when the caller has already judged every team on disk, as index.ts's
+   * discovery has, so "no team yet" waits only for a team written after the
+   * first sweep. Otherwise that sweep adopts whatever config.json it reaches
+   * first, mostly directories Claude Code left behind when their sessions ended.
+   */
+  adoptExistingTeams?: boolean;
 }
 
 export interface FileIngest {
@@ -789,12 +796,14 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     }
   };
 
-  const handleTeamsJson = async (file: string) => {
+  const handleTeamsJson = async (file: string, bootSweep = false) => {
     const base = path.basename(file);
     const dirName = path.basename(path.dirname(file));
     if (base === 'config.json') {
       if (config.sessionOnly) return;
       if (teamName && dirName !== teamName) return;
+      // The sweep has marked its mtime, so an untouched leftover never comes back.
+      if (!teamName && bootSweep && config.adoptExistingTeams === false) return;
       const cfg = await readJsonSafe<TeamConfig>(file);
       if (!cfg) return;
       lastConfig = cfg;
@@ -1019,8 +1028,8 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     store.append('workflow', parseWorkflowJournal(claim.runId, text.split('\n')));
   };
 
-  const dispatchJson = async (file: string, root: string) => {
-    if (root === paths.teams) await handleTeamsJson(file);
+  const dispatchJson = async (file: string, root: string, bootSweep: boolean) => {
+    if (root === paths.teams) await handleTeamsJson(file, bootSweep);
     else if (root === paths.projects) {
       if (isWorkflowPath(file)) await handleWorkflowFile(file);
       else await handleProjectsJson(file);
@@ -1162,13 +1171,16 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     }
   };
 
+  let swept = false;
   const sweep = async (): Promise<void> => {
+    const bootSweep = !swept;
+    swept = true;
     for (const root of [paths.teams, paths.projects, paths.tasks, paths.sessions]) {
       // Transcripts are drained after the walk, OLDEST mtime first. Two runs of
       // one name land under one agent, and the fold takes the last record's
       // currentTool and the last assistant row's error — so a dead run read
       // after the live one shows a live agent failed, with a stale command in
-      // flight. Free at boot: index.ts awaits this sweep before it listens.
+      // flight. Free at boot: index.ts awaits this sweep before it serves.
       const files = await walk(root);
       // Before anything below is judged against `chain`, so a fork discovered
       // this pass is already in scope for the very same pass's drains — the
@@ -1186,7 +1198,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
         if ((marks.get(file) ?? -1) >= st.mtimeMs) continue;
         marks.set(file, st.mtimeMs);
         if (file.endsWith('.jsonl')) drains.push({ file, mtimeMs: st.mtimeMs });
-        else if (file.endsWith('.json')) await dispatchJson(file, root);
+        else if (file.endsWith('.json')) await dispatchJson(file, root, bootSweep);
       }
       drains.sort((a, b) => a.mtimeMs - b.mtimeMs);
       for (const drain of drains) {

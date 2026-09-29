@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
+import type { BuildInfo } from '../../shared/domain';
 import type { SettingsStore } from '../state/useSettings';
 import { ConfigMenu } from './ConfigMenu';
 import { Logo } from './Logo';
@@ -78,6 +79,25 @@ export function keptMetrics(
   return metrics.filter((m) => kept.has(m.key));
 }
 
+/** Which build serves. Amber once a newer one is installed, which the next new session switches to. */
+export function BuildChip({ build }: { build: BuildInfo }) {
+  const label = build.kind === 'dev' ? `dev · ${build.sha ?? '?'}` : build.version;
+  return (
+    <span
+      data-testid="bar-build"
+      data-stale={build.stale}
+      title={
+        build.stale
+          ? `${build.installed} is installed; the next new session or /team8:console switches to it`
+          : `team8 ${label}`
+      }
+      style={{ ...METRIC, fontSize: 11, color: build.stale ? 'var(--warn)' : 'var(--color-neutral-600)' }}
+    >
+      {label}
+    </span>
+  );
+}
+
 export interface BarProps<T extends string> {
   /** `TEAM` or `RUN` — which shell the operator is looking at. */
   wordmark: string;
@@ -97,6 +117,8 @@ export interface BarProps<T extends string> {
   /** The order those keys are SHED in when the bar runs out of room. Lower survives longer. */
   metricRank: Record<string, number>;
   appearance: SettingsStore;
+  /** Which build serves; chrome like the config menu, so never shed. */
+  build?: BuildInfo;
 }
 
 /**
@@ -112,7 +134,7 @@ export interface BarProps<T extends string> {
  * the mechanism is not written twice.
  */
 export function Bar<T extends string>({
-  wordmark, picker, views, view, onViewChange, labelOf, metrics, metricRank, appearance,
+  wordmark, picker, views, view, onViewChange, labelOf, metrics, metricRank, appearance, build,
 }: BarProps<T>) {
   const [configOpen, setConfigOpen] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
@@ -201,6 +223,7 @@ export function Bar<T extends string>({
 
       {/* Chrome, not a metric: it is never shed, so the operator can always
           reach the theme even on a bar too narrow for a single figure. */}
+      {build && <BuildChip build={build} />}
       <ConfigMenu appearance={appearance} open={configOpen} onOpenChange={setConfigOpen} />
     </div>
   );

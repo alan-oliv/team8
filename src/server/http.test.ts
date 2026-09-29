@@ -542,6 +542,31 @@ describe('control routes', () => {
   });
 });
 
+describe('GET /health', () => {
+  it('reports the build, the watch and how many tabs are open', async () => {
+    const { server, url } = await boot(false);
+    try {
+      state = {
+        ...state,
+        build: { version: '1.0.44', kind: 'installed', stale: false },
+        watching: { kind: 'session', id: 'abc-123' },
+      };
+
+      expect(await (await fetch(`${url}/health`)).json()).toEqual({
+        ok: true,
+        team: state.teamName,
+        agents: 0,
+        version: '1.0.44',
+        build: 'installed',
+        watching: { kind: 'session', id: 'abc-123' },
+        tabs: 0,
+      });
+    } finally {
+      await shutdown(server);
+    }
+  });
+});
+
 describe('POST /api/shutdown', () => {
   it('answers before shutting down, which is the route spec §5.4 names', async () => {
     const { server, url } = await boot(false);

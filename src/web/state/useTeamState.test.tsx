@@ -240,6 +240,25 @@ it('writes the session on screen into the path, so a reload re-selects it', () =
   expect(window.location.search).toBe('?view=wall&team=session-98b0b4a7');
 });
 
+it('writes the watched session into the path, not a re-keyed lead id no session carries', () => {
+  renderHook(() => useTeamState());
+  act(() =>
+    MockEventSource.last().emit('snapshot', {
+      ...sampleTeamState(),
+      leadSessionId: 'fresh-id-nobody-has',
+      watching: { kind: 'session', id: 'the-session' },
+    }),
+  );
+  expect(window.location.pathname).toBe('/s/the-session');
+});
+
+it('follows the server to another session, so a reload lands where the console now is', () => {
+  renderHook(() => useTeamState());
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), watching: { kind: 'session', id: 'session-a' } }));
+  act(() => MockEventSource.last().emit('state', { ...sampleTeamState(), watching: { kind: 'session', id: 'session-b' } }));
+  expect(window.location.pathname).toBe('/s/session-b');
+});
+
 it('treats a team with no view as an announcement and a team beside one as our own bookkeeping', () => {
   expect(isAnnouncedTeam('?team=session-b5129c7b')).toBe(true);
   expect(isAnnouncedTeam('?view=wall&team=session-b5129c7b')).toBe(false);

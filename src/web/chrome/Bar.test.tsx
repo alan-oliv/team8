@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest';
+import { afterEach, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { keptMetrics } from './Bar';
+import { BuildChip, keptMetrics } from './Bar';
 import { METRIC_RANK } from './StatusBar';
 import { WORKFLOW_METRIC_RANK } from '../views/Workflow';
+
+afterEach(cleanup);
 
 // jsdom measures every width as 0, so the fitting itself cannot run here and
 // the shed order would otherwise be unverifiable. `keptMetrics` is the pure half
@@ -55,4 +58,19 @@ it('keeps everything when everything fits, and nothing when nothing does', () =>
   const all = [metric('taskId'), metric('totals'), metric('elapsed')];
   expect(keys(keptMetrics(all, WORKFLOW_METRIC_RANK, 3))).toEqual(['taskId', 'totals', 'elapsed']);
   expect(keptMetrics(all, WORKFLOW_METRIC_RANK, 0)).toEqual([]);
+});
+
+it('shows the installed version, and flags it once a newer one is installed', () => {
+  const { rerender } = render(<BuildChip build={{ version: '1.0.44', kind: 'installed', stale: false }} />);
+  expect(screen.getByTestId('bar-build').textContent).toBe('1.0.44');
+  expect(screen.getByTestId('bar-build').getAttribute('data-stale')).toBe('false');
+
+  rerender(<BuildChip build={{ version: '1.0.44', kind: 'installed', installed: '1.0.45', stale: true }} />);
+  expect(screen.getByTestId('bar-build').getAttribute('data-stale')).toBe('true');
+  expect(screen.getByTestId('bar-build').getAttribute('title')).toContain('1.0.45');
+});
+
+it("shows a working copy's commit", () => {
+  render(<BuildChip build={{ version: '1.0.44', kind: 'dev', sha: 'abc1234', stale: false }} />);
+  expect(screen.getByTestId('bar-build').textContent).toBe('dev · abc1234');
 });

@@ -322,6 +322,26 @@ export interface PlanProgress {
   tasks: PlanTask[];
 }
 
+/** Which build is serving, for the header chip and `/health`. */
+export interface BuildInfo {
+  version: string;
+  /** `dev` is a server run from a working copy rather than the plugin cache. */
+  kind: 'installed' | 'dev';
+  /** A working copy's commit. */
+  sha?: string;
+  /** The newest team8 version installed_plugins.json lists. */
+  installed?: string;
+  /** An installed build older than the installed version. */
+  stale: boolean;
+}
+
+/**
+ * What the operator asked the console to show. A session is followed to
+ * whatever team it drives; a team is held even after it ends; auto shows the
+ * newest live team.
+ */
+export type Watching = { kind: 'session'; id: string } | { kind: 'team'; name: string } | { kind: 'auto' };
+
 export interface TeamState {
   teamName: string;
   /**
@@ -370,6 +390,9 @@ export interface TeamState {
   plan?: PlanProgress;
   /** A session switch is reading its target in; the select routes answer 409 until it lands. */
   switching?: boolean;
+  /** What the console was asked to show; a tab rewrites its address from a session watch. */
+  watching?: Watching;
+  build?: BuildInfo;
   /** See {@link TeamSummary.mode}: the batch's decided mode, for the trigger's badge. */
   decidedMode?: DecidedMode;
 }

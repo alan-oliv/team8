@@ -1,0 +1,2 @@
+# Built by the version-bump workflow; collapsed in diffs.
+plugin/dist/** linguist-generated=true -diff

@@ -145,9 +145,9 @@ too until some other plugin also ships one. Same reasoning as `/team8:console`
 below.
 
 Needs Node 22+ and `curl`, which you already have if Claude Code runs, on
-macOS or Linux. The console is built against Claude Code `2.1.231`: agent
+macOS or Linux. The console needs Claude Code `2.1.231` or newer: agent
 teams are experimental, and the files team8 reads can change shape between
-releases. On any other version it still runs, but warns at startup.
+releases. On an older version it still runs, but warns at startup.
 
 `/team8:setup` writes the things a plugin manifest has nowhere to put: an
 `env` var that turns on agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`),
@@ -160,9 +160,10 @@ shows you exactly what it's about to write before it writes anything.
 
 Restart Claude Code afterwards: `env` is read once at session start.
 
-Check it any time with `/team8:console` (`/console` also works, same as
-`/team8:setup` above): it restarts the console on the installed build and
-prints its URL, `http://127.0.0.1:4823`.
+Open it any time with `/team8:console` (`/console` also works, same as
+`/team8:setup` above): it opens the console on the session you run it from,
+starting or upgrading it only when needed, and every open tab follows. The
+URL is `http://127.0.0.1:4823/s/<session id>`.
 
 ## Updating
 
@@ -170,10 +171,11 @@ prints its URL, `http://127.0.0.1:4823`.
 claude plugin update team8@team8
 ```
 
-Then run `/team8:console`. The server is detached and outlives the session
-that started it, so after an update the old build keeps serving until
-something restarts it. Restarting loses nothing: the console rebuilds its
-screen from its own log.
+The next session you start replaces a console running an older build, on
+whatever it was showing, and `/team8:console` does the same from the session
+you are in. Replacing it loses nothing: the console rebuilds its screen from
+its own log. The header shows which build serves, amber when a newer one is
+installed.
 
 ## How it works
 
@@ -184,9 +186,11 @@ machine. Beyond that, the console reads what Claude Code already writes to
 disk under `~/.claude` (or `$CLAUDE_CONFIG_DIR`): team configs, transcripts,
 inboxes and the task list.
 
-A hook that finds no console running exits 0 and gets out of the way. It only
-brings the console back if a team is still live, so a stopped console never
-blocks or slows a session.
+A hook that finds no console running exits 0 and gets out of the way. The
+console never shuts itself down, so if it crashed or was killed, the next
+hook brings it back on whatever it was showing. One that has never run on
+this machine is left alone until a team, a workflow or `/team8:console`
+starts it.
 
 The server binds to localhost only and rejects requests from other origins,
 so a web page open in your browser can't drive it. It makes one outbound
@@ -253,6 +257,6 @@ npm run build      # rebuilds plugin/dist
 ```
 
 `plugin/dist` is committed on purpose: the plugin ships as files and nothing
-builds on the user's machine. Run `npm run build` and commit the result with
-any source change. CI fails if `plugin/dist` is stale, and bumps the plugin's
-patch version on every green push to `main`.
+builds on the user's machine. You don't commit it yourself: every green push to
+`main` rebuilds it and commits it with the patch version bump. A local
+`npm run build` leaves it modified; discard that with `git checkout -- plugin/dist`.

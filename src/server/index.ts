@@ -3,6 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { openStore, type Store, type EventKind, type StoredEvent } from './store';
 import { project, transcriptHistory, transcriptLineText } from './project';
 import { startFileIngest } from './ingest/files';
@@ -12,24 +13,25 @@ import { setTeamsRoot } from './control/mailbox';
 import { createBriefs } from './brief';
 import { createStream } from './stream';
 import { foldWorkflows, modeOf } from './workflow';
-import { createHttpServer, listen, type SelectTeamOutcome } from './http';
+import { createBootingServer, createHttpHandler, listen, type SelectTeamOutcome } from './http';
 import { createPlanReader } from './plan';
 import { readJsonSafe } from './watch/jsonfile';
+import { autoTeam, teamOfSession } from './watch';
+import { installedVersion, readBuildInfo, withInstalled } from './build-info';
+import { recordPathFor, writeConsoleRecord } from './console-record';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
-import { isPidAlive, recycledSpares, startIdleReaper } from './lifecycle';
+import { isPidAlive, recycledSpares } from './lifecycle';
 import { logError, logInfo } from './log';
 import type { TeamConfig } from '../shared/roster';
-import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState } from '../shared/domain';
+import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState, Watching } from '../shared/domain';
 import { ALL_FOLDERS } from '../shared/domain';
 
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_PORT = 4823;
 /**
- * How long the machine may be quiet before the reaper exits, and — reused by
- * the team listing — how recently a team must have moved to still read as
- * live. One window, so "live" in the dropdown and "live" to the reaper cannot
- * drift apart.
+ * How recently a team's files must have moved for it to read as live, in the
+ * picker and for the `auto` watch.
  */
 export const IDLE_GRACE_MS = 10 * 60 * 1000;
 /**
@@ -126,20 +128,11 @@ function toDiscovered(config: TeamConfig): DiscoveredTeam {
   };
 }
 
-// A session file can outlive the process it describes (crash, kill -9), so a
-// name match alone is not enough — the pid inside it has to still be running.
-async function isSessionLive(sessionsRoot: string, sessionId: string): Promise<boolean> {
-  if (!sessionId) return false;
-  const session = await readJsonSafe<{ sessionId?: string; pid?: number }>(
-    path.join(sessionsRoot, `${sessionId}.json`),
-  );
-  return typeof session?.pid === 'number' && isPidAlive(session.pid);
-}
-
 export async function discoverTeam(
   teamsRoot: string,
   sessionsRoot: string,
   explicitTeam?: string,
+  opts: { session?: string; projectsRoot?: string } = {},
 ): Promise<DiscoveredTeam | null> {
   if (explicitTeam) {
     // The launcher can name a team before its directory exists at all (it
@@ -150,53 +143,21 @@ export async function discoverTeam(
     return config ? toDiscovered(config) : null;
   }
 
-  let entries: string[];
-  try {
-    entries = await fs.readdir(teamsRoot);
-  } catch {
-    return null;
-  }
-  // Dirent.isDirectory() reflects the entry's own type, which is false for a
-  // symlink even when it points at a directory — fs.stat follows the link.
-  const dirs: string[] = [];
-  for (const name of entries) {
-    try {
-      if ((await fs.stat(path.join(teamsRoot, name))).isDirectory()) dirs.push(name);
-    } catch {
-      // Vanished between readdir and stat, or a broken symlink — skip it.
-    }
-  }
-
-  const configs: TeamConfig[] = [];
-  for (const name of dirs) {
-    const config = await readJsonSafe<TeamConfig>(path.join(teamsRoot, name, 'config.json'));
-    if (config) configs.push(config);
-  }
-  if (configs.length === 0) return null;
-
-  // A lead-only roster is not a real team — matches the launcher's own
-  // members.length >= 2 gate. Only fall back to lead-only teams when nothing
-  // else exists, so a solo session still shows itself.
-  const realTeams = configs.filter((c) => c.members.length >= 2);
-  const candidates = realTeams.length > 0 ? realTeams : configs;
-
-  let best: TeamConfig | null = null;
-  let bestLive = false;
-  for (const config of candidates) {
-    const live = realTeams.length > 0 && (await isSessionLive(sessionsRoot, config.leadSessionId));
-    const better = !best || (live && !bestLive) || (live === bestLive && config.createdAt > best.createdAt);
-    if (better) {
-      best = config;
-      bestLive = live;
-    }
-  }
-  return best ? toDiscovered(best) : null;
+  const walk = await walkTeams(teamsRoot, sessionsRoot, '', opts.projectsRoot);
+  // A named session is shown as itself unless it drives a team — any other
+  // team on the machine is somebody else's work.
+  const best = opts.session
+    ? teamOfSession(walk.teams, walk.drivers, await forkChainOf(opts.projectsRoot, opts.session))
+    : autoTeam(walk.teams);
+  if (!best) return null;
+  const config = await readJsonSafe<TeamConfig>(path.join(teamsRoot, best.name, 'config.json'));
+  return config ? toDiscovered(config) : null;
 }
 
 /**
  * Session ids whose recorded pid is still running. The file is named for the
- * PID and carries the session id INSIDE it — `sessions/<sessionId>.json`, which
- * isSessionLive above reads, does not exist on a real machine.
+ * PID and carries the session id INSIDE it — `sessions/<sessionId>.json` does
+ * not exist on a real machine.
  */
 interface SessionFacts {
   live: Set<string>;
@@ -755,6 +716,47 @@ export async function sessionProjectDir(
   return null;
 }
 
+/** The `forkedFrom` header Claude Code writes as a `/branch`'d transcript's first record. */
+async function forkParentOf(transcript: string): Promise<string | undefined> {
+  let head: string;
+  try {
+    const fh = await fs.open(transcript, 'r');
+    try {
+      const buf = Buffer.alloc(65536);
+      const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+      head = buf.subarray(0, bytesRead).toString('utf8');
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    return undefined;
+  }
+  try {
+    const first = JSON.parse(head.split('\n', 1)[0]) as { forkedFrom?: { sessionId?: unknown } };
+    const parent = first.forkedFrom?.sessionId;
+    return typeof parent === 'string' && parent !== '' ? parent : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The session, then each `/branch` ancestor. `/branch` gives the fork a new id
+ * but never touches config.json, so a forked lead's team is keyed on an
+ * ancestor. Capped at 20 hops, like the launcher's walk.
+ */
+export async function forkChainOf(projectsRoot: string | undefined, sessionId: string): Promise<string[]> {
+  const chain = [sessionId];
+  if (!projectsRoot) return chain;
+  while (chain.length <= 20) {
+    const dir = await sessionProjectDir(projectsRoot, chain[chain.length - 1]);
+    const parent = dir ? await forkParentOf(`${dir}.jsonl`) : undefined;
+    if (!parent || chain.includes(parent)) break;
+    chain.push(parent);
+  }
+  return chain;
+}
+
 /**
  * Live sessions that never formed a team, as picker rows.
  *
@@ -985,7 +987,7 @@ export async function listTeamSummaries(
   current: string,
   projectsRoot?: string,
   cwd?: string,
-  shared?: { folders: FolderSummary[]; walk: TeamWalk },
+  shared?: { folders?: FolderSummary[]; walk: TeamWalk },
 ): Promise<TeamsResponse> {
   const walk = shared?.walk ?? (await walkTeams(teamsRoot, sessionsRoot, current, projectsRoot));
   const { sessions, now, leadSessions, needsDiffstat, adopted } = walk;
@@ -1059,6 +1061,8 @@ interface TeamWalk {
   now: number;
   teams: TeamSummary[];
   leadSessions: Map<string, string>;
+  /** `leadSessions` before adoptByCwd: only a sidecar or config.leadSessionId. */
+  drivers: Map<string, string>;
   needsDiffstat: Map<string, string>;
   adopted: Set<string>;
 }
@@ -1170,6 +1174,7 @@ async function walkTeams(
 
   // Runs first: a session it hands a team to is represented by that team's row
   // and must not also appear in a listing as a bare session.
+  const drivers = new Map(leadSessions);
   const adopted = adoptByCwd(teams, leadCwds, leadSessions, sessions, now);
   // After adoption, against every identity the session on screen can carry:
   // `/s/<uuid>` hands over a session id, and the only row for a session that
@@ -1179,9 +1184,9 @@ async function walkTeams(
   for (const t of teams) {
     t.current =
       current !== '' &&
-      (t.name === current || t.leadSessionId === current || leadSessions.get(t.name) === current);
+      (t.name === current || t.leadSessionId === current || drivers.get(t.name) === current);
   }
-  return { sessions, now, teams, leadSessions, needsDiffstat, adopted };
+  return { sessions, now, teams, leadSessions, drivers, needsDiffstat, adopted };
 }
 
 /**
@@ -1302,12 +1307,25 @@ export async function main(argv: string[]): Promise<number> {
   const guard = checkClaudeVersion(await readClaudeVersion());
   console.log(guard.ok ? guard.message : `warning: ${guard.message}`);
 
+  // Claimed before the store and the boot sweep, which take seconds on a busy
+  // ~/.claude. A closed port for that long sends every hook's POST on to
+  // console-restart.sh, and each restart it spawned raced this one for the port,
+  // writing into the team log before it lost.
+  const server = createBootingServer();
+  let port: number;
+  try {
+    port = await listen(server, cli.port);
+  } catch (err) {
+    logError(`port ${cli.port} unavailable, exiting`, err);
+    process.exit(1);
+  }
+
   const teamsRoot = path.join(cli.claudeHome, 'teams');
   const sessionsRoot = path.join(cli.claudeHome, 'sessions');
   const projectsRoot = path.join(cli.claudeHome, 'projects');
   setTeamsRoot(teamsRoot);
 
-  const discovered = await discoverTeam(teamsRoot, sessionsRoot, cli.team);
+  const discovered = await discoverTeam(teamsRoot, sessionsRoot, cli.team, { session: cli.session, projectsRoot });
   // --team can name a team whose config.json has not been written yet (the
   // launcher announces before the spawn that creates it); discoverTeam then
   // reports unknown rather than guessing, so fall back to the name itself —
@@ -1329,6 +1347,27 @@ export async function main(argv: string[]): Promise<number> {
   // A switch is reading its target in, and the select routes answer 409 until
   // it lands. Declared ahead of `publish`, which the boot sweep already calls.
   let switching = false;
+  let build = await readBuildInfo(fileURLToPath(import.meta.url), cli.claudeHome);
+  // What the operator asked to see. currentTeam/currentSession below record what
+  // is SHOWN; the follower moves that toward this. --session wins over --team: an
+  // older launcher passed both, and its team came from that same session.
+  let watching: Watching = cli.session
+    ? { kind: 'session', id: cli.session }
+    : cli.team
+      ? { kind: 'team', name: cli.team }
+      : { kind: 'auto' };
+  const record = recordPathFor(cli.dbPath, port);
+  // Chained so two quick watch changes cannot rename out of order and leave the older one on disk.
+  let recording = Promise.resolve();
+  const watch = (next: Watching): void => {
+    watching = next;
+    const entry = { pid: process.pid, port, version: build.version, watching };
+    // What console-restart.sh and console-hint.sh reopen after a crash or an upgrade.
+    recording = recording
+      .then(() => writeConsoleRecord(record, entry))
+      .catch((err: unknown) => logError('console record', err));
+  };
+  watch(watching);
 
   const publish = (): TeamState => {
     const events = store.replay();
@@ -1351,6 +1390,8 @@ export async function main(argv: string[]): Promise<number> {
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
       switching,
+      watching,
+      build,
       workflows,
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
@@ -1396,6 +1437,7 @@ export async function main(argv: string[]): Promise<number> {
       teamName: team,
       leadSessionId: lead,
       sessionOnly: team === undefined && lead !== undefined,
+      adoptExistingTeams: false,
       onTeam: (info) => {
         if (gen !== generation) return;
         store.setTeam(info.teamName);
@@ -1415,10 +1457,6 @@ export async function main(argv: string[]): Promise<number> {
   let ingest = startIngest(generation, teamName, leadSessionId);
   await ingest.sweep();
 
-  // Set the moment the operator picks a team themselves. The follower below
-  // only ever corrects the console's OWN guess — once a human has chosen, a
-  // team appearing elsewhere must not yank them off what they are reading.
-  let pinned = false;
   /**
    * Session name and branch read off disk for the CURRENT team, refreshed by
    * the follower. A floor under the `statusline` hook, which is optional.
@@ -1475,7 +1513,7 @@ export async function main(argv: string[]): Promise<number> {
     // A rebuild for nothing is visible, not just wasteful: a fresh ingest has no
     // config until its sweep lands, so the console would blink empty.
     if (team === currentTeam) {
-      pinned = true;
+      watch({ kind: 'team', name: team });
       return { ok: true, changed: false };
     }
     // Claimed synchronously with the check, before the reads below await — a
@@ -1505,8 +1543,7 @@ export async function main(argv: string[]): Promise<number> {
         };
       }
       await retarget(team, typeof config.leadSessionId === 'string' ? config.leadSessionId : '');
-      // The operator has chosen; the follower stops correcting from here on.
-      pinned = true;
+      watch({ kind: 'team', name: team });
       return { ok: true, changed: true };
     } finally {
       // In a finally, so a throw cannot wedge the console into permanent 409s.
@@ -1522,9 +1559,7 @@ export async function main(argv: string[]): Promise<number> {
    * `setTeam` is what clears the previous target's events, and a session id
    * passes its name gate, so the session gets the per-target log every team
    * already gets. `currentTeam` stays empty — there is no team to highlight in
-   * the picker, and a name with no `teams/<name>` directory behind it would
-   * read as a deleted team and have the idle reaper exit the console out from
-   * under the operator.
+   * the picker.
    */
   const retargetSession = async (sessionId: string): Promise<void> => {
     hub.publish();
@@ -1543,14 +1578,28 @@ export async function main(argv: string[]): Promise<number> {
     hub.publish();
   };
 
-  const selectSession = async (sessionId: string): Promise<SelectTeamOutcome> => {
-    // In team mode the id a `/s/<lead>` reload carries is the FRAME's lead, so
-    // that is what the no-op check compares against — not `leadSessionId`,
-    // which onLeadSession re-points at the adopted driver.
-    if (sessionId === currentSession || (currentTeam !== '' && sessionId === publish().leadSessionId)) {
-      pinned = true;
-      return { ok: true, changed: false };
+  type Target = { team: string; lead: string } | { session: string };
+
+  /** Where the watch says the console should be; undefined means stay put. */
+  const targetOf = async (walk: TeamWalk): Promise<Target | undefined> => {
+    if (watching.kind === 'team') return undefined;
+    if (watching.kind === 'session') {
+      const id = watching.id;
+      const team = teamOfSession(walk.teams, walk.drivers, await forkChainOf(projectsRoot, id));
+      return team ? { team: team.name, lead: team.leadSessionId || id } : { session: id };
     }
+    if (walk.teams.some((t) => t.name === currentTeam && t.members >= 2 && t.live)) return undefined;
+    const team = autoTeam(walk.teams);
+    return team ? { team: team.name, lead: team.leadSessionId } : undefined;
+  };
+
+  const shows = (target: Target): boolean =>
+    'team' in target ? target.team === currentTeam : currentTeam === '' && target.session === currentSession;
+
+  const moveTo = (target: Target): Promise<void> =>
+    'team' in target ? retarget(target.team, target.lead) : retargetSession(target.session);
+
+  const selectSession = async (sessionId: string): Promise<SelectTeamOutcome> => {
     if (switching) {
       return {
         ok: false,
@@ -1560,18 +1609,16 @@ export async function main(argv: string[]): Promise<number> {
     }
     switching = true;
     try {
-      const sessions = await readSessions(sessionsRoot);
-      const dir = await sessionProjectDir(projectsRoot, sessionId, sessions.cwds.get(sessionId));
-      if (!dir) return { ok: false, reason: 'missing', message: `no session ${sessionId}` };
-      // A session that drives a team dir is opened as that team, so `/s/<lead>`
-      // can stand in for the team row on reload. walkTeams, not
-      // listTeamSummaries: no diffstat spawns, no session rows.
-      const team = (await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot)).teams.find(
-        (t) => t.current,
-      );
-      if (team) await retarget(team.name, team.leadSessionId || sessionId);
-      else await retargetSession(sessionId);
-      pinned = true;
+      const walk = await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot);
+      const team = teamOfSession(walk.teams, walk.drivers, await forkChainOf(projectsRoot, sessionId));
+      if (!team && !(await sessionProjectDir(projectsRoot, sessionId, walk.sessions.cwds.get(sessionId)))) {
+        return { ok: false, reason: 'missing', message: `no session ${sessionId}` };
+      }
+      watch({ kind: 'session', id: sessionId });
+      const target: Target = team ? { team: team.name, lead: team.leadSessionId || sessionId } : { session: sessionId };
+      // Rebuilding what is already on screen would blank it for a whole sweep.
+      if (shows(target)) return { ok: true, changed: false };
+      await moveTo(target);
       return { ok: true, changed: true };
     } finally {
       switching = false;
@@ -1579,12 +1626,10 @@ export async function main(argv: string[]): Promise<number> {
     }
   };
 
-  let reaper: { stop(): void } | null = null;
   let stopping = false;
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    reaper?.stop();
     clearInterval(follower);
     ingest.close();
     hub.close();
@@ -1593,7 +1638,8 @@ export async function main(argv: string[]): Promise<number> {
     process.exit(0);
   };
 
-  const server = createHttpServer({
+  server.removeAllListeners('request');
+  server.on('request', createHttpHandler({
     permits,
     hooks: createHookHandlers({
       store: live,
@@ -1601,7 +1647,6 @@ export async function main(argv: string[]): Promise<number> {
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
       onAgentActivity: (agent) => void ingest.drainAgent(agent),
-      onShutdown: stop,
     }),
     stream: hub,
     state: publish,
@@ -1633,9 +1678,7 @@ export async function main(argv: string[]): Promise<number> {
       return briefs.generate({ agents: state.agents, tasks: state.tasks });
     },
     onShutdown: stop,
-  });
-
-  const port = await listen(server, cli.port);
+  }));
   console.log(`team8 on http://127.0.0.1:${port}${cli.readOnly ? ' (read-only)' : ''}`);
 
   /**
@@ -1646,9 +1689,8 @@ export async function main(argv: string[]): Promise<number> {
    * one — so without this the console sat on whatever it guessed at startup
    * while the real team filled up beside it, and teammates never appeared.
    *
-   * Only corrects its own guess, and only towards a REAL team (two or more
-   * members, the same bar the launcher uses), so a lead-only leftover cannot
-   * steal the view from a team that is actually working.
+   * Moves what is shown toward the watch (`targetOf`): a watched session to the
+   * team it drives, auto to the newest live team. A held team is never moved.
    */
   const followRealTeam = async (): Promise<void> => {
     if (switching) return;
@@ -1658,13 +1700,17 @@ export async function main(argv: string[]): Promise<number> {
     // though it also resets `switching` back to false before we resume — the
     // same bug `onTeam`'s `gen !== generation` check guards against.
     const gen = generation;
+    const walk = await walkTeams(teamsRoot, sessionsRoot, currentTeam || currentSession, projectsRoot);
     const { teams } = await listTeamSummaries(
       teamsRoot,
       sessionsRoot,
       currentTeam || currentSession,
       projectsRoot,
       cli.cwd,
+      { walk },
     );
+    // `claude plugin update` can land a newer build while this one serves.
+    build = withInstalled(build, await installedVersion(cli.claudeHome));
 
     // The listing already resolved both of these off disk for every row, so
     // caching the current team's costs nothing. The frame's own copies come
@@ -1674,20 +1720,23 @@ export async function main(argv: string[]): Promise<number> {
     // below it showed the real name. A session picked from another folder has
     // no row in this listing at all, so its facts come off its own transcript.
     const mine = teams.find((t) => t.current);
-    leadFacts = mine
+    const facts = mine
       ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode }
       : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
+    // A switch that landed while the reads above awaited has set its own facts;
+    // these are the previous target's.
+    if (gen !== generation) return;
+    leadFacts = facts;
 
-    if (pinned || gen !== generation) return;
-    if (teams.some((t) => t.name === currentTeam && t.members >= 2)) return;
-    // Sorted live-first, then by most recent activity, so the first real team
-    // is the one worth watching.
-    const target = teams.find((t) => t.members >= 2 && t.live);
-    if (!target || target.name === currentTeam) return;
+    // A select can claim `switching` and move the watch while the reads above
+    // await, before its retarget bumps `generation`; moving now would race it.
+    const asked = watching;
+    const target = await targetOf(walk);
+    if (switching || gen !== generation || watching !== asked || !target || shows(target)) return;
     switching = true;
     try {
-      logInfo(`following ${target.name} (${target.members} members)`);
-      await retarget(target.name, target.leadSessionId);
+      logInfo(`following ${'team' in target ? target.team : target.session}`);
+      await moveTo(target);
     } catch (err) {
       logError('follow', err);
     } finally {
@@ -1700,16 +1749,6 @@ export async function main(argv: string[]): Promise<number> {
   follower.unref();
   void followRealTeam();
 
-  reaper = startIdleReaper({
-    watchedTeam: () => currentTeam,
-    teamsRoot,
-    graceMs: IDLE_GRACE_MS,
-    onIdle: () => {
-      logInfo('nothing live to show — exiting');
-      process.exit(0);
-    },
-  });
-
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
@@ -1717,5 +1756,11 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1]))) {
-  void main(process.argv.slice(2));
+  // The port is held from the first second, so a throw while reading
+  // ~/.claude would otherwise leave it answering 503 with nothing behind it,
+  // and no hook would ever restart it.
+  main(process.argv.slice(2)).catch((err: unknown) => {
+    logError('boot failed', err);
+    process.exit(1);
+  });
 }
