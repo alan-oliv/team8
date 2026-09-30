@@ -95,9 +95,10 @@ Agent definitions carry `effort:`. Per the Claude Code docs, a definition's effo
 
 ### Problem
 - **Messages wait for the turn to end.** A message to an in-process teammate waits in `~/.claude/teams/<team>/inboxes/<name>.json` as an entry with `read: false` until the teammate's turn ends. The docs say messages arrive "between tool calls". The spike on 2026-09-30 showed otherwise:
-  - a probe was sent 5 s into a teammate's turn;
-  - it was still unread after 8 tool calls and over 3 min of the teammate working;
-  - it arrived only at the end of the turn.
+  - a probe was sent at 05:08:14, 5 s into a teammate's turn;
+  - it stayed unread through all 15 of the teammate's tool calls;
+  - it reached the transcript at 05:12:17, the second the turn ended, 4 min 3 s after it was sent;
+  - delivery then removed the entry from the inbox, which went back to `[]`.
 - **Turns are long.** Player's first turn ran 74 min and voices' 66. Lead messages arrived a median 23 min late, up to 75. That caused crossed messages and rework:
   - a border was built after the "tint instead" change had been sent;
   - two package runs went into dist/ with the warning unread.
