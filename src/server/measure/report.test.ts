@@ -90,6 +90,6 @@ describe('renderMarkdown', () => {
     const md = renderMarkdown(report);
     expect(md).toContain('#21');
     expect(md).not.toContain('#30');
-    expect(md).toContain('and 1 shorter stretches (total 0.5 min)');
+    expect(md).toContain('and 1 shorter stretch (total 0.5 min)');
   });
 });

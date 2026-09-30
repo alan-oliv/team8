@@ -1780,8 +1780,12 @@ if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1])))
   // The port is held from the first second, so a throw while reading
   // ~/.claude would otherwise leave it answering 503 with nothing behind it,
   // and no hook would ever restart it.
-  main(process.argv.slice(2)).catch((err: unknown) => {
-    logError('boot failed', err);
-    process.exit(1);
-  });
+  main(process.argv.slice(2))
+    .then((code) => {
+      process.exitCode = code;
+    })
+    .catch((err: unknown) => {
+      logError('boot failed', err);
+      process.exit(1);
+    });
 }

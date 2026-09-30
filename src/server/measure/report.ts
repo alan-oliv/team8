@@ -127,7 +127,7 @@ export function renderMarkdown(r: MeasureReport): string {
     out.push('| Executor | Task | Idle from | Claimed | Minutes |', '|---|---|---|---|---|');
     for (const x of long) out.push(`| ${x.executor} | #${x.taskId} | ${clock(x.idleFrom)} | ${clock(x.claimedAt)} | ${min(x.ms)} |`);
   }
-  if (short.length) out.push(`and ${short.length} shorter stretches (total ${min(short.reduce((sum, x) => sum + x.ms, 0))} min).`);
+  if (short.length) out.push(`and ${short.length} shorter stretch${short.length === 1 ? '' : 'es'} (total ${min(short.reduce((sum, x) => sum + x.ms, 0))} min).`);
   if (!long.length && !short.length) out.push('None.');
 
   out.push('', `Mac asleep: ${min(r.asleepMs)} min.`);
