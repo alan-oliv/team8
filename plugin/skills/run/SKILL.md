@@ -279,13 +279,17 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 
 The Run section of `docs/team8/runs/<batch>.md` takes one line per executor
 (name, model, effort, track), the review rounds per track and their residuals,
-the PR URL, and what it actually cost. The console has the cost; its stream's
-first frame is the full state:
+the PR URL, and what it actually cost. `measure` has the numbers: each agent's
+cost, its model and tool minutes, model seconds per call by effort, message
+lag, review tails and idle time with work waiting. Run it from the batch's
+first dispatch on:
 
 ```bash
-curl -sN -m 3 http://127.0.0.1:4823/stream | sed -n '/^data: /{s/^data: //p;q;}' \
-  | jq '{total: .totalCostUsd, agents: [.agents[] | {name, model, costUsd}]}'
+node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" measure "${CLAUDE_SESSION_ID}" --since <ISO time of the first dispatch>
 ```
+
+Put the message-lag median, the review tails and any idle-with-work rows in
+the Run section beside the costs.
 
 Write the total and the per-agent figures with `≈$`, put the plan's estimate
 beside them in one line, and end with what went wrong and what to change next

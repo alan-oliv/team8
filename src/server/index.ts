@@ -22,6 +22,7 @@ import { recordPathFor, writeConsoleRecord } from './console-record';
 import { checkClaudeVersion, readClaudeVersion, runSetup } from './setup';
 import { isPidAlive, recycledSpares } from './lifecycle';
 import { logError, logInfo } from './log';
+import { runMeasure } from './measure/cli';
 import type { TeamConfig } from '../shared/roster';
 import type { DecidedMode, FolderSummary, TeamsResponse, TeamSummary, TeamState, Watching } from '../shared/domain';
 import { ALL_FOLDERS } from '../shared/domain';
@@ -42,7 +43,7 @@ export const IDLE_GRACE_MS = 10 * 60 * 1000;
 export const FOLLOW_INTERVAL_MS = 3000;
 
 export interface Cli {
-  command: 'run' | 'setup' | 'uninstall';
+  command: 'run' | 'setup' | 'uninstall' | 'measure';
   port: number;
   readOnly: boolean;
   confirm: boolean;
@@ -63,6 +64,10 @@ export interface Cli {
    * session that asked for it.
    */
   cwd: string;
+  /** measure: print JSON instead of markdown. */
+  json: boolean;
+  /** measure: only count from this ISO time on. */
+  since?: string;
 }
 
 export function parseArgs(argv: string[]): Cli {
@@ -81,10 +86,12 @@ export function parseArgs(argv: string[]): Cli {
   // Where the process was started, which is the session's own working copy —
   // the plugin launches the server from inside the session that asked for it.
   let cwd = process.cwd();
+  let json = false;
+  let since: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === 'setup' || arg === 'uninstall') command = arg;
+    if (arg === 'setup' || arg === 'uninstall' || arg === 'measure') command = arg;
     else if (arg === '--read-only') readOnly = true;
     else if (arg === '--yes') confirm = true;
     else if (arg === '--cwd') cwd = argv[++i];
@@ -97,6 +104,10 @@ export function parseArgs(argv: string[]): Cli {
     else if (arg.startsWith('--team=')) team = arg.slice('--team='.length);
     else if (arg === '--session') session = argv[++i];
     else if (arg.startsWith('--session=')) session = arg.slice('--session='.length);
+    else if (arg === '--json') json = true;
+    else if (arg === '--since') since = argv[++i];
+    else if (arg.startsWith('--since=')) since = arg.slice('--since='.length);
+    else if (command === 'measure' && !arg.startsWith('-')) session = arg; // measure <session-id>; the last one wins
   }
 
   return {
@@ -110,6 +121,8 @@ export function parseArgs(argv: string[]): Cli {
     team,
     session,
     cwd,
+    json,
+    since,
   };
 }
 
@@ -1284,6 +1297,14 @@ export function fencedSink(live: Store, generation: number, current: () => numbe
 
 export async function main(argv: string[]): Promise<number> {
   const cli = parseArgs(argv);
+
+  if (cli.command === 'measure') {
+    if (!cli.session) {
+      console.error('usage: measure <session-id> [--since <ISO time>] [--json]');
+      return 1;
+    }
+    return runMeasure({ claudeHome: cli.claudeHome, sessionId: cli.session, json: cli.json, since: cli.since }, (text) => console.log(text));
+  }
 
   if (cli.command === 'setup' || cli.command === 'uninstall') {
     const guard = checkClaudeVersion(await readClaudeVersion());
