@@ -9,6 +9,7 @@
     "prepare": "npm run build",
     "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=plugin/dist/server/index.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "start": "tsx src/server/index.ts",
+    "agents": "tsx src/server/agent-variants.ts",
     "setup": "tsx src/server/index.ts setup",
     "uninstall": "tsx src/server/index.ts uninstall",
     "test": "vitest run",

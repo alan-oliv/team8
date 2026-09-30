@@ -127,8 +127,8 @@ and `completed` as you go. No dispatch, no roster.
 
 **subagents.** One track, nothing parallel. For each task in dependency order:
 record BASE (`git rev-parse HEAD`), dispatch one fresh subagent (`Agent`,
-`subagent_type: "team8:executor"`, `model` from the task's metadata — never omit
-it) with the seven-part contract below minus part 1 and part 7's `TaskUpdate`
+`subagent_type` from the task's `effort` as The Dispatch Contract maps it, `model` from the task's metadata — never omit
+either) with the seven-part contract below minus part 1 and part 7's `TaskUpdate`
 sentences, since subagents have no task tools — tell it so in the prompt,
 because its definition says to claim its own tasks: you claim the task with
 `TaskUpdate` on its behalf and close it from the reported output, `verified`
@@ -204,7 +204,7 @@ reviewer, and the executor stays alive until its track is clear.
    `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
    Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
-   carries no Edit or Write, so read-only is enforced), model sized like the
+   runs at high effort and carries no Edit or Write, so read-only is enforced), model sized like the
    track's biggest task (sonnet for standard, opus for judgment), with: the diff path,
    the task descriptions (`TaskGet` each, paste them), the plan sections those
    tasks name, and the global constraints. Two verdicts, both required: does
@@ -223,8 +223,13 @@ reviewer, and the executor stays alive until its track is clear.
 
 ## The Dispatch Contract
 
-Spawn every executor as `subagent_type: "team8:executor"` and every reviewer as
-`subagent_type: "team8:reviewer"`. A definition's `tools` list applies to a
+Spawn every executor from the definition that matches its task's `effort`:
+`team8:executor-low` for low, `team8:executor` for medium, `team8:executor-high`
+for high, and `team8:executor-xhigh` for xhigh or max. Spawn every reviewer as
+`subagent_type: "team8:reviewer"`, which runs at high. The Agent tool has no effort
+parameter, and an agent whose definition sets no `effort` inherits the lead's
+`/effort`, so the definition is the only way a task's effort reaches its agent.
+A definition's `tools` list applies to a
 teammate and its body is appended to the teammate's prompt, so the reviewer's
 read-only is enforced rather than requested, and the standing rules — skills,
 committing by pathspec, no `git checkout -b`, the final answer is the report, the
