@@ -40,6 +40,39 @@ describe('messageLags', () => {
       { from: 'team-lead', to: 'rows', sentAt: 0, seenAt: 30_000, lagMs: 30_000, text: 'Pick up #9.' },
     ]);
   });
+
+  it('matches a send from a respawned sender against the bare name in a delivered frame', () => {
+    const rows2 = trace('rows#2', {
+      sends: [{ at: 0, from: 'rows#2', to: 'team-lead', text: 'Done with #9.' }],
+    });
+    const lead = trace('team-lead', {
+      role: 'lead',
+      incoming: [{ at: 20_000, kind: 'message', from: 'rows', text: 'Done with #9.' }],
+    });
+    expect(messageLags([rows2, lead])).toEqual([
+      { from: 'rows', to: 'team-lead', sentAt: 0, seenAt: 20_000, lagMs: 20_000, text: 'Done with #9.' },
+    ]);
+  });
+
+  it('pairs two identical sends with their own delivery, earliest with earliest', () => {
+    const lead = trace('team-lead', {
+      role: 'lead',
+      sends: [
+        { at: 0, from: 'team-lead', to: 'rows', text: 'Ping.' },
+        { at: 1_000, from: 'team-lead', to: 'rows', text: 'Ping.' },
+      ],
+    });
+    const rows = trace('rows', {
+      incoming: [
+        { at: 5_000, kind: 'message', from: 'team-lead', text: 'Ping.' },
+        { at: 6_000, kind: 'message', from: 'team-lead', text: 'Ping.' },
+      ],
+    });
+    expect(messageLags([lead, rows])).toEqual([
+      { from: 'team-lead', to: 'rows', sentAt: 0, seenAt: 5_000, lagMs: 5_000, text: 'Ping.' },
+      { from: 'team-lead', to: 'rows', sentAt: 1_000, seenAt: 6_000, lagMs: 5_000, text: 'Ping.' },
+    ]);
+  });
 });
 
 describe('summarizeLags', () => {

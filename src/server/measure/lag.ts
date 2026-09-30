@@ -1,4 +1,4 @@
-import type { AgentTrace } from './trace';
+import type { AgentTrace, Incoming } from './trace';
 
 export interface Lag { from: string; to: string; sentAt: number; seenAt?: number; lagMs?: number; text: string }
 export interface LagSummary { sent: number; delivered: number; medianMs: number; p90Ms: number; maxMs: number; over5Min: number }
@@ -21,19 +21,21 @@ export function percentile(sorted: number[], p: number): number {
 
 export function messageLags(traces: AgentTrace[]): Lag[] {
   const lags: Lag[] = [];
+  const consumed = new Set<Incoming>(); // an incoming record binds to at most one send
   for (const t of traces) {
     for (const send of t.sends) {
       const to = LEAD_ALIASES.has(send.to) ? 'team-lead' : send.to;
       const from = bare(send.from);
       const want = key(send.text);
       // A respawn's incoming messages live in its own #2, #3, ... trace, not just byName.get(to).
-      let seen: { at: number } | undefined;
+      let seen: Incoming | undefined;
       for (const candidate of traces) {
         if (bare(candidate.name) !== to) continue;
         // Transcripts are written by different processes; 2 s of slack keeps a same-second delivery.
-        const match = candidate.incoming.find((m) => m.from === from && m.at >= send.at - 2_000 && key(m.text) === want);
+        const match = candidate.incoming.find((m) => !consumed.has(m) && m.from === from && m.at >= send.at - 2_000 && key(m.text) === want);
         if (match && (!seen || match.at < seen.at)) seen = match;
       }
+      if (seen) consumed.add(seen);
       lags.push({ from, to, sentAt: send.at, seenAt: seen?.at, lagMs: seen ? Math.max(0, seen.at - send.at) : undefined, text: send.text });
     }
   }
