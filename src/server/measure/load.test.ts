@@ -35,4 +35,17 @@ describe('findSession', () => {
     ]);
     expect(await findSession(home, 'missing')).toBeNull();
   });
+
+  it("takes an unnamed subagent's role from its meta.json agentType", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'measure-'));
+    const project = path.join(home, 'projects', '-Users-x-code');
+    const sub = path.join(project, 'sid1', 'subagents');
+    await mkdir(sub, { recursive: true });
+    await writeFile(path.join(project, 'sid1.jsonl'), '');
+    await writeFile(path.join(sub, 'agent-a0f1e2d3c4b5a6978.jsonl'), '');
+    await writeFile(path.join(sub, 'agent-a0f1e2d3c4b5a6978.meta.json'), JSON.stringify({ agentType: 'team8:reviewer' }));
+
+    const files = await findSession(home, 'sid1');
+    expect(files?.agents.map((a) => [a.name, a.role])).toEqual([['agent-a0f1e2d3c4b5a6978', 'reviewer']]);
+  });
 });

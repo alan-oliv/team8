@@ -7,8 +7,11 @@ export interface SessionFiles { sessionId: string; lead: string; agents: Array<{
 
 const SUBAGENT_FILE = /^agent-a(.+)-[0-9a-f]{16}\.jsonl$/;
 
-// A teammate's meta.json keeps only its name; the lead's Agent call is the one
-// record of which definition it was spawned from.
+const roleOf = (type: string): Role => (/executor/.test(type) ? 'executor' : /reviewer/.test(type) ? 'reviewer' : 'other');
+
+// The lead's Agent call names a named teammate's definition: that teammate's
+// meta.json gives only its own name as agentType. An unnamed subagent's
+// meta.json carries its definition as agentType.
 function rolesFromLead(lines: string[]): Map<string, Role> {
   const roles = new Map<string, Role>();
   for (const line of lines) {
@@ -17,8 +20,7 @@ function rolesFromLead(lines: string[]): Map<string, Role> {
     if (!Array.isArray(content)) continue;
     for (const b of content as Array<{ type?: string; name?: string; input?: { name?: unknown; subagent_type?: unknown } }>) {
       if (b?.type !== 'tool_use' || b.name !== 'Agent' || typeof b.input?.name !== 'string') continue;
-      const type = typeof b.input.subagent_type === 'string' ? b.input.subagent_type : '';
-      roles.set(b.input.name, /executor/.test(type) ? 'executor' : /reviewer/.test(type) ? 'reviewer' : 'other');
+      roles.set(b.input.name, roleOf(typeof b.input.subagent_type === 'string' ? b.input.subagent_type : ''));
     }
   }
   return roles;
@@ -55,13 +57,15 @@ export async function findSession(claudeHome: string, sessionId: string): Promis
     const agents: SessionFiles['agents'] = [];
     for (const file of files) {
       let name = SUBAGENT_FILE.exec(file)?.[1] ?? file.replace(/\.jsonl$/, '');
+      let agentType = '';
       try {
-        const meta = JSON.parse(await fs.readFile(path.join(subdir, file.replace(/\.jsonl$/, '.meta.json')), 'utf8')) as { name?: unknown };
+        const meta = JSON.parse(await fs.readFile(path.join(subdir, file.replace(/\.jsonl$/, '.meta.json')), 'utf8')) as { name?: unknown; agentType?: unknown };
         if (typeof meta.name === 'string') name = meta.name;
+        if (typeof meta.agentType === 'string') agentType = meta.agentType;
       } catch {
         // No meta.json: keep the name from the file.
       }
-      const role = roles.get(name) ?? 'other';
+      const role = roles.get(name) ?? roleOf(agentType);
       const n = (seen.get(name) ?? 0) + 1;
       seen.set(name, n);
       agents.push({ name: n > 1 ? `${name}#${n}` : name, role, path: path.join(subdir, file) }); // a respawn under the same name
