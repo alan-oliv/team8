@@ -22,6 +22,8 @@ export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
 /** Absolute paths to the two task gates, used by hookBlock(). */
 export const TASK_CREATED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-created.sh');
 export const TASK_COMPLETED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-completed.sh');
+/** The bundled inbox-delivery hook, used by hookBlock(); matches plugin/hooks/hooks.json. */
+export const INBOX_DELIVER_SCRIPT = path.join(PLUGIN_DIR, 'dist', 'hooks', 'inbox-deliver.js');
 /** Where the user's own env values are stashed while the console owns them. */
 export const BACKUP_FILE = 'team8.backup.json';
 // The agent-teams doc: an in-process teammate's prompt cache holds 5 minutes
@@ -120,6 +122,12 @@ function observe(port: number, timeoutSeconds: number): string {
   return `curl -sS -m ${timeoutSeconds} -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:${port}/hook 2>/dev/null || OCTO_PORT=${port} '${RESTART_SCRIPT}'; exit 0`;
 }
 
+// Same bash pre-filter as plugin/hooks/hooks.json: only a teammate's hook
+// carries agent_id, so the lead never starts this.
+function inboxDeliverCommand(scriptPath: string): string {
+  return `input=$(cat); case "$input" in *'"agent_id"'*) printf '%s' "$input" | node '${scriptPath}' 2>/dev/null;; esac; exit 0`;
+}
+
 export function hookBlock(port: number): HookBlock {
   const hooks: Record<string, HookEntry[]> = {};
   for (const event of HOOK_EVENTS) {
@@ -167,7 +175,14 @@ export function hookBlock(port: number): HookBlock {
   // one: the launcher points the console at the session instead.
   const workflowLauncher: HookEntry = { ...launcher, matcher: 'Workflow' };
   hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher];
-  hooks.PostToolUse = [...(hooks.PostToolUse ?? []), { ...launcher }, { ...workflowLauncher }];
+  // Hands a busy teammate its unread messages after its next tool call; the
+  // lead's hooks carry no agent_id and never start it. Matches
+  // plugin/hooks/hooks.json, right after the observation curl entry.
+  const inboxDeliver: HookEntry = {
+    hooks: [{ type: 'command', command: inboxDeliverCommand(INBOX_DELIVER_SCRIPT), timeout: HOOK_TIMEOUT_SECONDS }],
+    matcher: '*',
+  };
+  hooks.PostToolUse = [...(hooks.PostToolUse ?? []), inboxDeliver, { ...launcher }, { ...workflowLauncher }];
 
   // A pure nudge toward /team8:console for sessions that never spawn a team
   // or workflow. Appended to the same entry as the observation curl, matching
@@ -198,6 +213,7 @@ function isConsoleEntry(entry: unknown): boolean {
         (h.command.includes('console-launch.sh') ||
           h.command.includes('task-created.sh') ||
           h.command.includes('task-completed.sh') ||
+          h.command.includes('inbox-deliver.js') ||
           CONSOLE_HOOK_COMMAND_URL.test(h.command))),
   );
 }

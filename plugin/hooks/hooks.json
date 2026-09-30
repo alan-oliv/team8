@@ -1,5 +1,5 @@
 {
-  "description": "Everything the console observes, plus the launcher that starts it. The observation hooks POST each event to the console on its default port through a curl one-liner that always exits 0, so a console that isn't running costs nothing but a discarded connection refusal instead of a hook-error notice on every tool call. A POST that finds nothing listening hands off to console-restart.sh, which brings a crashed console back on what it last watched and stays silent either way. The launcher exits immediately unless a real team exists, except on the Workflow tool \u2014 a workflow forms no team, so that matcher points the console at the session that ran it instead. SessionStart also runs console-hint.sh, which replaces a console running an older build than the session loaded and otherwise only nudges toward /team8:console. TaskCreated and TaskCompleted run task-created.sh and task-completed.sh, which gate a task's metadata and its verification instead of observing anything. Timeouts are in seconds.",
+  "description": "Everything the console observes, plus the launcher that starts it. The observation hooks POST each event to the console on its default port through a curl one-liner that always exits 0, so a console that isn't running costs nothing but a discarded connection refusal instead of a hook-error notice on every tool call. A POST that finds nothing listening hands off to console-restart.sh, which brings a crashed console back on what it last watched and stays silent either way. The launcher exits immediately unless a real team exists, except on the Workflow tool \u2014 a workflow forms no team, so that matcher points the console at the session that ran it instead. SessionStart also runs console-hint.sh, which replaces a console running an older build than the session loaded and otherwise only nudges toward /team8:console. TaskCreated and TaskCompleted run task-created.sh and task-completed.sh, which gate a task's metadata and its verification instead of observing anything. Timeouts are in seconds. A second PostToolUse hook, inbox-deliver.js, hands a teammate its unread messages as added context after each of its tool calls and marks them read, so the delivery at the end of its turn skips them; the lead's hooks carry no agent_id and never start it.",
   "hooks": {
     "PreToolUse": [
       {
@@ -39,6 +39,16 @@
           {
             "type": "command",
             "command": "curl -sS -m 5 -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4823/hook 2>/dev/null || OCTO_PORT=4823 \"${CLAUDE_PLUGIN_ROOT}/bin/console-restart.sh\"; exit 0",
+            "timeout": 5
+          }
+        ],
+        "matcher": "*"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "input=$(cat); case \"$input\" in *'\"agent_id\"'*) printf '%s' \"$input\" | node \"${CLAUDE_PLUGIN_ROOT}/dist/hooks/inbox-deliver.js\" 2>/dev/null;; esac; exit 0",
             "timeout": 5
           }
         ],

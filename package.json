@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server/index.ts --port ${CONSOLE_PORT:-4823} & vite",
-    "build": "vite build && npm run build:server",
+    "build": "vite build && npm run build:server && npm run build:hooks",
     "prepare": "npm run build",
     "build:server": "esbuild src/server/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=plugin/dist/server/index.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
+    "build:hooks": "esbuild src/hooks/inbox-deliver.ts --bundle --platform=node --format=esm --target=node22 --outfile=plugin/dist/hooks/inbox-deliver.js --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "start": "tsx src/server/index.ts",
     "agents": "tsx src/server/agent-variants.ts",
     "setup": "tsx src/server/index.ts setup",
