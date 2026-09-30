@@ -102,4 +102,25 @@ describe('idleWithWork', () => {
     ]);
     expect(idleWithWork([lead, sidebar], attributions)).toEqual([]);
   });
+
+  it("counts a reused id's blocker-free generation even though an earlier, abandoned generation's blocker never finished", () => {
+    const lead = trace('team-lead', 'lead', {
+      taskEvents: [
+        { at: 0, by: 'team-lead', taskId: '13', status: 'pending' },
+        { at: 0, by: 'team-lead', taskId: '21', status: 'pending' },
+        { at: 1, by: 'team-lead', taskId: '21', addBlockedBy: ['13'] },
+        // Batch 1 is abandoned: '13' never completes and this #21 is never claimed.
+        { at: 1_000_000, by: 'team-lead', taskId: '21', status: 'pending' }, // batch 2: reused, no blocker
+      ],
+    });
+    const sidebar = trace('sidebar', 'executor', {
+      taskEvents: [{ at: 1_300_200, by: 'sidebar', taskId: '21', status: 'in_progress' }],
+    });
+    const attributions = new Map<string, Attribution>([
+      ['sidebar', { byOwner: {}, segments: [{ startAt: 1_000_000, endAt: 1_300_000, owner: 'idle' }] }],
+    ]);
+    expect(idleWithWork([lead, sidebar], attributions)).toEqual([
+      { executor: 'sidebar', taskId: '21', idleFrom: 1_000_000, idleTo: 1_300_000, claimedAt: 1_300_200, ms: 300_000 },
+    ]);
+  });
 });
