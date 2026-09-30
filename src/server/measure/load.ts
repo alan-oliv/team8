@@ -91,7 +91,8 @@ export async function findSession(claudeHome: string, sessionId: string): Promis
 // uuids, sessionId rewritten) before going its own way. A parent that was never
 // compacted is copied from its first line, so parent and child each hold the
 // other's first uuid; only the child's lines are a run of the other's, then its own.
-// ponytail: a parent that kept going after a child copied all of it reads as that child's child; file birth times would tell them apart.
+// ponytail: if a parent kept going after a child copied all of it, each matches the shape against the other,
+// so both drop the shared history and it counts in neither; break the tie by file birth time.
 async function withoutCopiedHistory(lead: string, lines: string[]): Promise<string[]> {
   const ids = lines.map((l) => parseLine(l)?.uuid);
   const uuids = ids.filter((u): u is string => !!u);
