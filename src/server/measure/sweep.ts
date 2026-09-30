@@ -23,15 +23,18 @@ function lastEndedBy(callsByEnd: ModelCall[], t: number): ModelCall | undefined 
 export function attribute(trace: AgentTrace, sleeps: Interval[], window?: Interval): Attribution {
   const from = Math.max(trace.firstAt, window?.startAt ?? -Infinity);
   const to = Math.min(trace.lastAt, window?.endAt ?? Infinity);
+  // Out-of-order transcript lines can invert a call (lastAt before requestedAt); it was never
+  // live, so drop it here rather than let it fake a bound or count as "the last one that ended".
+  const calls = trace.calls.filter((c) => c.lastAt >= c.requestedAt);
   const spans: Span[] = [
     ...sleeps.map((s) => ({ startAt: s.startAt, endAt: s.endAt, owner: 'asleep' as const })),
-    ...trace.calls.map((c) => ({ startAt: c.requestedAt, endAt: c.lastAt, owner: 'model' as const })),
+    ...calls.map((c) => ({ startAt: c.requestedAt, endAt: c.lastAt, owner: 'model' as const })),
     ...trace.tools.filter((t) => t.endAt > t.startAt).map((t) => ({ startAt: t.startAt, endAt: t.endAt, owner: t.category })),
   ].filter((s) => s.endAt > from && s.startAt < to);
   const bounds = [...new Set([from, to, ...spans.flatMap((s) => [s.startAt, s.endAt])])]
     .filter((b) => b >= from && b <= to)
     .sort((a, b) => a - b);
-  const callsByEnd = [...trace.calls].sort((a, b) => a.lastAt - b.lastAt);
+  const callsByEnd = [...calls].sort((a, b) => a.lastAt - b.lastAt);
 
   const byOwner: Attribution['byOwner'] = {};
   const segments: Segment[] = [];
@@ -42,7 +45,7 @@ export function attribute(trace: AgentTrace, sleeps: Interval[], window?: Interv
     let owner: Owner;
     if (live.some((x) => x.owner === 'asleep')) owner = 'asleep';
     else if (live.some((x) => x.owner === 'model')) owner = 'model';
-    else if (live.length) owner = live.reduce((a, b) => (b.startAt < a.startAt ? b : a)).owner;
+    else if (live.length) owner = live.reduce((a, b) => (b.startAt < a.startAt || (b.startAt === a.startAt && b.endAt < a.endAt) ? b : a)).owner;
     else {
       const last = lastEndedBy(callsByEnd, s);
       owner = !last || last.stopReason === 'end_turn' || last.toolIds.length === 0 ? 'idle' : 'gap';

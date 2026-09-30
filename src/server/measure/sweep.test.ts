@@ -59,4 +59,41 @@ describe('attribute', () => {
     });
     expect(attribute(t, []).byOwner).toEqual({ model: 2_000, gap: 3_000 });
   });
+
+  it('breaks a tie between tools that start together by the shorter span, regardless of array order', () => {
+    const calls = [{ id: 'm1', model: 'x', requestedAt: 0, firstAt: 1_000, lastAt: 1_000, outputTokens: 1, toolIds: ['a', 'b'] }];
+    const forward = attribute(
+      trace({
+        lastAt: 5_000,
+        calls,
+        tools: [
+          { id: 'a', name: 'Bash', category: 'build', startAt: 1_000, endAt: 5_000, unfinished: false },
+          { id: 'b', name: 'Bash', category: 'tests', startAt: 1_000, endAt: 2_000, unfinished: false },
+        ],
+      }),
+      [],
+    );
+    const reversed = attribute(
+      trace({
+        lastAt: 5_000,
+        calls,
+        tools: [
+          { id: 'b', name: 'Bash', category: 'tests', startAt: 1_000, endAt: 2_000, unfinished: false },
+          { id: 'a', name: 'Bash', category: 'build', startAt: 1_000, endAt: 5_000, unfinished: false },
+        ],
+      }),
+      [],
+    );
+    expect(forward.byOwner).toEqual({ model: 1_000, tests: 1_000, build: 3_000 });
+    expect(reversed.byOwner).toEqual({ model: 1_000, tests: 1_000, build: 3_000 });
+  });
+
+  it('drops a call with lastAt before requestedAt so it cannot pollute bounds or end a turn', () => {
+    const t = trace({
+      lastAt: 10_000,
+      calls: [{ id: 'm1', model: 'x', requestedAt: 5_000, firstAt: 3_000, lastAt: 3_000, outputTokens: 1, toolIds: ['t1'] }],
+      tools: [],
+    });
+    expect(attribute(t, []).byOwner).toEqual({ idle: 10_000 });
+  });
 });
