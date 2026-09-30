@@ -66,6 +66,19 @@ export function readTrace(name: string, role: Role, lines: string[]): AgentTrace
     trace.firstAt = Math.min(trace.firstAt, at);
     trace.lastAt = Math.max(trace.lastAt, at);
 
+    if (r.type === 'attachment') {
+      // team8's inbox hook hands a busy teammate its messages as injected context; those are deliveries too.
+      const a = (r as { attachment?: { type?: string; content?: unknown } }).attachment;
+      if (a?.type !== 'hook_additional_context') return;
+      for (const text of Array.isArray(a.content) ? a.content : [a.content]) {
+        if (typeof text !== 'string') continue;
+        for (const f of parseTeammateFrames(text, at, name)) {
+          trace.incoming.push({ at, kind: f.protocol?.type === 'idle_notification' ? 'idle' : 'message', from: f.from, text: f.text });
+        }
+      }
+      return;
+    }
+
     if (r.type === 'assistant') {
       const m = (r.message ?? {}) as NonNullable<Rec['message']> & { stop_reason?: string | null };
       if (m.model === '<synthetic>') return;
