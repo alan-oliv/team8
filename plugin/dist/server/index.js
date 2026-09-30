@@ -20,9 +20,9 @@ var __commonJS = (cb, mod) => function __require2() {
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    for (let key2 of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key2) && key2 !== except)
+        __defProp(to, key2, { get: () => from[key2], enumerable: !(desc = __getOwnPropDesc(from, key2)) || desc.enumerable });
   }
   return to;
 };
@@ -61,54 +61,54 @@ var require_polyfills = __commonJS({
     }
     var chdir;
     module.exports = patch;
-    function patch(fs10) {
+    function patch(fs11) {
       if (constants.hasOwnProperty("O_SYMLINK") && process.version.match(/^v0\.6\.[0-2]|^v0\.5\./)) {
-        patchLchmod(fs10);
+        patchLchmod(fs11);
       }
-      if (!fs10.lutimes) {
-        patchLutimes(fs10);
+      if (!fs11.lutimes) {
+        patchLutimes(fs11);
       }
-      fs10.chown = chownFix(fs10.chown);
-      fs10.fchown = chownFix(fs10.fchown);
-      fs10.lchown = chownFix(fs10.lchown);
-      fs10.chmod = chmodFix(fs10.chmod);
-      fs10.fchmod = chmodFix(fs10.fchmod);
-      fs10.lchmod = chmodFix(fs10.lchmod);
-      fs10.chownSync = chownFixSync(fs10.chownSync);
-      fs10.fchownSync = chownFixSync(fs10.fchownSync);
-      fs10.lchownSync = chownFixSync(fs10.lchownSync);
-      fs10.chmodSync = chmodFixSync(fs10.chmodSync);
-      fs10.fchmodSync = chmodFixSync(fs10.fchmodSync);
-      fs10.lchmodSync = chmodFixSync(fs10.lchmodSync);
-      fs10.stat = statFix(fs10.stat);
-      fs10.fstat = statFix(fs10.fstat);
-      fs10.lstat = statFix(fs10.lstat);
-      fs10.statSync = statFixSync(fs10.statSync);
-      fs10.fstatSync = statFixSync(fs10.fstatSync);
-      fs10.lstatSync = statFixSync(fs10.lstatSync);
-      if (fs10.chmod && !fs10.lchmod) {
-        fs10.lchmod = function(path13, mode, cb) {
+      fs11.chown = chownFix(fs11.chown);
+      fs11.fchown = chownFix(fs11.fchown);
+      fs11.lchown = chownFix(fs11.lchown);
+      fs11.chmod = chmodFix(fs11.chmod);
+      fs11.fchmod = chmodFix(fs11.fchmod);
+      fs11.lchmod = chmodFix(fs11.lchmod);
+      fs11.chownSync = chownFixSync(fs11.chownSync);
+      fs11.fchownSync = chownFixSync(fs11.fchownSync);
+      fs11.lchownSync = chownFixSync(fs11.lchownSync);
+      fs11.chmodSync = chmodFixSync(fs11.chmodSync);
+      fs11.fchmodSync = chmodFixSync(fs11.fchmodSync);
+      fs11.lchmodSync = chmodFixSync(fs11.lchmodSync);
+      fs11.stat = statFix(fs11.stat);
+      fs11.fstat = statFix(fs11.fstat);
+      fs11.lstat = statFix(fs11.lstat);
+      fs11.statSync = statFixSync(fs11.statSync);
+      fs11.fstatSync = statFixSync(fs11.fstatSync);
+      fs11.lstatSync = statFixSync(fs11.lstatSync);
+      if (fs11.chmod && !fs11.lchmod) {
+        fs11.lchmod = function(path14, mode, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs10.lchmodSync = function() {
+        fs11.lchmodSync = function() {
         };
       }
-      if (fs10.chown && !fs10.lchown) {
-        fs10.lchown = function(path13, uid, gid, cb) {
+      if (fs11.chown && !fs11.lchown) {
+        fs11.lchown = function(path14, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs10.lchownSync = function() {
+        fs11.lchownSync = function() {
         };
       }
       if (platform === "win32") {
-        fs10.rename = typeof fs10.rename !== "function" ? fs10.rename : (function(fs$rename) {
+        fs11.rename = typeof fs11.rename !== "function" ? fs11.rename : (function(fs$rename) {
           function rename(from, to, cb) {
             var start = Date.now();
             var backoff = 0;
             fs$rename(from, to, function CB(er) {
               if (er && (er.code === "EACCES" || er.code === "EPERM" || er.code === "EBUSY") && Date.now() - start < 6e4) {
                 setTimeout(function() {
-                  fs10.stat(to, function(stater, st) {
+                  fs11.stat(to, function(stater, st) {
                     if (stater && stater.code === "ENOENT")
                       fs$rename(from, to, CB);
                     else
@@ -124,9 +124,9 @@ var require_polyfills = __commonJS({
           }
           if (Object.setPrototypeOf) Object.setPrototypeOf(rename, fs$rename);
           return rename;
-        })(fs10.rename);
+        })(fs11.rename);
       }
-      fs10.read = typeof fs10.read !== "function" ? fs10.read : (function(fs$read) {
+      fs11.read = typeof fs11.read !== "function" ? fs11.read : (function(fs$read) {
         function read(fd, buffer, offset, length, position, callback_) {
           var callback;
           if (callback_ && typeof callback_ === "function") {
@@ -134,22 +134,22 @@ var require_polyfills = __commonJS({
             callback = function(er, _, __) {
               if (er && er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
-                return fs$read.call(fs10, fd, buffer, offset, length, position, callback);
+                return fs$read.call(fs11, fd, buffer, offset, length, position, callback);
               }
               callback_.apply(this, arguments);
             };
           }
-          return fs$read.call(fs10, fd, buffer, offset, length, position, callback);
+          return fs$read.call(fs11, fd, buffer, offset, length, position, callback);
         }
         if (Object.setPrototypeOf) Object.setPrototypeOf(read, fs$read);
         return read;
-      })(fs10.read);
-      fs10.readSync = typeof fs10.readSync !== "function" ? fs10.readSync : /* @__PURE__ */ (function(fs$readSync) {
+      })(fs11.read);
+      fs11.readSync = typeof fs11.readSync !== "function" ? fs11.readSync : /* @__PURE__ */ (function(fs$readSync) {
         return function(fd, buffer, offset, length, position) {
           var eagCounter = 0;
           while (true) {
             try {
-              return fs$readSync.call(fs10, fd, buffer, offset, length, position);
+              return fs$readSync.call(fs11, fd, buffer, offset, length, position);
             } catch (er) {
               if (er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
@@ -159,11 +159,11 @@ var require_polyfills = __commonJS({
             }
           }
         };
-      })(fs10.readSync);
-      function patchLchmod(fs11) {
-        fs11.lchmod = function(path13, mode, callback) {
-          fs11.open(
-            path13,
+      })(fs11.readSync);
+      function patchLchmod(fs12) {
+        fs12.lchmod = function(path14, mode, callback) {
+          fs12.open(
+            path14,
             constants.O_WRONLY | constants.O_SYMLINK,
             mode,
             function(err, fd) {
@@ -171,80 +171,80 @@ var require_polyfills = __commonJS({
                 if (callback) callback(err);
                 return;
               }
-              fs11.fchmod(fd, mode, function(err2) {
-                fs11.close(fd, function(err22) {
+              fs12.fchmod(fd, mode, function(err2) {
+                fs12.close(fd, function(err22) {
                   if (callback) callback(err2 || err22);
                 });
               });
             }
           );
         };
-        fs11.lchmodSync = function(path13, mode) {
-          var fd = fs11.openSync(path13, constants.O_WRONLY | constants.O_SYMLINK, mode);
+        fs12.lchmodSync = function(path14, mode) {
+          var fd = fs12.openSync(path14, constants.O_WRONLY | constants.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
-            ret = fs11.fchmodSync(fd, mode);
+            ret = fs12.fchmodSync(fd, mode);
             threw = false;
           } finally {
             if (threw) {
               try {
-                fs11.closeSync(fd);
+                fs12.closeSync(fd);
               } catch (er) {
               }
             } else {
-              fs11.closeSync(fd);
+              fs12.closeSync(fd);
             }
           }
           return ret;
         };
       }
-      function patchLutimes(fs11) {
-        if (constants.hasOwnProperty("O_SYMLINK") && fs11.futimes) {
-          fs11.lutimes = function(path13, at, mt, cb) {
-            fs11.open(path13, constants.O_SYMLINK, function(er, fd) {
+      function patchLutimes(fs12) {
+        if (constants.hasOwnProperty("O_SYMLINK") && fs12.futimes) {
+          fs12.lutimes = function(path14, at, mt, cb) {
+            fs12.open(path14, constants.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
               }
-              fs11.futimes(fd, at, mt, function(er2) {
-                fs11.close(fd, function(er22) {
+              fs12.futimes(fd, at, mt, function(er2) {
+                fs12.close(fd, function(er22) {
                   if (cb) cb(er2 || er22);
                 });
               });
             });
           };
-          fs11.lutimesSync = function(path13, at, mt) {
-            var fd = fs11.openSync(path13, constants.O_SYMLINK);
+          fs12.lutimesSync = function(path14, at, mt) {
+            var fd = fs12.openSync(path14, constants.O_SYMLINK);
             var ret;
             var threw = true;
             try {
-              ret = fs11.futimesSync(fd, at, mt);
+              ret = fs12.futimesSync(fd, at, mt);
               threw = false;
             } finally {
               if (threw) {
                 try {
-                  fs11.closeSync(fd);
+                  fs12.closeSync(fd);
                 } catch (er) {
                 }
               } else {
-                fs11.closeSync(fd);
+                fs12.closeSync(fd);
               }
             }
             return ret;
           };
-        } else if (fs11.futimes) {
-          fs11.lutimes = function(_a, _b, _c, cb) {
+        } else if (fs12.futimes) {
+          fs12.lutimes = function(_a, _b, _c, cb) {
             if (cb) process.nextTick(cb);
           };
-          fs11.lutimesSync = function() {
+          fs12.lutimesSync = function() {
           };
         }
       }
       function chmodFix(orig) {
         if (!orig) return orig;
         return function(target, mode, cb) {
-          return orig.call(fs10, target, mode, function(er) {
+          return orig.call(fs11, target, mode, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -254,7 +254,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, mode) {
           try {
-            return orig.call(fs10, target, mode);
+            return orig.call(fs11, target, mode);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -263,7 +263,7 @@ var require_polyfills = __commonJS({
       function chownFix(orig) {
         if (!orig) return orig;
         return function(target, uid, gid, cb) {
-          return orig.call(fs10, target, uid, gid, function(er) {
+          return orig.call(fs11, target, uid, gid, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -273,7 +273,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, uid, gid) {
           try {
-            return orig.call(fs10, target, uid, gid);
+            return orig.call(fs11, target, uid, gid);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -293,13 +293,13 @@ var require_polyfills = __commonJS({
             }
             if (cb) cb.apply(this, arguments);
           }
-          return options ? orig.call(fs10, target, options, callback) : orig.call(fs10, target, callback);
+          return options ? orig.call(fs11, target, options, callback) : orig.call(fs11, target, callback);
         };
       }
       function statFixSync(orig) {
         if (!orig) return orig;
         return function(target, options) {
-          var stats = options ? orig.call(fs10, target, options) : orig.call(fs10, target);
+          var stats = options ? orig.call(fs11, target, options) : orig.call(fs11, target);
           if (stats) {
             if (stats.uid < 0) stats.uid += 4294967296;
             if (stats.gid < 0) stats.gid += 4294967296;
@@ -328,16 +328,16 @@ var require_legacy_streams = __commonJS({
   "node_modules/graceful-fs/legacy-streams.js"(exports, module) {
     var Stream = __require("stream").Stream;
     module.exports = legacy;
-    function legacy(fs10) {
+    function legacy(fs11) {
       return {
         ReadStream,
         WriteStream
       };
-      function ReadStream(path13, options) {
-        if (!(this instanceof ReadStream)) return new ReadStream(path13, options);
+      function ReadStream(path14, options) {
+        if (!(this instanceof ReadStream)) return new ReadStream(path14, options);
         Stream.call(this);
         var self = this;
-        this.path = path13;
+        this.path = path14;
         this.fd = null;
         this.readable = true;
         this.paused = false;
@@ -347,8 +347,8 @@ var require_legacy_streams = __commonJS({
         options = options || {};
         var keys = Object.keys(options);
         for (var index = 0, length = keys.length; index < length; index++) {
-          var key = keys[index];
-          this[key] = options[key];
+          var key2 = keys[index];
+          this[key2] = options[key2];
         }
         if (this.encoding) this.setEncoding(this.encoding);
         if (this.start !== void 0) {
@@ -371,7 +371,7 @@ var require_legacy_streams = __commonJS({
           });
           return;
         }
-        fs10.open(this.path, this.flags, this.mode, function(err, fd) {
+        fs11.open(this.path, this.flags, this.mode, function(err, fd) {
           if (err) {
             self.emit("error", err);
             self.readable = false;
@@ -382,10 +382,10 @@ var require_legacy_streams = __commonJS({
           self._read();
         });
       }
-      function WriteStream(path13, options) {
-        if (!(this instanceof WriteStream)) return new WriteStream(path13, options);
+      function WriteStream(path14, options) {
+        if (!(this instanceof WriteStream)) return new WriteStream(path14, options);
         Stream.call(this);
-        this.path = path13;
+        this.path = path14;
         this.fd = null;
         this.writable = true;
         this.flags = "w";
@@ -395,8 +395,8 @@ var require_legacy_streams = __commonJS({
         options = options || {};
         var keys = Object.keys(options);
         for (var index = 0, length = keys.length; index < length; index++) {
-          var key = keys[index];
-          this[key] = options[key];
+          var key2 = keys[index];
+          this[key2] = options[key2];
         }
         if (this.start !== void 0) {
           if ("number" !== typeof this.start) {
@@ -410,7 +410,7 @@ var require_legacy_streams = __commonJS({
         this.busy = false;
         this._queue = [];
         if (this.fd === null) {
-          this._open = fs10.open;
+          this._open = fs11.open;
           this._queue.push([this._open, this.path, this.flags, this.mode, void 0]);
           this.flush();
         }
@@ -434,8 +434,8 @@ var require_clone = __commonJS({
         var copy = { __proto__: getPrototypeOf(obj) };
       else
         var copy = /* @__PURE__ */ Object.create(null);
-      Object.getOwnPropertyNames(obj).forEach(function(key) {
-        Object.defineProperty(copy, key, Object.getOwnPropertyDescriptor(obj, key));
+      Object.getOwnPropertyNames(obj).forEach(function(key2) {
+        Object.defineProperty(copy, key2, Object.getOwnPropertyDescriptor(obj, key2));
       });
       return copy;
     }
@@ -445,7 +445,7 @@ var require_clone = __commonJS({
 // node_modules/graceful-fs/graceful-fs.js
 var require_graceful_fs = __commonJS({
   "node_modules/graceful-fs/graceful-fs.js"(exports, module) {
-    var fs10 = __require("fs");
+    var fs11 = __require("fs");
     var polyfills = require_polyfills();
     var legacy = require_legacy_streams();
     var clone = require_clone();
@@ -477,12 +477,12 @@ var require_graceful_fs = __commonJS({
         m = "GFS4: " + m.split(/\n/).join("\nGFS4: ");
         console.error(m);
       };
-    if (!fs10[gracefulQueue]) {
+    if (!fs11[gracefulQueue]) {
       queue = global[gracefulQueue] || [];
-      publishQueue(fs10, queue);
-      fs10.close = (function(fs$close) {
+      publishQueue(fs11, queue);
+      fs11.close = (function(fs$close) {
         function close(fd, cb) {
-          return fs$close.call(fs10, fd, function(err) {
+          return fs$close.call(fs11, fd, function(err) {
             if (!err) {
               resetQueue();
             }
@@ -494,48 +494,48 @@ var require_graceful_fs = __commonJS({
           value: fs$close
         });
         return close;
-      })(fs10.close);
-      fs10.closeSync = (function(fs$closeSync) {
+      })(fs11.close);
+      fs11.closeSync = (function(fs$closeSync) {
         function closeSync(fd) {
-          fs$closeSync.apply(fs10, arguments);
+          fs$closeSync.apply(fs11, arguments);
           resetQueue();
         }
         Object.defineProperty(closeSync, previousSymbol, {
           value: fs$closeSync
         });
         return closeSync;
-      })(fs10.closeSync);
+      })(fs11.closeSync);
       if (/\bgfs4\b/i.test(process.env.NODE_DEBUG || "")) {
         process.on("exit", function() {
-          debug2(fs10[gracefulQueue]);
-          __require("assert").equal(fs10[gracefulQueue].length, 0);
+          debug2(fs11[gracefulQueue]);
+          __require("assert").equal(fs11[gracefulQueue].length, 0);
         });
       }
     }
     var queue;
     if (!global[gracefulQueue]) {
-      publishQueue(global, fs10[gracefulQueue]);
+      publishQueue(global, fs11[gracefulQueue]);
     }
-    module.exports = patch(clone(fs10));
-    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs10.__patched) {
-      module.exports = patch(fs10);
-      fs10.__patched = true;
+    module.exports = patch(clone(fs11));
+    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs11.__patched) {
+      module.exports = patch(fs11);
+      fs11.__patched = true;
     }
-    function patch(fs11) {
-      polyfills(fs11);
-      fs11.gracefulify = patch;
-      fs11.createReadStream = createReadStream;
-      fs11.createWriteStream = createWriteStream;
-      var fs$readFile = fs11.readFile;
-      fs11.readFile = readFile;
-      function readFile(path13, options, cb) {
+    function patch(fs12) {
+      polyfills(fs12);
+      fs12.gracefulify = patch;
+      fs12.createReadStream = createReadStream;
+      fs12.createWriteStream = createWriteStream;
+      var fs$readFile = fs12.readFile;
+      fs12.readFile = readFile;
+      function readFile(path14, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$readFile(path13, options, cb);
-        function go$readFile(path14, options2, cb2, startTime) {
-          return fs$readFile(path14, options2, function(err) {
+        return go$readFile(path14, options, cb);
+        function go$readFile(path15, options2, cb2, startTime) {
+          return fs$readFile(path15, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$readFile, [path14, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$readFile, [path15, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -543,16 +543,16 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$writeFile = fs11.writeFile;
-      fs11.writeFile = writeFile;
-      function writeFile(path13, data, options, cb) {
+      var fs$writeFile = fs12.writeFile;
+      fs12.writeFile = writeFile;
+      function writeFile(path14, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$writeFile(path13, data, options, cb);
-        function go$writeFile(path14, data2, options2, cb2, startTime) {
-          return fs$writeFile(path14, data2, options2, function(err) {
+        return go$writeFile(path14, data, options, cb);
+        function go$writeFile(path15, data2, options2, cb2, startTime) {
+          return fs$writeFile(path15, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$writeFile, [path14, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$writeFile, [path15, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -560,17 +560,17 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$appendFile = fs11.appendFile;
+      var fs$appendFile = fs12.appendFile;
       if (fs$appendFile)
-        fs11.appendFile = appendFile;
-      function appendFile(path13, data, options, cb) {
+        fs12.appendFile = appendFile;
+      function appendFile(path14, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$appendFile(path13, data, options, cb);
-        function go$appendFile(path14, data2, options2, cb2, startTime) {
-          return fs$appendFile(path14, data2, options2, function(err) {
+        return go$appendFile(path14, data, options, cb);
+        function go$appendFile(path15, data2, options2, cb2, startTime) {
+          return fs$appendFile(path15, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$appendFile, [path14, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$appendFile, [path15, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -578,9 +578,9 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$copyFile = fs11.copyFile;
+      var fs$copyFile = fs12.copyFile;
       if (fs$copyFile)
-        fs11.copyFile = copyFile;
+        fs12.copyFile = copyFile;
       function copyFile(src, dest, flags, cb) {
         if (typeof flags === "function") {
           cb = flags;
@@ -598,34 +598,34 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$readdir = fs11.readdir;
-      fs11.readdir = readdir;
+      var fs$readdir = fs12.readdir;
+      fs12.readdir = readdir;
       var noReaddirOptionVersions = /^v[0-5]\./;
-      function readdir(path13, options, cb) {
+      function readdir(path14, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path14, options2, cb2, startTime) {
-          return fs$readdir(path14, fs$readdirCallback(
-            path14,
+        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path15, options2, cb2, startTime) {
+          return fs$readdir(path15, fs$readdirCallback(
+            path15,
             options2,
             cb2,
             startTime
           ));
-        } : function go$readdir2(path14, options2, cb2, startTime) {
-          return fs$readdir(path14, options2, fs$readdirCallback(
-            path14,
+        } : function go$readdir2(path15, options2, cb2, startTime) {
+          return fs$readdir(path15, options2, fs$readdirCallback(
+            path15,
             options2,
             cb2,
             startTime
           ));
         };
-        return go$readdir(path13, options, cb);
-        function fs$readdirCallback(path14, options2, cb2, startTime) {
+        return go$readdir(path14, options, cb);
+        function fs$readdirCallback(path15, options2, cb2, startTime) {
           return function(err, files) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
               enqueue([
                 go$readdir,
-                [path14, options2, cb2],
+                [path15, options2, cb2],
                 err,
                 startTime || Date.now(),
                 Date.now()
@@ -640,21 +640,21 @@ var require_graceful_fs = __commonJS({
         }
       }
       if (process.version.substr(0, 4) === "v0.8") {
-        var legStreams = legacy(fs11);
+        var legStreams = legacy(fs12);
         ReadStream = legStreams.ReadStream;
         WriteStream = legStreams.WriteStream;
       }
-      var fs$ReadStream = fs11.ReadStream;
+      var fs$ReadStream = fs12.ReadStream;
       if (fs$ReadStream) {
         ReadStream.prototype = Object.create(fs$ReadStream.prototype);
         ReadStream.prototype.open = ReadStream$open;
       }
-      var fs$WriteStream = fs11.WriteStream;
+      var fs$WriteStream = fs12.WriteStream;
       if (fs$WriteStream) {
         WriteStream.prototype = Object.create(fs$WriteStream.prototype);
         WriteStream.prototype.open = WriteStream$open;
       }
-      Object.defineProperty(fs11, "ReadStream", {
+      Object.defineProperty(fs12, "ReadStream", {
         get: function() {
           return ReadStream;
         },
@@ -664,7 +664,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      Object.defineProperty(fs11, "WriteStream", {
+      Object.defineProperty(fs12, "WriteStream", {
         get: function() {
           return WriteStream;
         },
@@ -675,7 +675,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileReadStream = ReadStream;
-      Object.defineProperty(fs11, "FileReadStream", {
+      Object.defineProperty(fs12, "FileReadStream", {
         get: function() {
           return FileReadStream;
         },
@@ -686,7 +686,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileWriteStream = WriteStream;
-      Object.defineProperty(fs11, "FileWriteStream", {
+      Object.defineProperty(fs12, "FileWriteStream", {
         get: function() {
           return FileWriteStream;
         },
@@ -696,7 +696,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      function ReadStream(path13, options) {
+      function ReadStream(path14, options) {
         if (this instanceof ReadStream)
           return fs$ReadStream.apply(this, arguments), this;
         else
@@ -716,7 +716,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function WriteStream(path13, options) {
+      function WriteStream(path14, options) {
         if (this instanceof WriteStream)
           return fs$WriteStream.apply(this, arguments), this;
         else
@@ -734,22 +734,22 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path13, options) {
-        return new fs11.ReadStream(path13, options);
+      function createReadStream(path14, options) {
+        return new fs12.ReadStream(path14, options);
       }
-      function createWriteStream(path13, options) {
-        return new fs11.WriteStream(path13, options);
+      function createWriteStream(path14, options) {
+        return new fs12.WriteStream(path14, options);
       }
-      var fs$open = fs11.open;
-      fs11.open = open;
-      function open(path13, flags, mode, cb) {
+      var fs$open = fs12.open;
+      fs12.open = open;
+      function open(path14, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
-        return go$open(path13, flags, mode, cb);
-        function go$open(path14, flags2, mode2, cb2, startTime) {
-          return fs$open(path14, flags2, mode2, function(err, fd) {
+        return go$open(path14, flags, mode, cb);
+        function go$open(path15, flags2, mode2, cb2, startTime) {
+          return fs$open(path15, flags2, mode2, function(err, fd) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$open, [path14, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$open, [path15, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -757,20 +757,20 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      return fs11;
+      return fs12;
     }
     function enqueue(elem) {
       debug2("ENQUEUE", elem[0].name, elem[1]);
-      fs10[gracefulQueue].push(elem);
+      fs11[gracefulQueue].push(elem);
       retry();
     }
     var retryTimer;
     function resetQueue() {
       var now = Date.now();
-      for (var i = 0; i < fs10[gracefulQueue].length; ++i) {
-        if (fs10[gracefulQueue][i].length > 2) {
-          fs10[gracefulQueue][i][3] = now;
-          fs10[gracefulQueue][i][4] = now;
+      for (var i = 0; i < fs11[gracefulQueue].length; ++i) {
+        if (fs11[gracefulQueue][i].length > 2) {
+          fs11[gracefulQueue][i][3] = now;
+          fs11[gracefulQueue][i][4] = now;
         }
       }
       retry();
@@ -778,9 +778,9 @@ var require_graceful_fs = __commonJS({
     function retry() {
       clearTimeout(retryTimer);
       retryTimer = void 0;
-      if (fs10[gracefulQueue].length === 0)
+      if (fs11[gracefulQueue].length === 0)
         return;
-      var elem = fs10[gracefulQueue].shift();
+      var elem = fs11[gracefulQueue].shift();
       var fn = elem[0];
       var args = elem[1];
       var err = elem[2];
@@ -802,7 +802,7 @@ var require_graceful_fs = __commonJS({
           debug2("RETRY", fn.name, args);
           fn.apply(null, args.concat([startTime]));
         } else {
-          fs10[gracefulQueue].push(elem);
+          fs11[gracefulQueue].push(elem);
         }
       }
       if (retryTimer === void 0) {
@@ -966,8 +966,8 @@ var require_retry = __commonJS({
         maxTimeout: Infinity,
         randomize: false
       };
-      for (var key in options) {
-        opts[key] = options[key];
+      for (var key2 in options) {
+        opts[key2] = options[key2];
       }
       if (opts.minTimeout > opts.maxTimeout) {
         throw new Error("minTimeout is greater than maxTimeout");
@@ -997,9 +997,9 @@ var require_retry = __commonJS({
       }
       if (!methods) {
         methods = [];
-        for (var key in obj) {
-          if (typeof obj[key] === "function") {
-            methods.push(key);
+        for (var key2 in obj) {
+          if (typeof obj[key2] === "function") {
+            methods.push(key2);
           }
         }
       }
@@ -1237,10 +1237,10 @@ var require_mtime_precision = __commonJS({
   "node_modules/proper-lockfile/lib/mtime-precision.js"(exports, module) {
     "use strict";
     var cacheSymbol = /* @__PURE__ */ Symbol();
-    function probe(file, fs10, callback) {
-      const cachedPrecision = fs10[cacheSymbol];
+    function probe(file, fs11, callback) {
+      const cachedPrecision = fs11[cacheSymbol];
       if (cachedPrecision) {
-        return fs10.stat(file, (err, stat) => {
+        return fs11.stat(file, (err, stat) => {
           if (err) {
             return callback(err);
           }
@@ -1248,16 +1248,16 @@ var require_mtime_precision = __commonJS({
         });
       }
       const mtime = new Date(Math.ceil(Date.now() / 1e3) * 1e3 + 5);
-      fs10.utimes(file, mtime, mtime, (err) => {
+      fs11.utimes(file, mtime, mtime, (err) => {
         if (err) {
           return callback(err);
         }
-        fs10.stat(file, (err2, stat) => {
+        fs11.stat(file, (err2, stat) => {
           if (err2) {
             return callback(err2);
           }
           const precision = stat.mtime.getTime() % 1e3 === 0 ? "s" : "ms";
-          Object.defineProperty(fs10, cacheSymbol, { value: precision });
+          Object.defineProperty(fs11, cacheSymbol, { value: precision });
           callback(null, stat.mtime, precision);
         });
       });
@@ -1278,8 +1278,8 @@ var require_mtime_precision = __commonJS({
 var require_lockfile = __commonJS({
   "node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
     "use strict";
-    var path13 = __require("path");
-    var fs10 = require_graceful_fs();
+    var path14 = __require("path");
+    var fs11 = require_graceful_fs();
     var retry = require_retry2();
     var onExit = require_signal_exit();
     var mtimePrecision = require_mtime_precision();
@@ -1289,7 +1289,7 @@ var require_lockfile = __commonJS({
     }
     function resolveCanonicalPath(file, options, callback) {
       if (!options.realpath) {
-        return callback(null, path13.resolve(file));
+        return callback(null, path14.resolve(file));
       }
       options.fs.realpath(file, callback);
     }
@@ -1410,7 +1410,7 @@ var require_lockfile = __commonJS({
         update: null,
         realpath: true,
         retries: 0,
-        fs: fs10,
+        fs: fs11,
         onCompromised: (err) => {
           throw err;
         },
@@ -1454,7 +1454,7 @@ var require_lockfile = __commonJS({
     }
     function unlock(file, options, callback) {
       options = {
-        fs: fs10,
+        fs: fs11,
         realpath: true,
         ...options
       };
@@ -1476,7 +1476,7 @@ var require_lockfile = __commonJS({
       options = {
         stale: 1e4,
         realpath: true,
-        fs: fs10,
+        fs: fs11,
         ...options
       };
       options.stale = Math.max(options.stale || 0, 2e3);
@@ -1515,16 +1515,16 @@ var require_lockfile = __commonJS({
 var require_adapter = __commonJS({
   "node_modules/proper-lockfile/lib/adapter.js"(exports, module) {
     "use strict";
-    var fs10 = require_graceful_fs();
-    function createSyncFs(fs11) {
+    var fs11 = require_graceful_fs();
+    function createSyncFs(fs12) {
       const methods = ["mkdir", "realpath", "stat", "rmdir", "utimes"];
-      const newFs = { ...fs11 };
+      const newFs = { ...fs12 };
       methods.forEach((method) => {
         newFs[method] = (...args) => {
           const callback = args.pop();
           let ret;
           try {
-            ret = fs11[`${method}Sync`](...args);
+            ret = fs12[`${method}Sync`](...args);
           } catch (err) {
             return callback(err);
           }
@@ -1562,7 +1562,7 @@ var require_adapter = __commonJS({
     }
     function toSyncOptions(options) {
       options = { ...options };
-      options.fs = createSyncFs(options.fs || fs10);
+      options.fs = createSyncFs(options.fs || fs11);
       if (typeof options.retries === "number" && options.retries > 0 || options.retries && typeof options.retries.retries === "number" && options.retries.retries > 0) {
         throw Object.assign(new Error("Cannot use retries with the sync api"), { code: "ESYNC" });
       }
@@ -1614,10 +1614,10 @@ var require_proper_lockfile = __commonJS({
 
 // src/server/index.ts
 import os2 from "node:os";
-import path12 from "node:path";
-import { execFile as execFile4 } from "node:child_process";
-import { promises as fs9 } from "node:fs";
-import { promisify as promisify3 } from "node:util";
+import path13 from "node:path";
+import { execFile as execFile5 } from "node:child_process";
+import { promises as fs10 } from "node:fs";
+import { promisify as promisify4 } from "node:util";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/server/store.ts
@@ -2721,9 +2721,9 @@ function mergeMail(existing, incoming) {
   const canonicalId = /* @__PURE__ */ new Map();
   const kept = /* @__PURE__ */ new Map();
   for (const message of ordered) {
-    const key = contentKey(message);
-    const id = canonicalId.get(key) ?? message.msgId;
-    canonicalId.set(key, id);
+    const key2 = contentKey(message);
+    const id = canonicalId.get(key2) ?? message.msgId;
+    canonicalId.set(key2, id);
     const previous = kept.get(id);
     if (!previous) {
       kept.set(id, { ...message, msgId: id });
@@ -2779,8 +2779,8 @@ function parseLine(raw) {
 function describeTool(name, input) {
   if (!input || typeof input !== "object") return name;
   const fields = input;
-  for (const key of TOOL_INPUT_KEYS) {
-    const value = fields[key];
+  for (const key2 of TOOL_INPUT_KEYS) {
+    const value = fields[key2];
     if (typeof value === "string" && value.trim()) {
       const shown = name === "Bash" ? value.replace(LEADING_CD, "") : value;
       return capText(`${name}(${tidy(shown)})`);
@@ -3066,9 +3066,9 @@ function transcriptHistory(events, agent) {
       seen.clear();
     }
     for (const rec of p.records) {
-      const key = rec.uuid ?? "";
-      if (key && seen.has(key)) continue;
-      if (key) seen.add(key);
+      const key2 = rec.uuid ?? "";
+      if (key2 && seen.has(key2)) continue;
+      if (key2) seen.add(key2);
       records.push(rec);
     }
   }
@@ -3139,9 +3139,9 @@ function project(events, readOnly, now = Date.now()) {
         const seen = seenRecords.get(p.agent) ?? /* @__PURE__ */ new Set();
         const spawns = spawnFolds.get(p.agent) ?? emptySubagentFold();
         for (const rec of p.records) {
-          const key = rec.uuid ?? "";
-          if (key && seen.has(key)) continue;
-          if (key) seen.add(key);
+          const key2 = rec.uuid ?? "";
+          if (key2 && seen.has(key2)) continue;
+          if (key2) seen.add(key2);
           list.push(rec);
           const tool = toolOf(rec);
           if (tool) currentTool.set(p.agent, tool);
@@ -3760,8 +3760,8 @@ function agentOf(rec) {
     ...opt("agentType", str2(rec.agentType))
   };
 }
-function opt(key, value) {
-  return value === void 0 ? {} : { [key]: value };
+function opt(key2, value) {
+  return value === void 0 ? {} : { [key2]: value };
 }
 function phasesOf(snapshot, progress) {
   const declared = arr(snapshot.phases).map(bagOf);
@@ -5160,8 +5160,8 @@ function answersFor(heldInput, rawAnswers) {
     heldInput.questions.map((q) => isPlainObject(q) ? str4(q.question) : void 0).filter((q) => q !== void 0)
   );
   const answers = {};
-  for (const [key, value] of Object.entries(rawAnswers)) {
-    if (typeof value === "string" && questionTexts.has(key)) answers[key] = value;
+  for (const [key2, value] of Object.entries(rawAnswers)) {
+    if (typeof value === "string" && questionTexts.has(key2)) answers[key2] = value;
   }
   return Object.keys(answers).length > 0 ? answers : void 0;
 }
@@ -5573,8 +5573,8 @@ async function installedVersion(claudeHome) {
     path9.join(claudeHome, "plugins", "installed_plugins.json")
   );
   let newest;
-  for (const [key, installs] of Object.entries(doc?.plugins ?? {})) {
-    if (!key.startsWith("team8@") || !Array.isArray(installs)) continue;
+  for (const [key2, installs] of Object.entries(doc?.plugins ?? {})) {
+    if (!key2.startsWith("team8@") || !Array.isArray(installs)) continue;
     for (const install of installs) {
       const v = install?.version;
       if (typeof v === "string" && (newest === void 0 || isOlderBuild(newest, v))) newest = v;
@@ -5763,7 +5763,7 @@ function removeHookBlock(settings) {
   const env = settings.env;
   if (env) {
     const kept = Object.fromEntries(
-      Object.entries(env).filter(([key, value]) => !(AGENT_ENV_VARS.includes(key) && value === "1"))
+      Object.entries(env).filter(([key2, value]) => !(AGENT_ENV_VARS.includes(key2) && value === "1"))
     );
     if (Object.keys(kept).length > 0) out.env = kept;
     else delete out.env;
@@ -5879,8 +5879,530 @@ async function runSetup(opts) {
   return lines.join("\n");
 }
 
+// src/server/measure/cli.ts
+import { execFile as execFile4 } from "node:child_process";
+import { promisify as promisify3 } from "node:util";
+
+// src/server/measure/load.ts
+import { promises as fs9 } from "node:fs";
+import path12 from "node:path";
+
+// src/server/measure/classify.ts
+var BASH_RULES = [
+  ["expensive check", /npm run package|electron-builder|codesign|lsregister|hdiutil|notarytool|xcodebuild\s+(archive|-exportArchive)|docker build|pkgbuild|productbuild/],
+  ["build", /electron-vite build|vite build|esbuild|webpack|npm run build\b|cargo build|go build|tsc -b\b|xcodebuild\b/],
+  ["app launch", /remote-debugging|screencapture|osascript|open -[an]\b|\.app\/Contents\/MacOS\/|playwright|puppeteer|npx electron\b/],
+  ["tests", /vitest|\bjest\b|pytest|mocha|npm (run )?test\b|go test|cargo test/],
+  ["typecheck", /typecheck|tsc --noEmit|\bmypy\b|pyright/],
+  ["sleep/poll", /(^|[;&|(\s])sleep \d|\buntil\b.*\bsleep\b|\bwhile\b.*\bsleep\b/],
+  ["git/gh", /^\s*(cd [^;&]+(&&|;)\s*)?(\w+=\S+\s+)*(git|gh)\b/],
+  ["files", /^\s*(cd [^;&]+(&&|;)\s*)?(cat|sed|grep|rg|find|ls|head|tail|wc|awk|jq|diff|stat|du|tree|sort|uniq|cut|echo|printf)\b/]
+];
+var TOOL_CATEGORY = {
+  Read: "files",
+  Edit: "files",
+  Write: "files",
+  MultiEdit: "files",
+  NotebookEdit: "files",
+  Grep: "files",
+  Glob: "files",
+  TaskGet: "task tools",
+  TaskUpdate: "task tools",
+  TaskList: "task tools",
+  TaskCreate: "task tools",
+  TodoWrite: "task tools",
+  SendMessage: "messaging",
+  Monitor: "sleep/poll",
+  BashOutput: "sleep/poll",
+  TaskOutput: "sleep/poll",
+  KillShell: "sleep/poll",
+  TaskStop: "sleep/poll",
+  Agent: "subagent",
+  Task: "subagent"
+};
+function classifyTool(name, input) {
+  if (name !== "Bash") return TOOL_CATEGORY[name] ?? "other";
+  const command = input?.command;
+  if (typeof command !== "string") return "other";
+  for (const [category, rule] of BASH_RULES) if (rule.test(command)) return category;
+  return "other";
+}
+
+// src/server/measure/trace.ts
+var BACKGROUND_ID = /running in background with ID: (\w+)/;
+var BACKGROUND_POLL = /tasks\/(\w+)\.output/;
+var CREATED_TASK = /Task #(\d+) created/;
+var NOT_A_MESSAGE = /^<(system-reminder|local-command|command-)/;
+var str5 = (v) => typeof v === "string" ? v : void 0;
+function textOf2(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((b) => b?.type === "text" ? b.text ?? "" : b?.type === "tool_result" ? textOf2(b.content) : "").join("\n");
+}
+function readTrace(name, role, lines) {
+  const records = lines.map(parseLine).filter((r) => r !== null);
+  const trace = { name, role, firstAt: Infinity, lastAt: -Infinity, calls: [], tools: [], incoming: [], sends: [], taskEvents: [], costUsd: 0 };
+  const callsById = /* @__PURE__ */ new Map();
+  const tools = /* @__PURE__ */ new Map();
+  const background = /* @__PURE__ */ new Map();
+  const creates = /* @__PURE__ */ new Set();
+  let lastUserAt = -Infinity;
+  records.forEach((r, i) => {
+    const at = r.timestamp ? Date.parse(r.timestamp) : NaN;
+    if (Number.isNaN(at)) return;
+    trace.firstAt = Math.min(trace.firstAt, at);
+    trace.lastAt = Math.max(trace.lastAt, at);
+    if (r.type === "assistant") {
+      const m = r.message ?? {};
+      if (m.model === "<synthetic>") return;
+      const id = m.id ?? r.requestId ?? `line:${i}`;
+      let call = callsById.get(id);
+      if (!call) {
+        const previous = trace.calls[trace.calls.length - 1];
+        const requestedAt = Math.max(lastUserAt, previous?.lastAt ?? -Infinity);
+        call = { id, model: m.model ?? "unknown", effort: r.effort, requestedAt: Number.isFinite(requestedAt) ? requestedAt : at, firstAt: at, lastAt: at, outputTokens: 0, toolIds: [] };
+        callsById.set(id, call);
+        trace.calls.push(call);
+      }
+      call.lastAt = Math.max(call.lastAt, at);
+      call.outputTokens = Math.max(call.outputTokens, m.usage?.output_tokens ?? 0);
+      if (m.stop_reason) call.stopReason = m.stop_reason;
+      for (const b of Array.isArray(m.content) ? m.content : []) {
+        if (b?.type !== "tool_use" || !b.id || !b.name) continue;
+        const input = b.input ?? {};
+        const command = str5(input.command);
+        const polled = command ? BACKGROUND_POLL.exec(command)?.[1] : void 0;
+        const category = polled && background.get(polled) || classifyTool(b.name, input);
+        tools.set(b.id, { id: b.id, name: b.name, category, command, startAt: at, endAt: at, unfinished: true });
+        call.toolIds.push(b.id);
+        if (b.name === "SendMessage" && typeof input.to === "string") {
+          trace.sends.push({ at, from: name, to: input.to, text: typeof input.message === "string" ? input.message : JSON.stringify(input.message ?? "") });
+        }
+        if (b.name === "TaskUpdate" && input.taskId != null) {
+          trace.taskEvents.push({
+            at,
+            by: name,
+            taskId: String(input.taskId),
+            status: str5(input.status),
+            owner: str5(input.owner),
+            addBlockedBy: Array.isArray(input.addBlockedBy) ? input.addBlockedBy.map(String) : void 0
+          });
+        }
+        if (b.name === "TaskCreate") creates.add(b.id);
+      }
+      return;
+    }
+    if (r.type !== "user") return;
+    lastUserAt = at;
+    const content = r.message?.content;
+    const results = (Array.isArray(content) ? content : []).filter((b) => b?.type === "tool_result");
+    for (const b of results) {
+      const span = b.tool_use_id ? tools.get(b.tool_use_id) : void 0;
+      if (!span || !span.unfinished) continue;
+      span.endAt = at;
+      span.unfinished = false;
+      const output = textOf2(b.content);
+      const backgroundId = BACKGROUND_ID.exec(output)?.[1];
+      if (backgroundId) background.set(backgroundId, span.category);
+      if (creates.delete(span.id)) {
+        const taskId = CREATED_TASK.exec(output)?.[1];
+        if (taskId) trace.taskEvents.push({ at, by: name, taskId, status: "pending" });
+      }
+    }
+    if (results.length || r.isMeta) return;
+    const text = textOf2(content);
+    if (!text.trim() || NOT_A_MESSAGE.test(text.trim())) return;
+    const frames = parseTeammateFrames(text, at, name);
+    if (frames.length) {
+      for (const f of frames) trace.incoming.push({ at, kind: f.protocol?.type === "idle_notification" ? "idle" : "message", from: f.from, text: f.text });
+    } else {
+      trace.incoming.push({ at, kind: text.includes("<task-notification") ? "task-notification" : "user", text });
+    }
+  });
+  trace.tools = [...tools.values()];
+  trace.costUsd = totalCost(usageRecordsOf(records));
+  if (!Number.isFinite(trace.firstAt)) trace.firstAt = trace.lastAt = 0;
+  return trace;
+}
+
+// src/server/measure/load.ts
+var SUBAGENT_FILE2 = /^agent-a(.+)-[0-9a-f]{16}\.jsonl$/;
+var roleOf2 = (type) => /executor/.test(type) ? "executor" : /reviewer/.test(type) ? "reviewer" : "other";
+function rolesFromLead(lines) {
+  const roles = /* @__PURE__ */ new Map();
+  for (const line of lines) {
+    const r = parseLine(line);
+    const content = r?.type === "assistant" ? r.message?.content : void 0;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (b?.type !== "tool_use" || b.name !== "Agent" || typeof b.input?.name !== "string") continue;
+      roles.set(b.input.name, roleOf2(typeof b.input.subagent_type === "string" ? b.input.subagent_type : ""));
+    }
+  }
+  return roles;
+}
+async function readLines(file) {
+  return (await fs9.readFile(file, "utf8")).split("\n");
+}
+async function firstTimestamp(file) {
+  for (const line of await readLines(file)) {
+    const at = Date.parse(parseLine(line)?.timestamp ?? "");
+    if (!Number.isNaN(at)) return at;
+  }
+  return Infinity;
+}
+async function findSession(claudeHome, sessionId) {
+  const projects = path12.join(claudeHome, "projects");
+  let dirs;
+  try {
+    dirs = await fs9.readdir(projects);
+  } catch {
+    return null;
+  }
+  for (const dir of dirs) {
+    const lead = path12.join(projects, dir, `${sessionId}.jsonl`);
+    try {
+      await fs9.access(lead);
+    } catch {
+      continue;
+    }
+    const roles = rolesFromLead(await readLines(lead));
+    const subdir = path12.join(projects, dir, sessionId, "subagents");
+    let files = [];
+    try {
+      files = (await fs9.readdir(subdir)).filter((f) => f.endsWith(".jsonl")).sort();
+    } catch {
+    }
+    const firstAt = /* @__PURE__ */ new Map();
+    for (const file of files) firstAt.set(file, await firstTimestamp(path12.join(subdir, file)));
+    files.sort((a, b) => firstAt.get(a) - firstAt.get(b) || 0);
+    const seen = /* @__PURE__ */ new Map();
+    const agents = [];
+    for (const file of files) {
+      let name = SUBAGENT_FILE2.exec(file)?.[1] ?? file.replace(/\.jsonl$/, "");
+      let agentType = "";
+      try {
+        const meta = JSON.parse(await fs9.readFile(path12.join(subdir, file.replace(/\.jsonl$/, ".meta.json")), "utf8"));
+        if (typeof meta.name === "string") name = meta.name;
+        if (typeof meta.agentType === "string") agentType = meta.agentType;
+      } catch {
+      }
+      const role = roles.get(name) ?? roleOf2(agentType);
+      const n = (seen.get(name) ?? 0) + 1;
+      seen.set(name, n);
+      agents.push({ name: n > 1 ? `${name}#${n}` : name, role, path: path12.join(subdir, file) });
+    }
+    return { sessionId, lead, agents };
+  }
+  return null;
+}
+async function withoutCopiedHistory(lead, lines) {
+  const ids = lines.map((l) => parseLine(l)?.uuid);
+  const uuids = ids.filter((u) => !!u);
+  if (!uuids.length) return lines;
+  const dir = path12.dirname(lead);
+  const copied = /* @__PURE__ */ new Set();
+  for (const file of await fs9.readdir(dir)) {
+    const sibling = path12.join(dir, file);
+    if (!file.endsWith(".jsonl") || sibling === lead) continue;
+    const bytes = await fs9.readFile(sibling);
+    if (!bytes.includes(uuids[0])) continue;
+    const theirs = new Set(bytes.toString("utf8").split("\n").map((l) => parseLine(l)?.uuid));
+    const own = uuids.findIndex((u) => !theirs.has(u));
+    if (own <= 0 || uuids.slice(own).some((u) => theirs.has(u))) continue;
+    for (const u of uuids.slice(0, own)) copied.add(u);
+  }
+  return lines.filter((_, i) => !copied.has(ids[i] ?? ""));
+}
+async function loadTraces(files) {
+  const traces = [readTrace("team-lead", "lead", await withoutCopiedHistory(files.lead, await readLines(files.lead)))];
+  for (const a of files.agents) traces.push(readTrace(a.name, a.role, await readLines(a.path)));
+  return traces;
+}
+
+// src/server/measure/lag.ts
+var LEAD_ALIASES = /* @__PURE__ */ new Set(["team-lead", "lead", "main"]);
+var bare = (n) => n.replace(/#\d+$/, "");
+var key = (text) => text.replace(/\W+/g, "").slice(0, 40);
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+}
+function messageLags(traces) {
+  const lags = [];
+  const consumed = /* @__PURE__ */ new Set();
+  for (const t of traces) {
+    for (const send of t.sends) {
+      const to = LEAD_ALIASES.has(send.to) ? "team-lead" : send.to;
+      const from = bare(send.from);
+      const want = key(send.text);
+      let seen;
+      for (const candidate of traces) {
+        if (bare(candidate.name) !== to) continue;
+        const match = candidate.incoming.find((m) => !consumed.has(m) && m.from === from && m.at >= send.at - 2e3 && key(m.text) === want);
+        if (match && (!seen || match.at < seen.at)) seen = match;
+      }
+      if (seen) consumed.add(seen);
+      lags.push({ from, to, sentAt: send.at, seenAt: seen?.at, lagMs: seen ? Math.max(0, seen.at - send.at) : void 0, text: send.text });
+    }
+  }
+  return lags;
+}
+function summarizeLags(lags) {
+  const ms = lags.flatMap((l) => l.lagMs === void 0 ? [] : [l.lagMs]).sort((a, b) => a - b);
+  return {
+    sent: lags.length,
+    delivered: ms.length,
+    medianMs: percentile(ms, 0.5),
+    p90Ms: percentile(ms, 0.9),
+    maxMs: ms[ms.length - 1] ?? 0,
+    over5Min: ms.filter((m) => m > 3e5).length
+  };
+}
+
+// src/server/measure/sweep.ts
+function lastEndedBy(callsByEnd, t) {
+  let found;
+  for (const c of callsByEnd) {
+    if (c.lastAt > t) break;
+    found = c;
+  }
+  return found;
+}
+function attribute(trace, sleeps, window) {
+  const from = Math.max(trace.firstAt, window?.startAt ?? -Infinity);
+  const to = Math.min(trace.lastAt, window?.endAt ?? Infinity);
+  const calls = trace.calls.filter((c) => c.lastAt >= c.requestedAt);
+  const spans = [
+    ...sleeps.map((s) => ({ startAt: s.startAt, endAt: s.endAt, owner: "asleep" })),
+    ...calls.map((c) => ({ startAt: c.requestedAt, endAt: c.lastAt, owner: "model" })),
+    ...trace.tools.filter((t) => t.endAt > t.startAt).map((t) => ({ startAt: t.startAt, endAt: t.endAt, owner: t.category }))
+  ].filter((s) => s.endAt > from && s.startAt < to);
+  const bounds = [.../* @__PURE__ */ new Set([from, to, ...spans.flatMap((s) => [s.startAt, s.endAt])])].filter((b) => b >= from && b <= to).sort((a, b) => a - b);
+  const callsByEnd = [...calls].sort((a, b) => a.lastAt - b.lastAt);
+  const byOwner = {};
+  const segments = [];
+  for (let k = 0; k + 1 < bounds.length; k++) {
+    const s = bounds[k];
+    const e = bounds[k + 1];
+    const live = spans.filter((x) => x.startAt <= s && x.endAt > s);
+    let owner;
+    if (live.some((x) => x.owner === "asleep")) owner = "asleep";
+    else if (live.some((x) => x.owner === "model")) owner = "model";
+    else if (live.length) owner = live.reduce((a, b) => b.startAt < a.startAt || b.startAt === a.startAt && b.endAt < a.endAt ? b : a).owner;
+    else {
+      const last = lastEndedBy(callsByEnd, s);
+      owner = !last || last.stopReason === "end_turn" || last.toolIds.length === 0 ? "idle" : "gap";
+    }
+    byOwner[owner] = (byOwner[owner] ?? 0) + (e - s);
+    const previous = segments[segments.length - 1];
+    if (previous && previous.owner === owner && previous.endAt === s) previous.endAt = e;
+    else segments.push({ startAt: s, endAt: e, owner });
+  }
+  return { byOwner, segments };
+}
+
+// src/server/measure/tasks.ts
+var TRACK_CLEAR = /track is clear|track's clear/i;
+function reviewTails(traces) {
+  const tails = [];
+  for (const lead of traces.filter((t) => t.role === "lead")) {
+    for (const send of lead.sends) {
+      if (!TRACK_CLEAR.test(send.text)) continue;
+      const executor = bare(send.to);
+      const completed = traces.filter((t) => bare(t.name) === executor).flatMap((t) => t.taskEvents).filter((e) => e.status === "completed" && e.at <= send.at).map((e) => e.at);
+      if (!completed.length) continue;
+      const lastCompletedAt = Math.max(...completed);
+      tails.push({ executor, lastCompletedAt, clearedAt: send.at, tailMs: send.at - lastCompletedAt });
+    }
+  }
+  return tails;
+}
+function currentGeneration(gens, t) {
+  let found;
+  for (const g of gens ?? []) {
+    if (g.createdAt > t) break;
+    found = g;
+  }
+  return found;
+}
+function idleWithWork(traces, attributions) {
+  const generations = /* @__PURE__ */ new Map();
+  for (const e of traces.flatMap((t) => t.taskEvents).sort((a, b) => a.at - b.at)) {
+    if (e.status === "pending") {
+      const gens = generations.get(e.taskId) ?? [];
+      gens.push({ createdAt: e.at, blockers: [] });
+      generations.set(e.taskId, gens);
+    }
+    if (e.addBlockedBy) currentGeneration(generations.get(e.taskId), e.at)?.blockers.push(...e.addBlockedBy);
+    if (e.status === "completed") {
+      const gen = currentGeneration(generations.get(e.taskId), e.at);
+      if (gen && gen.completedAt === void 0) gen.completedAt = e.at;
+    }
+  }
+  const readyAt = (taskId, t, claimedAt) => {
+    const gen = currentGeneration(generations.get(taskId), t);
+    if (!gen || gen !== currentGeneration(generations.get(taskId), claimedAt)) return false;
+    return gen.blockers.every((b) => {
+      const blockerGen = currentGeneration(generations.get(b), t);
+      return blockerGen?.completedAt !== void 0 && blockerGen.completedAt <= t;
+    });
+  };
+  const out = [];
+  for (const trace of traces.filter((t) => t.role === "executor")) {
+    const idle = (attributions.get(trace.name)?.segments ?? []).filter((s) => s.owner === "idle");
+    const counted = /* @__PURE__ */ new Set();
+    for (const claim of trace.taskEvents.filter((e) => e.status === "in_progress")) {
+      const before = idle.filter((s) => s.endAt <= claim.at).pop();
+      if (!before || counted.has(before) || !readyAt(claim.taskId, before.startAt, claim.at)) continue;
+      counted.add(before);
+      out.push({ executor: trace.name, taskId: claim.taskId, idleFrom: before.startAt, idleTo: before.endAt, claimedAt: claim.at, ms: before.endAt - before.startAt });
+    }
+  }
+  return out;
+}
+
+// src/server/measure/report.ts
+var overlaps = (a, b) => a.startAt < b.endAt && b.startAt < a.endAt;
+var mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+function buildReport(sessionId, traces, sleeps, since) {
+  const from = since ?? -Infinity;
+  const window = since === void 0 ? void 0 : { startAt: since, endAt: Infinity };
+  const live = traces.filter((t) => t.lastAt >= from);
+  const attributions = new Map(live.map((t) => [t.name, attribute(t, sleeps, window)]));
+  const agents = live.map((t) => {
+    const firstAt = Math.max(t.firstAt, from);
+    return {
+      name: t.name,
+      role: t.role,
+      firstAt,
+      lastAt: t.lastAt,
+      wallMs: t.lastAt - firstAt,
+      byOwner: attributions.get(t.name).byOwner,
+      calls: t.calls.filter((c) => c.requestedAt >= from).length,
+      costUsd: t.costUsd
+      // the whole transcript: usage isn't kept per call
+    };
+  });
+  const groups = /* @__PURE__ */ new Map();
+  for (const c of live.flatMap((t) => t.calls)) {
+    if (c.requestedAt < from || c.lastAt < c.requestedAt || sleeps.some((s) => overlaps(s, { startAt: c.requestedAt, endAt: c.lastAt }))) continue;
+    const effort = c.effort ?? "unknown";
+    const group = groups.get(`${c.model}|${effort}`) ?? { model: c.model, effort, ms: [], out: [] };
+    group.ms.push(c.lastAt - c.requestedAt);
+    group.out.push(c.outputTokens);
+    groups.set(`${c.model}|${effort}`, group);
+  }
+  const efforts = [...groups.values()].map((g) => {
+    const ms = [...g.ms].sort((a, b) => a - b);
+    return { model: g.model, effort: g.effort, calls: ms.length, medianMs: percentile(ms, 0.5), p90Ms: percentile(ms, 0.9), meanMs: mean(ms), meanOutputTokens: mean(g.out) };
+  }).sort((a, b) => b.calls - a.calls);
+  const lags = messageLags(live).filter((l) => l.sentAt >= from);
+  const span = { startAt: Math.min(...agents.map((a) => a.firstAt)), endAt: Math.max(...agents.map((a) => a.lastAt)) };
+  return {
+    sessionId,
+    since,
+    agents,
+    efforts,
+    lags: summarizeLags(lags),
+    slowestLags: lags.filter((l) => l.lagMs !== void 0).sort((a, b) => b.lagMs - a.lagMs).slice(0, 5),
+    tails: reviewTails(live).filter((t) => t.clearedAt >= from),
+    idleWithWork: idleWithWork(live, attributions).filter((x) => x.claimedAt >= from),
+    asleepMs: sleeps.reduce((sum, s) => sum + Math.max(0, Math.min(s.endAt, span.endAt) - Math.max(s.startAt, span.startAt)), 0)
+  };
+}
+var min = (ms) => (ms / 6e4).toFixed(1);
+var sec = (ms) => (ms / 1e3).toFixed(1);
+var clock = (t) => new Date(t).toTimeString().slice(0, 5);
+var NOT_TOOLS = /* @__PURE__ */ new Set(["model", "idle", "gap", "asleep"]);
+var IDLE_ROW_MIN_MS = 6e4;
+function renderMarkdown(r) {
+  const out = [`# team8 measure: session ${r.sessionId}`, ""];
+  if (r.since !== void 0) out.push(`Since ${new Date(r.since).toISOString()}.`, "");
+  out.push(
+    "## Agents",
+    "",
+    "Minutes. Each moment has one owner: asleep, model, a tool category, idle (the turn had ended) or gap. Cost covers each agent's whole transcript.",
+    "",
+    "| Agent | Role | Wall | Model | Top tools | Idle | Asleep | Calls | Cost |",
+    "|---|---|---|---|---|---|---|---|---|"
+  );
+  for (const a of r.agents) {
+    const tools = Object.entries(a.byOwner).filter(([owner]) => !NOT_TOOLS.has(owner)).sort((x, y) => (y[1] ?? 0) - (x[1] ?? 0)).slice(0, 3).map(([owner, ms]) => `${owner} ${min(ms ?? 0)}`).join(", ");
+    out.push(`| ${a.name} | ${a.role} | ${min(a.wallMs)} | ${min(a.byOwner.model ?? 0)} | ${tools || "-"} | ${min(a.byOwner.idle ?? 0)} | ${min(a.byOwner.asleep ?? 0)} | ${a.calls} | $${a.costUsd.toFixed(2)} |`);
+  }
+  out.push("", "## Model time per call", "", "| Model | Effort | Calls | Median s | p90 s | Mean s | Mean output tokens |", "|---|---|---|---|---|---|---|");
+  for (const e of r.efforts) out.push(`| ${e.model} | ${e.effort} | ${e.calls} | ${sec(e.medianMs)} | ${sec(e.p90Ms)} | ${sec(e.meanMs)} | ${Math.round(e.meanOutputTokens)} |`);
+  const l = r.lags;
+  out.push("", "## Message lag", "", `${l.delivered} of ${l.sent} messages delivered. Median ${min(l.medianMs)} min, p90 ${min(l.p90Ms)}, max ${min(l.maxMs)}; ${l.over5Min} over 5 min.`);
+  if (r.slowestLags.length) {
+    out.push("", "| From | To | Sent | Seen | Minutes |", "|---|---|---|---|---|");
+    for (const x of r.slowestLags) out.push(`| ${x.from} | ${x.to} | ${clock(x.sentAt)} | ${clock(x.seenAt)} | ${min(x.lagMs)} |`);
+  }
+  out.push("", "## Review tails", "");
+  if (r.tails.length) {
+    out.push("| Executor | Last task done | Track clear | Minutes |", "|---|---|---|---|");
+    for (const t of r.tails) out.push(`| ${t.executor} | ${clock(t.lastCompletedAt)} | ${clock(t.clearedAt)} | ${min(t.tailMs)} |`);
+  } else out.push("None.");
+  out.push("", "## Idle with work waiting", "");
+  const long = r.idleWithWork.filter((x) => x.ms >= IDLE_ROW_MIN_MS);
+  const short = r.idleWithWork.filter((x) => x.ms < IDLE_ROW_MIN_MS);
+  if (long.length) {
+    out.push("| Executor | Task | Idle from | Claimed | Minutes |", "|---|---|---|---|---|");
+    for (const x of long) out.push(`| ${x.executor} | #${x.taskId} | ${clock(x.idleFrom)} | ${clock(x.claimedAt)} | ${min(x.ms)} |`);
+  }
+  if (short.length) out.push(`and ${short.length} shorter stretch${short.length === 1 ? "" : "es"} (total ${min(short.reduce((sum, x) => sum + x.ms, 0))} min).`);
+  if (!long.length && !short.length) out.push("None.");
+  out.push("", `Mac asleep: ${min(r.asleepMs)} min.`);
+  return out.join("\n");
+}
+
+// src/server/measure/sleep.ts
+var EVENT = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2}) (?:Sleep\s+Entering Sleep|(?:Dark)?Wake\s+(?:Dark)?Wake from)/;
+function parsePmsetLog(text) {
+  const out = [];
+  let asleepAt;
+  for (const line of text.split("\n")) {
+    const m = EVENT.exec(line);
+    if (!m) continue;
+    const at = Date.parse(`${m[1]}T${m[2]}${m[3]}:${m[4]}`);
+    if (line.includes("Entering Sleep")) asleepAt ??= at;
+    else if (asleepAt !== void 0) {
+      out.push({ startAt: asleepAt, endAt: at });
+      asleepAt = void 0;
+    }
+  }
+  return out;
+}
+
+// src/server/measure/cli.ts
+async function macSleeps() {
+  if (process.platform !== "darwin") return [];
+  try {
+    const { stdout } = await promisify3(execFile4)("pmset", ["-g", "log"], { maxBuffer: 64 * 1024 * 1024 });
+    return parsePmsetLog(stdout);
+  } catch {
+    return [];
+  }
+}
+async function runMeasure(opts, out) {
+  const since = opts.since === void 0 ? void 0 : Date.parse(opts.since);
+  if (since !== void 0 && Number.isNaN(since)) {
+    out(`--since needs an ISO time, got "${opts.since}"`);
+    return 1;
+  }
+  const files = await findSession(opts.claudeHome, opts.sessionId);
+  if (!files) {
+    out(`No transcript for session ${opts.sessionId} under ${opts.claudeHome}/projects`);
+    return 1;
+  }
+  const report = buildReport(opts.sessionId, await loadTraces(files), await macSleeps(), since);
+  out(opts.json ? JSON.stringify(report, null, 2) : renderMarkdown(report));
+  return 0;
+}
+
 // src/server/index.ts
-var execFileAsync2 = promisify3(execFile4);
+var execFileAsync2 = promisify4(execFile5);
 var DEFAULT_PORT = 4823;
 var IDLE_GRACE_MS = 10 * 60 * 1e3;
 var FOLLOW_INTERVAL_MS = 3e3;
@@ -5889,13 +6411,15 @@ function parseArgs(argv) {
   let port = DEFAULT_PORT;
   let readOnly = false;
   let confirm = false;
-  let claudeHome = process.env.CLAUDE_CONFIG_DIR || path12.join(os2.homedir(), ".claude");
+  let claudeHome = process.env.CLAUDE_CONFIG_DIR || path13.join(os2.homedir(), ".claude");
   let team;
   let session;
   let cwd = process.cwd();
+  let json2 = false;
+  let since;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "setup" || arg === "uninstall") command = arg;
+    if (arg === "setup" || arg === "uninstall" || arg === "measure") command = arg;
     else if (arg === "--read-only") readOnly = true;
     else if (arg === "--yes") confirm = true;
     else if (arg === "--cwd") cwd = argv[++i];
@@ -5908,6 +6432,10 @@ function parseArgs(argv) {
     else if (arg.startsWith("--team=")) team = arg.slice("--team=".length);
     else if (arg === "--session") session = argv[++i];
     else if (arg.startsWith("--session=")) session = arg.slice("--session=".length);
+    else if (arg === "--json") json2 = true;
+    else if (arg === "--since") since = argv[++i];
+    else if (arg.startsWith("--since=")) since = arg.slice("--since=".length);
+    else if (command === "measure" && !arg.startsWith("-")) session = arg;
   }
   return {
     command,
@@ -5915,11 +6443,13 @@ function parseArgs(argv) {
     readOnly,
     confirm,
     claudeHome,
-    settingsPath: path12.join(claudeHome, "settings.json"),
-    dbPath: path12.join(claudeHome, "team8", "events.db"),
+    settingsPath: path13.join(claudeHome, "settings.json"),
+    dbPath: path13.join(claudeHome, "team8", "events.db"),
     team,
     session,
-    cwd
+    cwd,
+    json: json2,
+    since
   };
 }
 function toDiscovered(config) {
@@ -5932,27 +6462,27 @@ function toDiscovered(config) {
 }
 async function discoverTeam(teamsRoot2, sessionsRoot, explicitTeam, opts = {}) {
   if (explicitTeam) {
-    const config2 = await readJsonSafe(path12.join(teamsRoot2, explicitTeam, "config.json"));
+    const config2 = await readJsonSafe(path13.join(teamsRoot2, explicitTeam, "config.json"));
     return config2 ? toDiscovered(config2) : null;
   }
   const walk2 = await walkTeams(teamsRoot2, sessionsRoot, "", opts.projectsRoot);
   const best = opts.session ? teamOfSession(walk2.teams, walk2.drivers, await forkChainOf(opts.projectsRoot, opts.session)) : autoTeam(walk2.teams);
   if (!best) return null;
-  const config = await readJsonSafe(path12.join(teamsRoot2, best.name, "config.json"));
+  const config = await readJsonSafe(path13.join(teamsRoot2, best.name, "config.json"));
   return config ? toDiscovered(config) : null;
 }
 async function readSessions(sessionsRoot) {
   const facts = { live: /* @__PURE__ */ new Set(), busy: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Map(), cwds: /* @__PURE__ */ new Map() };
   let entries;
   try {
-    entries = await fs9.readdir(sessionsRoot);
+    entries = await fs10.readdir(sessionsRoot);
   } catch {
     return facts;
   }
   const docs = [];
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
-    const doc = await readJsonSafe(path12.join(sessionsRoot, entry));
+    const doc = await readJsonSafe(path13.join(sessionsRoot, entry));
     if (typeof doc?.sessionId !== "string") continue;
     docs.push({ sessionId: doc.sessionId, pid: doc.pid, name: doc.name, cwd: doc.cwd, status: doc.status });
   }
@@ -5970,14 +6500,14 @@ async function readSessions(sessionsRoot) {
   return facts;
 }
 var transcriptFacts = /* @__PURE__ */ new Map();
-function lastRecordField(buf, type, key) {
+function lastRecordField(buf, type, key2) {
   const marker = `"type":"${type}"`;
   for (let at = buf.lastIndexOf(marker); at >= 0; at = at > 0 ? buf.lastIndexOf(marker, at - 1) : -1) {
     const start = buf.lastIndexOf(10, at) + 1;
     const end = buf.indexOf(10, at);
     try {
       const record = JSON.parse(buf.subarray(start, end < 0 ? buf.length : end).toString("utf8"));
-      const value = record[key];
+      const value = record[key2];
       if (record.type === type && typeof value === "string" && value !== "") return value;
     } catch {
     }
@@ -6034,7 +6564,7 @@ function lastDecidedMode(buf) {
 async function transcriptMeta(file) {
   let size;
   try {
-    size = (await fs9.stat(file)).size;
+    size = (await fs10.stat(file)).size;
   } catch {
     return {};
   }
@@ -6042,7 +6572,7 @@ async function transcriptMeta(file) {
   const offset = known && known.offset <= size ? known.offset : 0;
   const facts = known && offset > 0 ? { ...known.facts } : {};
   if (size > offset) {
-    const handle = await fs9.open(file, "r");
+    const handle = await fs10.open(file, "r");
     try {
       const read = Buffer.alloc(size - offset);
       await handle.read(read, 0, read.length, offset);
@@ -6052,7 +6582,7 @@ async function transcriptMeta(file) {
       const foundBranch = lastBranch(whole);
       facts.branch = foundBranch === null ? void 0 : foundBranch ?? facts.branch;
       facts.mode = lastDecidedMode(whole) ?? facts.mode;
-      const cwds = lastCwds(whole, path12.basename(path12.dirname(file)));
+      const cwds = lastCwds(whole, path13.basename(path13.dirname(file)));
       facts.cwd = cwds.filedUnder ?? facts.cwd;
       facts.lastCwd = cwds.last ?? facts.lastCwd;
       if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
@@ -6073,7 +6603,7 @@ async function transcriptMeta(file) {
 async function branchOf(cwd) {
   if (!cwd) return void 0;
   try {
-    const head = await fs9.readFile(path12.join(cwd, ".git", "HEAD"), "utf8");
+    const head = await fs10.readFile(path13.join(cwd, ".git", "HEAD"), "utf8");
     const ref = /^ref:\s+refs\/heads\/(.+)$/m.exec(head.trim());
     return ref ? ref[1] : void 0;
   } catch {
@@ -6103,14 +6633,14 @@ async function lastActivityOf(teamDir, configMtimeMs) {
   let latest = configMtimeMs;
   let entries;
   try {
-    entries = await fs9.readdir(path12.join(teamDir, "inboxes"));
+    entries = await fs10.readdir(path13.join(teamDir, "inboxes"));
   } catch {
     return latest;
   }
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
     try {
-      const st = await fs9.stat(path12.join(teamDir, "inboxes", entry));
+      const st = await fs10.stat(path13.join(teamDir, "inboxes", entry));
       if (st.mtimeMs > latest) latest = st.mtimeMs;
     } catch {
     }
@@ -6120,7 +6650,7 @@ async function lastActivityOf(teamDir, configMtimeMs) {
 async function subagentCountOf(sessionDir) {
   if (!sessionDir) return 0;
   try {
-    const entries = await fs9.readdir(path12.join(sessionDir, "subagents"));
+    const entries = await fs10.readdir(path13.join(sessionDir, "subagents"));
     return entries.filter((e) => /^agent-.*\.jsonl$/.test(e)).length;
   } catch {
     return 0;
@@ -6128,10 +6658,10 @@ async function subagentCountOf(sessionDir) {
 }
 async function workflowOf(sessionDir, now) {
   if (!sessionDir) return void 0;
-  const runsDir = path12.join(sessionDir, "subagents", "workflows");
+  const runsDir = path13.join(sessionDir, "subagents", "workflows");
   let entries;
   try {
-    entries = await fs9.readdir(runsDir);
+    entries = await fs10.readdir(runsDir);
   } catch {
     return void 0;
   }
@@ -6139,7 +6669,7 @@ async function workflowOf(sessionDir, now) {
   let journalMtimeMs = 0;
   for (const entry of entries) {
     try {
-      const st = await fs9.stat(path12.join(runsDir, entry, "journal.jsonl"));
+      const st = await fs10.stat(path13.join(runsDir, entry, "journal.jsonl"));
       if (st.mtimeMs > journalMtimeMs) {
         journalMtimeMs = st.mtimeMs;
         runId = entry;
@@ -6148,10 +6678,10 @@ async function workflowOf(sessionDir, now) {
     }
   }
   if (!runId) return void 0;
-  const snapshot = path12.join(sessionDir, "workflows", `${runId}.json`);
+  const snapshot = path13.join(sessionDir, "workflows", `${runId}.json`);
   let ended = false;
   try {
-    ended = (await fs9.stat(snapshot)).isFile();
+    ended = (await fs10.stat(snapshot)).isFile();
   } catch {
   }
   const name = ended ? await workflowNameOf(snapshot) : void 0;
@@ -6163,7 +6693,7 @@ async function workflowOf(sessionDir, now) {
 }
 async function workflowNameOf(snapshot) {
   try {
-    const raw = JSON.parse(await fs9.readFile(snapshot, "utf8"));
+    const raw = JSON.parse(await fs10.readFile(snapshot, "utf8"));
     return typeof raw.workflowName === "string" && raw.workflowName ? raw.workflowName : void 0;
   } catch {
     return void 0;
@@ -6171,19 +6701,19 @@ async function workflowNameOf(snapshot) {
 }
 async function entryIn(dir, match) {
   try {
-    const entry = (await fs9.readdir(dir)).find(match);
-    return entry === void 0 ? null : path12.join(dir, entry);
+    const entry = (await fs10.readdir(dir)).find(match);
+    return entry === void 0 ? null : path13.join(dir, entry);
   } catch {
     return null;
   }
 }
 async function workflowScriptOf(sessionDir, runId, knownRuns) {
   if (!knownRuns.has(runId)) return null;
-  const workflows = path12.join(sessionDir, "workflows");
-  const asExecuted = await entryIn(path12.join(workflows, "scripts"), (e) => e.endsWith(`-${runId}.js`));
+  const workflows = path13.join(sessionDir, "workflows");
+  const asExecuted = await entryIn(path13.join(workflows, "scripts"), (e) => e.endsWith(`-${runId}.js`));
   if (asExecuted) {
     try {
-      return { source: "as-executed", path: asExecuted, script: await fs9.readFile(asExecuted, "utf8") };
+      return { source: "as-executed", path: asExecuted, script: await fs10.readFile(asExecuted, "utf8") };
     } catch {
     }
   }
@@ -6198,17 +6728,17 @@ async function teamsOfLiveSessions(projectsRoot, sessions) {
   for (const sessionId of sessions.live) {
     const sessionDir = await sessionProjectDir(projectsRoot, sessionId, sessions.cwds.get(sessionId));
     if (!sessionDir) continue;
-    const dir = path12.join(sessionDir, "subagents");
+    const dir = path13.join(sessionDir, "subagents");
     let entries;
     try {
-      entries = await fs9.readdir(dir);
+      entries = await fs10.readdir(dir);
     } catch {
       continue;
     }
     for (const entry of entries) {
       if (!entry.endsWith(".meta.json")) continue;
       const meta = await readJsonSafe(
-        path12.join(dir, entry)
+        path13.join(dir, entry)
       );
       if (meta?.taskKind !== "in_process_teammate") continue;
       if (typeof meta.teamName === "string" && meta.teamName !== "") {
@@ -6221,20 +6751,20 @@ async function teamsOfLiveSessions(projectsRoot, sessions) {
 async function sessionProjectDir(projectsRoot, sessionId, cwd) {
   const isDir = async (dir) => {
     try {
-      return (await fs9.stat(dir)).isDirectory();
+      return (await fs10.stat(dir)).isDirectory();
     } catch {
       return false;
     }
   };
   const isFile = async (file) => {
     try {
-      return (await fs9.stat(file)).isFile();
+      return (await fs10.stat(file)).isFile();
     } catch {
       return false;
     }
   };
   const found = async (slug) => {
-    const dir = path12.join(projectsRoot, slug, sessionId);
+    const dir = path13.join(projectsRoot, slug, sessionId);
     if (await isDir(dir)) return dir;
     return await isFile(`${dir}.jsonl`) ? dir : null;
   };
@@ -6244,7 +6774,7 @@ async function sessionProjectDir(projectsRoot, sessionId, cwd) {
   }
   let slugs;
   try {
-    slugs = await fs9.readdir(projectsRoot);
+    slugs = await fs10.readdir(projectsRoot);
   } catch {
     return null;
   }
@@ -6257,7 +6787,7 @@ async function sessionProjectDir(projectsRoot, sessionId, cwd) {
 async function forkParentOf(transcript) {
   let head;
   try {
-    const fh = await fs9.open(transcript, "r");
+    const fh = await fs10.open(transcript, "r");
     try {
       const buf = Buffer.alloc(65536);
       const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
@@ -6298,10 +6828,10 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
     const workflow = await workflowOf(dir, now);
     let lastActivityAt = 0;
     try {
-      lastActivityAt = (await fs9.stat(`${dir}.jsonl`)).mtimeMs;
+      lastActivityAt = (await fs10.stat(`${dir}.jsonl`)).mtimeMs;
     } catch {
       try {
-        lastActivityAt = (await fs9.stat(path12.join(dir, "subagents"))).mtimeMs;
+        lastActivityAt = (await fs10.stat(path13.join(dir, "subagents"))).mtimeMs;
       } catch {
         lastActivityAt = now;
       }
@@ -6341,7 +6871,7 @@ async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covere
 async function sessionIdsIn(dir) {
   let entries;
   try {
-    entries = await fs9.readdir(dir);
+    entries = await fs10.readdir(dir);
   } catch {
     return [];
   }
@@ -6353,11 +6883,11 @@ async function sessionIdsIn(dir) {
   return [...ids];
 }
 async function folderSessionIds(projectsRoot, cwd) {
-  return sessionIdsIn(path12.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, "-")));
+  return sessionIdsIn(path13.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, "-")));
 }
 async function folderPathOf(dir, sessionIds) {
   for (const id of sessionIds) {
-    const { cwd } = await transcriptMeta(path12.join(dir, `${id}.jsonl`));
+    const { cwd } = await transcriptMeta(path13.join(dir, `${id}.jsonl`));
     if (cwd) return cwd;
   }
   return void 0;
@@ -6365,23 +6895,23 @@ async function folderPathOf(dir, sessionIds) {
 async function listFolders(projectsRoot) {
   let entries;
   try {
-    entries = await fs9.readdir(projectsRoot);
+    entries = await fs10.readdir(projectsRoot);
   } catch {
     return [];
   }
   const folders = [];
   for (const entry of entries) {
-    const dir = path12.join(projectsRoot, entry);
+    const dir = path13.join(projectsRoot, entry);
     const ids = await sessionIdsIn(dir);
     if (ids.length === 0) continue;
     const cwd = await folderPathOf(dir, ids);
     if (!cwd) continue;
     let at = 0;
     try {
-      at = (await fs9.stat(dir)).mtimeMs;
+      at = (await fs10.stat(dir)).mtimeMs;
     } catch {
     }
-    folders.push({ path: cwd, name: path12.basename(cwd), sessions: ids.length, at });
+    folders.push({ path: cwd, name: path13.basename(cwd), sessions: ids.length, at });
   }
   folders.sort((a, b) => b.at - a.at);
   return folders.map(({ at: _at, ...folder }) => folder);
@@ -6437,7 +6967,7 @@ async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot
 async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   let entries = [];
   try {
-    entries = await fs9.readdir(teamsRoot2);
+    entries = await fs10.readdir(teamsRoot2);
   } catch {
   }
   const sessions = await readSessions(sessionsRoot);
@@ -6448,16 +6978,16 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   const leadSessions = /* @__PURE__ */ new Map();
   const needsDiffstat = /* @__PURE__ */ new Map();
   for (const name of entries) {
-    const teamDir = path12.join(teamsRoot2, name);
+    const teamDir = path13.join(teamsRoot2, name);
     let configMtimeMs;
     try {
-      const st = await fs9.stat(path12.join(teamDir, "config.json"));
+      const st = await fs10.stat(path13.join(teamDir, "config.json"));
       if (!st.isFile()) continue;
       configMtimeMs = st.mtimeMs;
     } catch {
       continue;
     }
-    const config = await readJsonSafe(path12.join(teamDir, "config.json"));
+    const config = await readJsonSafe(path13.join(teamDir, "config.json"));
     if (!config || typeof config.name !== "string" || !Array.isArray(config.members)) continue;
     const leadSessionId = typeof config.leadSessionId === "string" ? config.leadSessionId : "";
     const leadSession = liveTeams.get(name) ?? leadSessionId;
@@ -6561,6 +7091,13 @@ function fencedSink(live, generation, current) {
 }
 async function main(argv) {
   const cli = parseArgs(argv);
+  if (cli.command === "measure") {
+    if (!cli.session) {
+      console.error("usage: measure <session-id> [--since <ISO time>] [--json]");
+      return 1;
+    }
+    return runMeasure({ claudeHome: cli.claudeHome, sessionId: cli.session, json: cli.json, since: cli.since }, (text) => console.log(text));
+  }
   if (cli.command === "setup" || cli.command === "uninstall") {
     const guard2 = checkClaudeVersion(await readClaudeVersion());
     if (!guard2.ok) console.warn(`warning: ${guard2.message}`);
@@ -6586,9 +7123,9 @@ async function main(argv) {
     logError(`port ${cli.port} unavailable, exiting`, err);
     process.exit(1);
   }
-  const teamsRoot2 = path12.join(cli.claudeHome, "teams");
-  const sessionsRoot = path12.join(cli.claudeHome, "sessions");
-  const projectsRoot = path12.join(cli.claudeHome, "projects");
+  const teamsRoot2 = path13.join(cli.claudeHome, "teams");
+  const sessionsRoot = path13.join(cli.claudeHome, "sessions");
+  const projectsRoot = path13.join(cli.claudeHome, "projects");
   setTeamsRoot(teamsRoot2);
   const discovered = await discoverTeam(teamsRoot2, sessionsRoot, cli.team, { session: cli.session, projectsRoot });
   const teamName = discovered?.teamName ?? cli.team;
@@ -6651,10 +7188,10 @@ async function main(argv) {
   let currentSession = teamName ? "" : leadSessionId ?? "";
   const startIngest = (gen, team, lead) => startFileIngest(fencedSink(live, gen, () => generation), {
     paths: {
-      projects: path12.join(cli.claudeHome, "projects"),
+      projects: path13.join(cli.claudeHome, "projects"),
       teams: teamsRoot2,
-      tasks: path12.join(cli.claudeHome, "tasks"),
-      sessions: path12.join(cli.claudeHome, "sessions")
+      tasks: path13.join(cli.claudeHome, "tasks"),
+      sessions: path13.join(cli.claudeHome, "sessions")
     },
     teamName: team,
     leadSessionId: lead,
@@ -6705,11 +7242,11 @@ async function main(argv) {
     try {
       let exists = false;
       try {
-        exists = (await fs9.stat(path12.join(teamsRoot2, team))).isDirectory();
+        exists = (await fs10.stat(path13.join(teamsRoot2, team))).isDirectory();
       } catch {
       }
       if (!exists) return { ok: false, reason: "missing", message: `no team ${team}` };
-      const config = await readJsonSafe(path12.join(teamsRoot2, team, "config.json"));
+      const config = await readJsonSafe(path13.join(teamsRoot2, team, "config.json"));
       if (!config || typeof config.name !== "string" || !Array.isArray(config.members)) {
         logError(`select ${team}`, new Error("config.json is missing or unreadable"));
         return {
@@ -6866,8 +7403,10 @@ async function main(argv) {
   process.on("SIGTERM", stop);
   return 0;
 }
-if (process.argv[1] && import.meta.url.endsWith(path12.basename(process.argv[1]))) {
-  main(process.argv.slice(2)).catch((err) => {
+if (process.argv[1] && import.meta.url.endsWith(path13.basename(process.argv[1]))) {
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  }).catch((err) => {
     logError("boot failed", err);
     process.exit(1);
   });
