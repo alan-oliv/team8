@@ -30,6 +30,14 @@ async function readLines(file: string): Promise<string[]> {
   return (await fs.readFile(file, 'utf8')).split('\n');
 }
 
+async function firstTimestamp(file: string): Promise<number> {
+  for (const line of await readLines(file)) {
+    const at = Date.parse(parseLine(line)?.timestamp ?? '');
+    if (!Number.isNaN(at)) return at;
+  }
+  return Infinity;
+}
+
 export async function findSession(claudeHome: string, sessionId: string): Promise<SessionFiles | null> {
   const projects = path.join(claudeHome, 'projects');
   let dirs: string[];
@@ -53,6 +61,10 @@ export async function findSession(claudeHome: string, sessionId: string): Promis
     } catch {
       // A session that never spawned anything has no subagents folder.
     }
+    // The file name's hex is random, so only the first timestamp says which incarnation came first.
+    const firstAt = new Map<string, number>();
+    for (const file of files) firstAt.set(file, await firstTimestamp(path.join(subdir, file)));
+    files.sort((a, b) => firstAt.get(a)! - firstAt.get(b)! || 0);
     const seen = new Map<string, number>();
     const agents: SessionFiles['agents'] = [];
     for (const file of files) {
@@ -75,8 +87,32 @@ export async function findSession(claudeHome: string, sessionId: string): Promis
   return null;
 }
 
+// A resumed session's file opens with a copy of its parent's history (same
+// uuids, sessionId rewritten) before going its own way. A parent that was never
+// compacted is copied from its first line, so parent and child each hold the
+// other's first uuid; only the child's lines are a run of the other's, then its own.
+// ponytail: a parent that kept going after a child copied all of it reads as that child's child; file birth times would tell them apart.
+async function withoutCopiedHistory(lead: string, lines: string[]): Promise<string[]> {
+  const ids = lines.map((l) => parseLine(l)?.uuid);
+  const uuids = ids.filter((u): u is string => !!u);
+  if (!uuids.length) return lines;
+  const dir = path.dirname(lead);
+  const copied = new Set<string>();
+  for (const file of await fs.readdir(dir)) {
+    const sibling = path.join(dir, file);
+    if (!file.endsWith('.jsonl') || sibling === lead) continue;
+    const bytes = await fs.readFile(sibling); // searched as bytes: the folder can hold hundreds of MB
+    if (!bytes.includes(uuids[0])) continue;
+    const theirs = new Set(bytes.toString('utf8').split('\n').map((l) => parseLine(l)?.uuid));
+    const own = uuids.findIndex((u) => !theirs.has(u));
+    if (own <= 0 || uuids.slice(own).some((u) => theirs.has(u))) continue;
+    for (const u of uuids.slice(0, own)) copied.add(u);
+  }
+  return lines.filter((_, i) => !copied.has(ids[i] ?? ''));
+}
+
 export async function loadTraces(files: SessionFiles): Promise<AgentTrace[]> {
-  const traces = [readTrace('team-lead', 'lead', await readLines(files.lead))];
+  const traces = [readTrace('team-lead', 'lead', await withoutCopiedHistory(files.lead, await readLines(files.lead)))];
   for (const a of files.agents) traces.push(readTrace(a.name, a.role, await readLines(a.path)));
   return traces;
 }
