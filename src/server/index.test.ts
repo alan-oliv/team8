@@ -81,6 +81,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['--team', 'session-98b0b4a7']).team).toBe('session-98b0b4a7');
     expect(parseArgs(['--team=session-98b0b4a7']).team).toBe('session-98b0b4a7');
   });
+
+  it('reads measure with its session id, --json and --since', () => {
+    const cli = parseArgs(['measure', 'sid1', '--json', '--since', '2026-09-30T08:00:00Z']);
+    expect([cli.command, cli.session, cli.json, cli.since]).toEqual(['measure', 'sid1', true, '2026-09-30T08:00:00Z']);
+    expect(parseArgs([]).json).toBe(false);
+  });
 });
 
 describe('discoverTeam', () => {
