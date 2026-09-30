@@ -19,7 +19,9 @@ Breaking work down, planning it, or turning finished analysis into tasks — esp
 
 **Handing these to teammates?** `team8:run` covers
 how many teammates, the dispatch contract, and settling the terminal deliverable.
-The `model` and `effort` set here are what each dispatch passes to its agent.
+The `model` set here goes on each dispatch's `Agent` call, and the `effort` picks the
+executor definition it spawns: `team8:executor-low`, `team8:executor`,
+`team8:executor-high` or `team8:executor-xhigh`.
 
 ## The contract: four fields, every task
 
