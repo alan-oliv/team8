@@ -38,14 +38,16 @@ The delay log came from one-off Python scripts (566 lines, kept at `~/code/meetn
 ### Behaviour
 - **Invocation.** `/team8:measure [session-id]` (default: this session) runs `node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" measure <session-id>` and prints a markdown report. `--json` prints the same numbers for scenarios. `--since <iso>` limits it to a batch.
 - **Per agent** (lead, executors, reviewers):
-  - wall time: first line to last line, or to its "track clear";
-  - active time, model time and tool time by category;
-  - idle time, split into waiting on a review, on the lead, or on nothing;
+  - wall time: first line to last line;
+  - model time and tool time by category;
+  - idle time: the turn had ended;
+  - time asleep;
   - cost.
+- **What idle was waiting on** is answered by the review tails and the idle-with-work rows below, not by splitting the idle minutes.
 - **Model seconds per call,** by model × effort: median, p90, mean and mean output tokens. The effort is read from each assistant line's recorded `effort`.
 - **Message lag.** For each lead → teammate message: sent (the lead's `SendMessage` result) → seen (its first appearance in the teammate's transcript).
 - **Review tail** per track: the executor's last report → the lead's "track is clear".
-- **Idle with work left.** Minutes a teammate was idle while a task it owns, or the next task in its track, was not completed.
+- **Idle with work left.** The idle stretch before an executor claims a task that was already created and unblocked when the stretch began. Each stretch counts once.
 - **Tool categories.** They come from the Bash text:
   - tests, typecheck, build;
   - expensive check: packaging, installers, codesign, `docker build`, xcodebuild archive;
@@ -61,12 +63,10 @@ The delay log came from one-off Python scripts (566 lines, kept at `~/code/meetn
 - The dev-only `.claude/commands/bench.md` scaffold. It lists scenarios, and each PR adds one.
 
 ### Acceptance
-This is checked by hand on the author's machine, because that session's transcripts hold private work and can't be committed as a fixture. Run on session d4dc7fd4, it reproduces the delay log's headline numbers within 5%:
-- 851 track-minutes and 228 model-minutes;
-- the per-call medians;
-- message lag median 23 min;
-- 102 idle-with-work minutes;
-- 120 expensive-check minutes.
+This is checked by hand on the author's machine, because the transcripts hold private work and can't be committed as a fixture. The delay log's totals mix two sessions (d4dc7fd4 and the earlier 6f91f486), so the check is per agent:
+- model minutes for player 53, voices 50, waves 40 and splash 23, within 10%, since the log counted from dispatch to track clear;
+- every d4dc7fd4 message lag in the log's delivery table, within 1 min;
+- sidebar's idle with work waiting in 6f91f486, about 102 min, within 10%.
 
 ## 1. Effort per role
 
