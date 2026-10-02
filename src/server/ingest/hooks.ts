@@ -1,10 +1,15 @@
-import type { Store } from '../store';
+import type { Store, StoredEvent } from '../store';
+import type { TaskPayload } from '../project';
 import { holdMsFor, type Permits } from '../control/permits';
 import { logError } from '../log';
 import type { AskQuestion } from '../../shared/domain';
 
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 600_000;
 const SUBAGENT_ID = /^a(.+)-[0-9a-f]{16}$/;
+// Executors left alone report progress only when they finish, so the card's
+// fill sits at 0% for the whole task; one whose task hasn't moved this long is
+// reminded after its next tool call, and at most this often.
+export const PROGRESS_STALL_MS = 120_000;
 
 export interface HookResponse {
   status: number;
@@ -67,9 +72,26 @@ function resetOf(raw: unknown): string | undefined {
   return str(b.resets_at) ?? str(b.reset_at) ?? str(b.resetsAt);
 }
 
+export function stalledTask(events: StoredEvent[], agent: string, now: number): TaskPayload | undefined {
+  const tasks = new Map<string, { task: TaskPayload; since: number }>();
+  for (const ev of events) {
+    if (ev.kind !== 'task') continue;
+    const task = ev.payload as TaskPayload;
+    const prev = tasks.get(task.id);
+    const moved =
+      !prev || prev.task.status !== task.status || prev.task.metadata?.progress !== task.metadata?.progress;
+    tasks.set(task.id, { task, since: moved ? ev.ts : prev.since });
+  }
+  for (const { task, since } of tasks.values()) {
+    if (task.owner === agent && task.status === 'in_progress' && now - since >= PROGRESS_STALL_MS) return task;
+  }
+  return undefined;
+}
+
 export function createHookHandlers(deps: HookDeps): HookHandlers {
   const { store, permits } = deps;
   const leadName = deps.leadName ?? 'team-lead';
+  const remindedAt = new Map<string, number>();
   const touched = (agent: string) => {
     try {
       deps.onAgentActivity?.(agent);
@@ -112,6 +134,24 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         if (event === 'PostToolUse') {
           for (const permit of permits.list()) {
             if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, 'allow');
+          }
+          const now = Date.now();
+          const stalled =
+            str(b.agent_id) && !deps.readOnly && now - (remindedAt.get(agent) ?? -Infinity) >= PROGRESS_STALL_MS
+              ? stalledTask(store.replay(), agent, now)
+              : undefined;
+          if (stalled) {
+            remindedAt.set(agent, now);
+            const progress = stalled.metadata?.progress ?? 0;
+            return {
+              status: 200,
+              body: {
+                hookSpecificOutput: {
+                  hookEventName: 'PostToolUse',
+                  additionalContext: `team8: Task ${stalled.id} has been at ${progress}% for over two minutes. If a step of your plan has landed since, TaskUpdate its metadata.progress to round(100 × steps done ÷ steps); otherwise carry on.`,
+                },
+              },
+            };
           }
         }
 

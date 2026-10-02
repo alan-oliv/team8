@@ -243,10 +243,11 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 1. **The tasks.** The track's task ids in dependency order, and: "Call `TaskGet`
    on each before you start it. Claim it with `TaskUpdate` (`owner` = your name,
    `status` = `in_progress`, `metadata.progress` = 0) — the first now, each later
-   one once the previous closes. Each time a step of your plan lands — a test
-   goes green, a commit — `TaskUpdate` `metadata.progress` to the share of your
-   planned work that is done, 0–100; lower it when something breaks and adds
-   work." You set the owner of the first task only, and before the spawn. The
+   one once the previous closes. After every step, not only at the end,
+   `TaskUpdate` `metadata.progress` to round(100 × steps done ÷ steps), counting
+   the task's `Step` lines in the plan, or your own steps when it has none; when
+   something breaks and adds work, add steps and lower it." You set the owner of
+   the first task only, and before the spawn. The
    progress sentence is here and not left to the definition because an
    executor follows its dispatch and skips a definition-only rule.
 2. **The goal.** The done state in one sentence — not a list of steps.
