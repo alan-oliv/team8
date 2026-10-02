@@ -4568,6 +4568,7 @@ function createPermits() {
 // src/server/ingest/hooks.ts
 var DEFAULT_PERMISSION_TIMEOUT_MS = 6e5;
 var SUBAGENT_ID = /^a(.+)-[0-9a-f]{16}$/;
+var PROGRESS_STALL_MS = 12e4;
 var bagOf2 = (v) => v !== null && typeof v === "object" ? v : {};
 var str3 = (v) => typeof v === "string" ? v : void 0;
 var num2 = (v) => typeof v === "number" && Number.isFinite(v) ? v : void 0;
@@ -4589,9 +4590,24 @@ function resetOf(raw) {
   const b = bagOf2(raw);
   return str3(b.resets_at) ?? str3(b.reset_at) ?? str3(b.resetsAt);
 }
+function stalledTask(events, agent, now) {
+  const tasks = /* @__PURE__ */ new Map();
+  for (const ev of events) {
+    if (ev.kind !== "task") continue;
+    const task = ev.payload;
+    const prev = tasks.get(task.id);
+    const moved = !prev || prev.task.status !== task.status || prev.task.metadata?.progress !== task.metadata?.progress;
+    tasks.set(task.id, { task, since: moved ? ev.ts : prev.since });
+  }
+  for (const { task, since } of tasks.values()) {
+    if (task.owner === agent && task.status === "in_progress" && now - since >= PROGRESS_STALL_MS) return task;
+  }
+  return void 0;
+}
 function createHookHandlers(deps) {
   const { store, permits } = deps;
   const leadName = deps.leadName ?? "team-lead";
+  const remindedAt = /* @__PURE__ */ new Map();
   const touched = (agent) => {
     try {
       deps.onAgentActivity?.(agent);
@@ -4617,6 +4633,21 @@ function createHookHandlers(deps) {
         if (event === "PostToolUse") {
           for (const permit of permits.list()) {
             if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, "allow");
+          }
+          const now = Date.now();
+          const stalled = str3(b.agent_id) && !deps.readOnly && now - (remindedAt.get(agent) ?? -Infinity) >= PROGRESS_STALL_MS ? stalledTask(store.replay(), agent, now) : void 0;
+          if (stalled) {
+            remindedAt.set(agent, now);
+            const progress = stalled.metadata?.progress ?? 0;
+            return {
+              status: 200,
+              body: {
+                hookSpecificOutput: {
+                  hookEventName: "PostToolUse",
+                  additionalContext: `team8: Task ${stalled.id} has been at ${progress}% for over two minutes. If a step of your plan has landed since, TaskUpdate its metadata.progress to round(100 \xD7 steps done \xF7 steps); otherwise carry on.`
+                }
+              }
+            };
           }
         }
         if (event !== "PermissionRequest") return { status: 200, body: {} };
