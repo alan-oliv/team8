@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { openStore, type Store, type StoredEvent } from '../store';
 import type { HeldPermit, Permits } from '../control/permits';
-import { agentNameFrom, createHookHandlers, type HookHandlers } from './hooks';
-import type { HookPayload, StatuslinePayload, SubstatusPayload } from '../project';
+import { agentNameFrom, createHookHandlers, PROGRESS_STALL_MS, stalledTask, type HookHandlers } from './hooks';
+import type { HookPayload, StatuslinePayload, SubstatusPayload, TaskPayload } from '../project';
 import type { NeedsYouItem } from '../../shared/domain';
 
 // permits.ts (Task 14) declares only the Permits port type; createPermits is
@@ -536,5 +536,72 @@ describe('drain on agent activity', () => {
 
     expect(await h.statusline({})).toEqual({ status: 200, body: {} });
     expect(of(store.replay(), 'statusline')).toHaveLength(1);
+  });
+});
+
+describe('progress reminder', () => {
+  const task = (id: string, owner: string, status: TaskPayload['status'], progress?: number): TaskPayload => ({
+    id,
+    subject: `task ${id}`,
+    description: '',
+    owner,
+    status,
+    blocks: [],
+    blockedBy: [],
+    ...(progress === undefined ? {} : { metadata: { progress } }),
+  });
+  const at = (ts: number, payload: TaskPayload): StoredEvent => ({ seq: ts, ts, kind: 'task', payload });
+  const post = { hook_event_name: 'PostToolUse', tool_name: 'Bash', agent_id: 'aprobe-alpha-84fd551b27de6433' };
+
+  it('finds the in-progress task whose progress has not moved for the stall window', () => {
+    const events = [at(0, task('7', 'probe-alpha', 'in_progress', 0)), at(60_000, task('7', 'probe-alpha', 'in_progress', 0))];
+    expect(stalledTask(events, 'probe-alpha', PROGRESS_STALL_MS)?.id).toBe('7');
+  });
+
+  it('restarts the clock when progress moves', () => {
+    const events = [at(0, task('7', 'probe-alpha', 'in_progress', 0)), at(60_000, task('7', 'probe-alpha', 'in_progress', 40))];
+    expect(stalledTask(events, 'probe-alpha', PROGRESS_STALL_MS)).toBeUndefined();
+    expect(stalledTask(events, 'probe-alpha', 60_000 + PROGRESS_STALL_MS)?.id).toBe('7');
+  });
+
+  it('ignores tasks another agent owns or that are not in progress', () => {
+    const events = [
+      at(0, task('7', 'probe-bravo', 'in_progress', 0)),
+      at(0, task('8', 'probe-alpha', 'completed', 100)),
+      at(0, task('9', 'probe-alpha', 'pending')),
+    ];
+    expect(stalledTask(events, 'probe-alpha', PROGRESS_STALL_MS)).toBeUndefined();
+  });
+
+  it('reminds a teammate after its next tool call, at most once per stall window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(0);
+      store.append('task', task('7', 'probe-alpha', 'in_progress', 0), 'probe-alpha');
+      vi.setSystemTime(PROGRESS_STALL_MS);
+      expect((await handlers.hook(post)).body).toEqual({
+        hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: expect.stringContaining('Task 7') },
+      });
+      expect((await handlers.hook(post)).body).toEqual({});
+      vi.setSystemTime(2 * PROGRESS_STALL_MS);
+      expect((await handlers.hook(post)).body).toHaveProperty('hookSpecificOutput');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stays silent for the lead and on a read-only console', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(0);
+      store.append('task', task('7', 'probe-alpha', 'in_progress', 0), 'probe-alpha');
+      store.append('task', task('8', 'team-lead', 'in_progress', 0), 'team-lead');
+      vi.setSystemTime(PROGRESS_STALL_MS);
+      expect((await handlers.hook({ hook_event_name: 'PostToolUse', tool_name: 'Bash' })).body).toEqual({});
+      const readOnly = createHookHandlers({ store, permits, readOnly: true });
+      expect((await readOnly.hook(post)).body).toEqual({});
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
