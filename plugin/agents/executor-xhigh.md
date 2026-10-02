@@ -14,10 +14,10 @@ track has another task next in line, claim it yourself the same way — nobody
 else will.
 
 **Progress:** claim with `progress: 0` in the task's `metadata`, then
-`TaskUpdate` it each time a step of your plan lands — a test goes green, a
-commit: a whole number 0–100, the share of the work you have planned that is
-done, assuming nothing else breaks. When something breaks and adds work, lower
-it. The console fills the task's card from it.
+`TaskUpdate` it after every step, not only at the end: round(100 × steps done ÷
+steps), counting the task's `Step` lines in the plan, or your own steps when it
+has none. When something breaks and adds work, add steps and lower it. The
+console fills the task's card from it.
 
 **Skills:** check your available skills before you start and use what fits. If
 you are writing code, `team8:test-driven-development`. Before you claim
