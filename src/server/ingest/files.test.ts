@@ -2429,3 +2429,60 @@ describe('tmux-backend teammates', () => {
     expect(mate!.transcript.map((l) => l.text)).toEqual(['mate 0', 'mate 1']);
   });
 });
+
+describe('deleted task files', () => {
+  const boardIds = () => project(store.replay(), false).tasks.map((t) => t.id);
+
+  it('drops a task from the board when its file is deleted', async () => {
+    await layout();
+    // The short sweep is the recovery path for a watcher event FSEvents drops.
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 200 });
+    try {
+      await settle();
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1']);
+      await fs.rm(path.join(paths.tasks, TEAM, '1.json'));
+      await waitFor(() => (boardIds().length === 0 ? true : undefined));
+    } finally {
+      ingest.close();
+    }
+  });
+
+  it('drops tasks whose files were deleted while the console was down', async () => {
+    await layout();
+    const leftBehind: TaskPayload = {
+      id: '9',
+      subject: 'Profile the stack of pokemon-app',
+      description: '',
+      owner: 'pokemon-scout',
+      status: 'in_progress',
+      blocks: [],
+      blockedBy: [],
+    };
+    store.append('task', leftBehind, leftBehind.owner);
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 0 });
+    try {
+      await settle();
+      await ingest.sweep();
+    } finally {
+      ingest.close();
+    }
+    expect(boardIds()).toEqual(['1']);
+  });
+
+  it('keeps every task when the task directory cannot be read', async () => {
+    await layout();
+    const dir = path.join(paths.tasks, TEAM);
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 0 });
+    try {
+      await settle();
+      await ingest.sweep();
+      await fs.chmod(dir, 0o000);
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1']);
+    } finally {
+      await fs.chmod(dir, 0o755);
+      ingest.close();
+    }
+  });
+});

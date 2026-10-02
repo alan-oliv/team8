@@ -1,5 +1,5 @@
 import type { Store, StoredEvent } from '../store';
-import type { TaskPayload } from '../project';
+import type { TaskPayload, TaskRemovedPayload } from '../project';
 import { holdMsFor, type Permits } from '../control/permits';
 import { logError } from '../log';
 import type { AskQuestion } from '../../shared/domain';
@@ -75,6 +75,7 @@ function resetOf(raw: unknown): string | undefined {
 export function stalledTask(events: StoredEvent[], agent: string, now: number): TaskPayload | undefined {
   const tasks = new Map<string, { task: TaskPayload; since: number }>();
   for (const ev of events) {
+    if (ev.kind === 'task-removed') tasks.delete((ev.payload as TaskRemovedPayload).id);
     if (ev.kind !== 'task') continue;
     const task = ev.payload as TaskPayload;
     const prev = tasks.get(task.id);
