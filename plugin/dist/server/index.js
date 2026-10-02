@@ -3178,6 +3178,10 @@ function project(events, readOnly, now = Date.now()) {
         tasksRaw.set(p.id, p);
         break;
       }
+      case "task-removed": {
+        tasksRaw.delete(ev.payload.id);
+        break;
+      }
       case "mail": {
         const p = ev.payload;
         if (p.source === "inbox") {
@@ -3366,7 +3370,7 @@ function project(events, readOnly, now = Date.now()) {
 }
 
 // src/server/ingest/files.ts
-import { promises as fs3 } from "node:fs";
+import { existsSync as existsSync2, promises as fs3 } from "node:fs";
 import path6 from "node:path";
 
 // src/server/watch/tail.ts
@@ -3934,6 +3938,14 @@ function workflowClaimOf(file, leadSessionId) {
   }
   return null;
 }
+function liveTaskIds(events) {
+  const ids = /* @__PURE__ */ new Set();
+  for (const ev of events) {
+    if (ev.kind === "task") ids.add(ev.payload.id);
+    else if (ev.kind === "task-removed") ids.delete(ev.payload.id);
+  }
+  return ids;
+}
 async function walk(root) {
   const out = [];
   const stack = [root];
@@ -4318,8 +4330,20 @@ function startFileIngest(store, config) {
   const handleTaskJson = async (file) => {
     if (teamName && path6.basename(path6.dirname(file)) !== teamName) return;
     const task = await readJsonSafe(file);
-    if (!task || typeof task.id !== "string") return;
-    store.append("task", task, task.owner);
+    if (task && typeof task.id === "string") store.append("task", task, task.owner);
+    else if (!existsSync2(file)) store.append("task-removed", { id: path6.basename(file, ".json") });
+  };
+  const dropDeletedTasks = async (team) => {
+    const known = liveTaskIds(store.replay());
+    let names;
+    try {
+      names = await fs3.readdir(path6.join(paths.tasks, team));
+    } catch (err) {
+      if (err.code !== "ENOENT") return;
+      names = [];
+    }
+    const onDisk = new Set(names.filter((n) => n.endsWith(".json")).map((n) => path6.basename(n, ".json")));
+    for (const id of known) if (!onDisk.has(id)) store.append("task-removed", { id });
   };
   const handleSessionJson = async (file) => {
     const doc = await readJsonSafe(file);
@@ -4472,6 +4496,7 @@ function startFileIngest(store, config) {
         if (file.endsWith(".jsonl")) drains.push({ file, mtimeMs: st.mtimeMs });
         else if (file.endsWith(".json")) await dispatchJson(file, root, bootSweep);
       }
+      if (root === paths.tasks && teamName) await dropDeletedTasks(teamName);
       drains.sort((a, b) => a.mtimeMs - b.mtimeMs);
       for (const drain2 of drains) {
         if (closed) return;
@@ -4593,6 +4618,7 @@ function resetOf(raw) {
 function stalledTask(events, agent, now) {
   const tasks = /* @__PURE__ */ new Map();
   for (const ev of events) {
+    if (ev.kind === "task-removed") tasks.delete(ev.payload.id);
     if (ev.kind !== "task") continue;
     const task = ev.payload;
     const prev = tasks.get(task.id);
