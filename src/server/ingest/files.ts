@@ -1,9 +1,9 @@
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { watchAppendOnly } from '../watch/tail';
 import { readJsonSafe, watchJsonTree } from '../watch/jsonfile';
-import type { Store } from '../store';
-import type { AgentUsageTotals, SubagentPayload, TaskPayload, TranscriptPayload } from '../project';
+import type { Store, StoredEvent } from '../store';
+import type { AgentUsageTotals, SubagentPayload, TaskPayload, TaskRemovedPayload, TranscriptPayload } from '../project';
 import {
   digestOf,
   emptySubagentFold,
@@ -271,6 +271,15 @@ export function workflowClaimOf(file: string, leadSessionId: LeadChain): Workflo
   }
 
   return null;
+}
+
+function liveTaskIds(events: StoredEvent[]): Set<string> {
+  const ids = new Set<string>();
+  for (const ev of events) {
+    if (ev.kind === 'task') ids.add((ev.payload as TaskPayload).id);
+    else if (ev.kind === 'task-removed') ids.delete((ev.payload as TaskRemovedPayload).id);
+  }
+  return ids;
 }
 
 async function walk(root: string): Promise<string[]> {
@@ -967,8 +976,28 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
   const handleTaskJson = async (file: string) => {
     if (teamName && path.basename(path.dirname(file)) !== teamName) return;
     const task = await readJsonSafe<TaskPayload>(file);
-    if (!task || typeof task.id !== 'string') return;
-    store.append('task', task, task.owner);
+    if (task && typeof task.id === 'string') store.append('task', task, task.owner);
+    else if (!existsSync(file)) store.append('task-removed', { id: path.basename(file, '.json') });
+  };
+
+  // Claude Code deletes a team's task files when the team ends. The watcher's
+  // event for that is dropped under load and never fires for a deletion made
+  // while the console was down, and a task the store keeps sits on the board
+  // in its last state for good.
+  const dropDeletedTasks = async (team: string) => {
+    // Read before the directory, so a task created after the listing is never
+    // mistaken for one that was deleted.
+    const known = liveTaskIds(store.replay());
+    let names: string[];
+    try {
+      names = await fs.readdir(path.join(paths.tasks, team));
+    } catch (err) {
+      // An unreadable directory says nothing about which tasks are gone.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return;
+      names = [];
+    }
+    const onDisk = new Set(names.filter((n) => n.endsWith('.json')).map((n) => path.basename(n, '.json')));
+    for (const id of known) if (!onDisk.has(id)) store.append('task-removed', { id });
   };
 
   const handleSessionJson = async (file: string) => {
@@ -1200,6 +1229,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
         if (file.endsWith('.jsonl')) drains.push({ file, mtimeMs: st.mtimeMs });
         else if (file.endsWith('.json')) await dispatchJson(file, root, bootSweep);
       }
+      if (root === paths.tasks && teamName) await dropDeletedTasks(teamName);
       drains.sort((a, b) => a.mtimeMs - b.mtimeMs);
       for (const drain of drains) {
         if (closed) return;

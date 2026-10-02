@@ -25,6 +25,7 @@ export type EventKind =
   | 'roster'
   | 'transcript'
   | 'task'
+  | 'task-removed'
   | 'mail'
   | 'hook'
   | 'statusline'

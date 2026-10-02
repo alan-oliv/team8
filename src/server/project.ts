@@ -108,6 +108,9 @@ export interface TaskPayload {
   blockedBy: string[];
   metadata?: TaskMetadata;
 }
+export interface TaskRemovedPayload {
+  id: string;
+}
 export type MailPayload =
   | { source: 'inbox'; to: string; entries: InboxEntry[] }
   | { source: 'transcript'; to: string; text: string; deliveredAt: number };
@@ -413,6 +416,10 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       case 'task': {
         const p = ev.payload as TaskPayload;
         tasksRaw.set(p.id, p);
+        break;
+      }
+      case 'task-removed': {
+        tasksRaw.delete((ev.payload as TaskRemovedPayload).id);
         break;
       }
       case 'mail': {

@@ -564,6 +564,11 @@ describe('progress reminder', () => {
     expect(stalledTask(events, 'probe-alpha', 60_000 + PROGRESS_STALL_MS)?.id).toBe('7');
   });
 
+  it('forgets a task whose file was deleted', () => {
+    const removed: StoredEvent = { seq: 1, ts: 1, kind: 'task-removed', payload: { id: '7' } };
+    expect(stalledTask([at(0, task('7', 'probe-alpha', 'in_progress', 0)), removed], 'probe-alpha', PROGRESS_STALL_MS)).toBeUndefined();
+  });
+
   it('ignores tasks another agent owns or that are not in progress', () => {
     const events = [
       at(0, task('7', 'probe-bravo', 'in_progress', 0)),
