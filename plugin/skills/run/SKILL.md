@@ -141,9 +141,12 @@ lead opens the PR when the last task is clear.
 
 **teammates.** A peak of two or more. Dispatch by wave, from the closing's
 wave lines: every track in wave 1 now, one teammate each; each later wave
-when the tasks it waits on close, fresh teammates. A teammate whose track is
-clear stops. **N per wave = the tracks in that wave**, not the number of
-tasks and not the number of tracks overall:
+when the tasks it waits on close, fresh teammates. A team8 unblock notice
+says when: it names each unblocked task whose owner is idle or not running;
+message an idle owner, and spawn one that is not running under the name its
+tasks carry. A teammate whose track is clear stops. **N per wave = the
+tracks in that wave**, not the number of tasks and not the number of tracks
+overall:
 
 | Situation | Teammates |
 |---|---|
