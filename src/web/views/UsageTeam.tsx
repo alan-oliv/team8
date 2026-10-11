@@ -452,7 +452,7 @@ function RateCardPanel({ models }: { models: readonly ModelSpend[] }) {
         </div>
       ))}
       <div data-testid="usage-rate-note" style={PROSE}>
-        {'Cache writes bill at 1.25× the input rate and reads at 0.1×, which is why the total is not roughly 2.6× larger. '}
+        {'Cache writes bill at 1.25× the input rate and reads at 0.1× (0.05× on Opus 5.5, 0.025× on Fable 5.1), which is why the total is not several times larger. '}
         {"A teammate's cache TTL is 5 minutes by default, separate from the main conversation's — a teammate idle longer than that pays the write again on its next turn. "}
         <code style={{ color: 'var(--color-accent-400)' }}>subagentPromptCacheTtl: 1h</code>
         {' extends it and bills writes higher.'}
