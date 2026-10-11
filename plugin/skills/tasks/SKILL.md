@@ -225,7 +225,7 @@ judgment ≈ 60 turns at 100k (6M, 40k, 210k). Priced at `catalog.json` rates
 as of 2026-10 (haiku 0.10/0.50, sonnet 2/10, opus 4/20 USD per million
 in/out; cache reads 0.01, 0.20 and 0.20; written tokens at the 5-minute
 cache-write rate, 0.125, 2.50 and 5; haiku at its rate for prompts up to
-100K tokens).
+100K tokens, and a haiku turn whose context is past 100K tokens bills at 5× these rates).
 
 **Calibrate from the console, not from this table.** After a batch, the usage
 view's cost per task is the real number for this repo. When it disagrees with
