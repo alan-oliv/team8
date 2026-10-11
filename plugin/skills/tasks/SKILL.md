@@ -39,9 +39,10 @@ Every `TaskCreate` carries all four. A task missing the fourth is not finished.
               "why": "shape is a contract three later tasks consume"}}
 ```
 
-Hooks enforce both ends of this: a `TaskCreated` hook refuses a task whose
-`metadata` is missing `complexity`, `model`, `effort` or `why`, and a
-`TaskCompleted` hook refuses a completion whose `metadata` has no `verified`.
+A hook enforces both ends of this on the tool call itself: a `TaskCreate`
+that carries any of `complexity`, `model`, `effort` or `why` must carry all
+four, and a teammate's `TaskUpdate` to `completed` must carry
+`metadata.verified` in that same call.
 
 ## Sizing: read the description you just wrote
 
@@ -71,12 +72,32 @@ Names are tiers — cheapest capable, mid, top. Substitute current names as mode
 - **A decision task blocks whatever the decision changes.** Model an open question as its own task rather than burying it in an implementation task.
 - **Leave parallel work unblocked.** Every needless blocker is serialized time.
 
-## Before the closing: two checks
+## Owners, in teammates mode
 
-Tracks run in parallel in one checkout, so two mistakes break a run wherever
-the tasks came from — a plan, a Jira or Linear list, or the user. Check both
-on the finished list, before writing the closing. Both fixes touch the task
-list only, never a plan.
+Claude Code 2.1.296 has an in-process teammate claim the first pending,
+unowned, unblocked task by itself, whatever track it belongs to: once at
+spawn, before it reads its prompt and without telling the model, and again
+whenever it goes idle. It never takes a task that has an owner.
+
+- **Name each track's teammate** when you draw the tracks: short, lowercase,
+  from what the track builds (`gate`, `skills`, `prices`). `team8:run` spawns
+  it under exactly that name.
+- **Make it the `owner` of every task in its track** right after creating the
+  tasks, in the same `TaskUpdate` that adds `blockedBy` where there is one.
+- **Add "Close the run" last.** Subject `Close the run`; description "Lead
+  only: complete this once the run log's Run section is committed."; `owner`
+  `team-lead`; blocked by every other task; no `metadata`, so the four-field
+  contract above does not apply to it. While it is open the list is never
+  all-completed, and Claude Code clears an all-completed list: mid-review,
+  that loses round-2 and round-3 `verified` updates. In the table it is the
+  lead's row, with no model and no estimate.
+
+## Before the closing: three checks
+
+Tracks run in parallel in one checkout, so three mistakes break a run wherever
+the tasks came from — a plan, a Jira or Linear list, or the user. Check all
+three on the finished list, before writing the closing. Every fix touches the
+task list only, never a plan.
 
 1. **No file belongs to two tracks.** List each task's owned files by track.
    A file under two tracks: move both tasks into one track, in order, so one
@@ -85,8 +106,10 @@ list only, never a plan.
 2. **Every consumer waits on its producer.** A task that reads a type, field,
    route, file or decision another task produces has that task in its
    `blockedBy`. Missing: `TaskUpdate` with `addBlockedBy`.
+3. **Teammates mode: every task has an owner** — its track's teammate, or
+   `team-lead` for "Close the run". Missing: `TaskUpdate` with `owner`.
 
-Say the result in the notes: `checks: tracks disjoint · blockers complete`,
+Say the result in the notes: `checks: tracks disjoint · blockers complete · owners set`,
 or what was fixed.
 
 ## After creating: the mode, the table, the notes, the ask
@@ -132,7 +155,7 @@ first, then read the graph against the table:
 |---|---|---|
 | At most two tasks, every one of them **mechanical** (Sizing above) — work the lead finishes in the next few tool calls | **solo** | Nothing is worth repeating and nothing is worth a worker. Spawning costs more than the work; the lead does it, TDD, one commit |
 | A peak of 1 — one track, or several that never share a wave — and any task is **standard** or **judgment**, even when it is the only task | **subagents** | A few delegated tasks, the lead deciding what runs next after each one, results back in the lead's context for review. Nothing runs in parallel and nobody needs a mailbox |
-| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Peers that run long at the same time and coordinate through the shared task list. Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. Each teammate self-claims down its own track: the lead owns the first task of each, the teammate takes the next itself. Size against 3–5 teammates and 5–6 tasks each — fewer tasks per teammate and coordination costs more than the parallelism buys |
+| Two or more tracks in the same wave — a peak of 2 or more | **teammates** | Peers that run long at the same time and coordinate through the shared task list. Parallel writers in one checkout need file ownership, a shared branch, messaging and a track review. Each teammate works down its own track: every task carries its teammate as owner from creation (Owners, above), and the teammate claims each in turn. Size against 3–5 teammates and 5–6 tasks each — fewer tasks per teammate and coordination costs more than the parallelism buys |
 | Five or more tasks of the same shape — the same job over many inputs, a review per PR, a fan-out with a verify step — with no decision between them | **workflow** | The orchestration itself is the repeatable thing: the script decides what runs next, results live in its variables, and it scales to dozens or hundreds of agents where a lead would improvise the same dispatch by hand. This skill's instruction is the opt-in the Workflow tool requires: state it, do not ask the user to choose it |
 
 A single standard task is subagents, not solo: one file of real work is

@@ -306,7 +306,7 @@ exactly as it says:
 3. **Self-review inline:** writing-plans' three checks, fixed in place. No
    subagent.
 4. **Tasks through `team8:tasks`,** as writing-plans' "Create the Tasks" says,
-   including the two checks `team8:tasks` runs before its closing.
+   including the three checks `team8:tasks` runs before its closing.
 
 **Code in the plan is written, not run.** No builds, prototypes or scratch
 code while planning. If a step rests on something unproven, ask the user;

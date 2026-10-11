@@ -29,10 +29,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    take the waves from the closing: teammates alive at any moment are the
    tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode: see Modes below. Teammates use the contract
-   below; set the owner of each track's *first* task with `TaskUpdate` **before**
-   the `Agent` call that spawns its teammate — an owner set afterwards arrives as
-   a fresh assignment, and the teammate re-reads work it is already doing. It
-   claims the rest of its track itself.
+   below. Spawn each one under the name `team8:tasks` set as the owner of its
+   track's tasks; with every task owned before the first spawn, Claude Code's
+   own auto-claim finds nothing to take. A list that came without owners gets
+   them now, before any spawn. Never set an owner after a spawn: it arrives as
+   a fresh assignment, and the teammate re-reads work it is already doing.
 6. **Teammates only: verify the roster before they get deep.** Every teammate you dispatched has
    to appear in `~/.claude/teams/<team>/config.json`:
    `jq -r '.members[].name' ~/.claude/teams/<team>/config.json`. A name missing
@@ -47,7 +48,7 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    the executors only ran the tests covering their own files. Then, when the PR
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
-   `plan`) and commit it on the branch.
+   `plan`) and commit it on the branch. Then complete the "Close the run" task.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -246,8 +247,10 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    one once the previous closes. After every step, not only at the end,
    `TaskUpdate` `metadata.progress` to round(100 × steps done ÷ steps), counting
    the task's `Step` lines in the plan, or your own steps when it has none; when
-   something breaks and adds work, add steps and lower it." You set the owner of
-   the first task only, and before the spawn. The
+   something breaks and adds work, add steps and lower it." Every task already
+   carries its owner; you set none. Claude Code queued one assignment notice per
+   task when the owners were set; they reach the teammate when it starts and
+   repeat this list. The
    progress sentence is here and not left to the definition because an
    executor follows its dispatch and skips a definition-only rule.
 2. **The goal.** The done state in one sentence — not a list of steps.
@@ -311,7 +314,7 @@ the PR next to the plan it describes.
 | Asking the user to choose a branching strategy | Step 2a derives it from the blockers. Only you have the graph |
 | Per-task branches or PRs while tracks run in parallel | One checkout, one HEAD. Concurrency already foreclosed it |
 | Keeping the small task for yourself | Delegate it. A busy lead can't review or unblock |
-| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Yours is the first task's owner, set before the spawn and nothing after it |
+| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Owners are set when the tasks are created, before any spawn, never after it |
 | One teammate per task, mechanically | Count tracks. Two teammates in one file is a merge conflict |
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
