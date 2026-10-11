@@ -3,7 +3,7 @@
 spec: docs/team8/specs/2026-09-30-team8-speed-design.md (section 2)
 plan: docs/team8/plans/2026-09-30-team8-delivery.md
 branch: delivery
-pr: <at close>
+pr: merged into the fixes batch (docs/team8/runs/2026-10-11-team8-fixes.md)
 
 ## Brainstorm
 - path: architectural (PR 2 of the six-PR speed program; the spec was approved on 2026-09-30)
@@ -22,8 +22,4 @@ pr: <at close>
 - estimate: ≈$5.10 (#3 sonnet · medium ≈$2.15, #4 haiku · low ≈$0.15, #5 sonnet · high ≈$2.80)
 
 ## Run
-- executors: <at close>
-- track reviews: <at close>
-- actual: <at close>
-- estimate vs actual: <at close>
-- went wrong / change next time: <at close>
+- merged into `fixes` on 2026-10-11 without a separate run. A probe on Claude Code 2.1.296 the same day still showed no mid-turn delivery. The before-and-after delivery check moves to the fixes batch's close.
