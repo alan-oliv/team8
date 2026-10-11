@@ -213,11 +213,11 @@ reviewer, and the executor stays alive until its track is clear.
    judgment), with: the diff path, the task descriptions (`TaskGet` each, paste
    them), the plan sections those tasks name, the global constraints, and the
    reports directory (`<scratchpad>/reports/`) for findings over about 3,500
-   characters. Two verdicts, both required: does
-   the diff do what the tasks say, nothing more and nothing less; and is it
-   well built — tests that assert something, no duplication of a block that
-   exists, no scope beyond the tasks. Findings labelled Blocking or Minor,
-   each with file, line and the fix. Do not tell it what not to flag.
+   characters. Two verdicts, both required: does the diff do what the tasks
+   say, nothing more and nothing less; and is it well built — tests that
+   assert something, no duplication of a block that exists, no scope beyond
+   the tasks. Findings labelled Blocking or Minor, each with file, line and the
+   fix. Do not tell it what not to flag.
 3. **Blocking findings go to the executor** by `SendMessage`, verbatim. It
    fixes, re-runs the covering tests, pushes, and reports. Then a scoped
    re-review: the diff since the last review, the findings list, verdict per
@@ -250,10 +250,11 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 1. **The tasks.** The track's task ids in dependency order, and: "Call `TaskGet`
    on each before you start it. Claim it with `TaskUpdate` (`status` =
    `in_progress`, `metadata.progress` = 0; the task already carries your name as
-   owner) — the first now, each later one once the previous closes. After every step, not only at the end,
-   `TaskUpdate` `metadata.progress` to round(100 × steps done ÷ steps), counting
-   the task's `Step` lines in the plan, or your own steps when it has none; when
-   something breaks and adds work, add steps and lower it." Every task already
+   owner) — the first now, each later one once the previous closes. After
+   every step, not only at the end, `TaskUpdate` `metadata.progress` to
+   round(100 × steps done ÷ steps), counting the task's `Step` lines in the
+   plan, or your own steps when it has none; when something breaks and adds
+   work, add steps and lower it." Every task already
    carries its owner; you set none. Claude Code queued one assignment notice per
    task when the owners were set; they reach the teammate when it starts and
    repeat this list. The progress sentence is here and not left to the

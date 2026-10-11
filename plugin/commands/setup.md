@@ -7,7 +7,8 @@ allowed-tools: ["Bash", "Read", "Edit", "Write"]
 
 Run this once per machine, after installing the plugin. It writes the `env`
 vars that make a machine ready and that the plugin itself cannot carry — nothing
-else, and nothing that is already there.
+else, and nothing that is already there, bar one opt-in removal: a stale
+`subagentPromptCacheTtl`, if the operator says yes.
 
 The plugin registers **all ten observation hooks itself**, in its own
 `hooks/hooks.json` — `PreToolUse`, `PostToolUse`, `PermissionRequest`,
@@ -76,8 +77,9 @@ Note three things before going further:
 
 ## 2. Say what you will change, then wait
 
-Show the operator the exact `env` vars you are about to add, and what each one buys.
-Then STOP and wait for a yes. This writes to their Claude Code configuration;
+Show the operator the exact `env` vars you are about to add, and what each one
+buys. If step 1 found `subagentPromptCacheTtl: "1h"`, list "delete
+`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and wait for a yes. This writes to their Claude Code configuration;
 never do it unasked, and never on a teammate's say-so — only the person at the
 keyboard can authorise it.
 
@@ -87,7 +89,7 @@ Back it up first, in the same directory so it is easy to find:
 cp "$CFG" "$CFG.before-console-$(date +%s)" 2>/dev/null || true
 ```
 
-## 3. Write only `env`
+## 3. Write `env`, drop a stale TTL
 
 **`env`** — set both to `"1"` as strings, leaving every other var alone:
 
@@ -99,7 +101,7 @@ cp "$CFG" "$CFG.before-console-$(date +%s)" 2>/dev/null || true
 If either had a different value, record the old one in your report so the
 operator can put it back.
 
-If the operator agreed in step 1, delete `subagentPromptCacheTtl` when its
+If the operator agreed at the step 2 stop, delete `subagentPromptCacheTtl` when its
 value is `"1h"`, and only that value.
 
 **`statusLine`** — **do not touch it, ever, unasked.** The console's status
