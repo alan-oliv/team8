@@ -180,9 +180,9 @@ export function hookBlock(port: number): HookBlock {
   };
   hooks.PostToolUse = [...(hooks.PostToolUse ?? []), inboxDeliver, { ...launcher }, { ...workflowLauncher }];
 
-  // A pure nudge toward /team8:console for sessions that never spawn a team
-  // or workflow. Appended to the same entry as the observation curl, matching
-  // hooks/hooks.json, and never starts the server itself.
+  // Upgrades an older console and, after a resume, tells a lead its teammates
+  // are gone. Appended to the same entry as the observation curl, matching
+  // hooks/hooks.json, and never starts a console that is not running.
   hooks.SessionStart[0].hooks.push({
     type: 'command',
     command: `'${HINT_SCRIPT}'`,

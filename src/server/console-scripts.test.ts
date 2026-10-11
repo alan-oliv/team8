@@ -186,7 +186,7 @@ describe('console-hint.sh', () => {
 
       const run = await script('console-hint.sh', [], '{}');
 
-      expect(systemMessage(run.stdout)).toContain('/team8:console');
+      expect(run.stdout).toBe('');
       await new Promise((r) => setTimeout(r, 300));
       expect(await starts()).toHaveLength(1);
       await new Promise((r) => execFile('pkill', ['-f', `dist/server/index.js --port ${port}`], r));
@@ -216,8 +216,49 @@ describe('console-hint.sh', () => {
     await new Promise((r) => setTimeout(r, 300));
 
     expect(run.code).toBe(0);
-    expect(systemMessage(run.stdout)).toContain('/team8:console');
+    expect(run.stdout).toBe('');
     expect(await starts()).toEqual([]);
+  });
+  describe('after a resume', () => {
+    const lead = 'abcdef12-3456-7890-abcd-ef1234567890';
+    const start = (source: string) => JSON.stringify({ hook_event_name: 'SessionStart', source, session_id: lead });
+    const ledATeam = async () => {
+      await fs.mkdir(path.join(claudeDir, 'teams', 'session-abcdef12'), { recursive: true });
+      await fs.writeFile(path.join(claudeDir, 'teams', 'session-abcdef12', 'config.json'), '{}');
+    };
+    const hint = (stdout: string) =>
+      (JSON.parse(stdout) as { hookSpecificOutput?: { hookEventName: string; additionalContext: string } })
+        .hookSpecificOutput;
+
+    it('tells a resumed lead its teammates are gone', async () => {
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('resume'));
+      expect(run.code).toBe(0);
+      expect(hint(run.stdout)?.hookEventName).toBe('SessionStart');
+      expect(hint(run.stdout)?.additionalContext).toContain('TaskList');
+    });
+
+    it('says nothing to a resumed session that led no team', async () => {
+      const run = await script('console-hint.sh', [], start('resume'));
+      expect(run.stdout).toBe('');
+    });
+
+    it('says nothing on a fresh start, team or not', async () => {
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('startup'));
+      expect(run.stdout).toBe('');
+    });
+
+    it('keeps the upgrade notice beside the hint', async () => {
+      await fake({ health: { version: '1.0.43', build: 'installed' }, plugin: '1.0.44' });
+      await record({ kind: 'session', id: 'session-one' });
+      await startRunning();
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('resume'));
+      const out = JSON.parse(run.stdout) as { systemMessage: string; hookSpecificOutput: { additionalContext: string } };
+      expect(out.systemMessage).toContain('1.0.44');
+      expect(out.hookSpecificOutput.additionalContext).toContain('TaskList');
+    });
   });
 });
 

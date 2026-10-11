@@ -33,7 +33,7 @@ export const LAUNCH_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-launch.sh');
 /** Absolute path to the restarter every observation hook falls back to. */
 export const RESTART_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-restart.sh');
 
-/** Absolute path to the SessionStart nudge toward /team8:console, used by hookBlock(). */
+/** Absolute path to the SessionStart hint (console upgrades, the resume note), used by hookBlock(). */
 export const HINT_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'console-hint.sh');
 
 /**

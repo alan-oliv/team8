@@ -53,9 +53,9 @@ describe('hookBlock', () => {
       expect(entries.filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(event === 'PreToolUse' ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
-      // SessionStart carries one extra hook: a pure nudge toward /team8:console
-      // for sessions that never spawn a team or workflow, appended to the same
-      // entry as the observation curl below.
+      // SessionStart carries one extra hook, console-hint.sh (console upgrades
+      // and the resume note), appended to the same entry as the observation
+      // curl below.
       expect(entries[0].hooks).toHaveLength(event === 'SessionStart' ? 2 : 1);
       // A command hook, not an http one: Claude Code renders an http hook's
       // connection refusal as a "<event> hook error" on EVERY tool call while
