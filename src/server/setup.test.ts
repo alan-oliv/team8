@@ -53,9 +53,11 @@ describe('hookBlock', () => {
       const entries = block.hooks[event] as HookEntry[];
       // Both tool arms carry two extra entries: the command-hook launcher on
       // the Agent tool, and the same launcher on Workflow — a different tool,
-      // which the Agent matcher can never see.
+      // which the Agent matcher can never see. PostToolUse carries one more:
+      // the inbox-delivery hook, gated on agent_id so the lead never starts it.
       const carriesLauncher = event === 'PreToolUse' || event === 'PostToolUse';
-      expect(entries).toHaveLength(carriesLauncher ? 3 : 1);
+      const extra = event === 'PostToolUse' ? 1 : 0;
+      expect(entries).toHaveLength((carriesLauncher ? 3 : 1) + extra);
       expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
       // SessionStart carries one extra hook: a pure nudge toward /team8:console
@@ -176,13 +178,15 @@ describe("the plugin's own hooks.json", () => {
     // The curl call wrapped around it is still compared in full, so the copies
     // still cannot drift to different ports, timeouts or routes. The SessionStart
     // hint script (absolute path here, ${CLAUDE_PLUGIN_ROOT} there) is the same
-    // kind of legitimate difference, so it is masked the same way.
+    // kind of legitimate difference, so it is masked the same way. So is the
+    // inbox-delivery hook's own script path.
     const maskRestart = (command: string) =>
       command
         .replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>')
         .replace(/(['"])[^'"]*\/bin\/console-hint\.sh\1/, '<hint>')
         .replace(/(['"])[^'"]*\/bin\/task-created\.sh\1/, '<task-created>')
-        .replace(/(['"])[^'"]*\/bin\/task-completed\.sh\1/, '<task-completed>');
+        .replace(/(['"])[^'"]*\/bin\/task-completed\.sh\1/, '<task-completed>')
+        .replace(/(['"])[^'"]*\/dist\/hooks\/inbox-deliver\.js\1/, '<inbox-deliver>');
     const normalise = (entries: HookEntry[]) =>
       JSON.stringify(
         entries.map((e) =>
