@@ -1,5 +1,5 @@
 ---
-description: Set a machine up for the console — the env vars and subagent status line the plugin itself cannot carry, merged into settings.json without disturbing what is there
+description: Set a machine up for the console — the env vars the plugin itself cannot carry, merged into settings.json without disturbing what is there
 allowed-tools: ["Bash", "Read", "Edit", "Write"]
 ---
 
@@ -12,17 +12,17 @@ else, and nothing that is already there.
 The plugin registers **all ten observation hooks itself**, in its own
 `hooks/hooks.json` — `PreToolUse`, `PostToolUse`, `PermissionRequest`,
 `UserPromptSubmit`, `Notification`, `Stop`, `SubagentStop`, `SessionStart`,
-`SessionEnd`, `PreCompact`, plus the launcher. It also registers the `TaskCreated`
-and `TaskCompleted` gates that require a task's metadata and its verification.
+`SessionEnd`, `PreCompact`, plus the launcher. It also registers the task gate,
+a PreToolUse hook on `TaskCreate` and `TaskUpdate` that requires a team8 task's
+metadata and a teammate's verification. Its own `settings.json` carries the
+`subagentStatusLine` that feeds each teammate's current tool to the console.
 **Do not add any of them here.** They fire from the plugin; a copy in
-`settings.json` would post every event twice, or run the gates twice.
+`settings.json` would post every event twice, or run the gate twice.
 
-Three things have no plugin-manifest equivalent, and that is all this command does:
+One thing has no plugin equivalent, and that is all this command does:
 
 - **`env`** — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (teams at all) and
   `CLAUDE_CODE_ENABLE_TODO_TOOLS` (the shared task list the **tasks** view renders)
-- **`subagentStatusLine`** — each teammate's current tool, in its header
-- **`subagentPromptCacheTtl: "1h"`** — an in-process teammate's prompt cache holds 5 minutes by default, so a fix round starting 3-10 minutes after the last one re-reads its context cold; this keeps it warm for an hour, and is only ever added when the key is absent.
 
 It MERGES, and it never overwrites: whatever is already in that file stays.
 
@@ -63,12 +63,16 @@ CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 echo "$CFG"; [ -f "$CFG" ] && cat "$CFG" || echo '{}'
 ```
 
-Note two things before going further:
+Note three things before going further:
 
 - Does `env` already carry either var? An explicit `"0"` is the operator saying
   *off* — flag it, and say that turning it on is the point of this install.
-- Is `subagentStatusLine` already set to something that is not the console's?
-  Then it stays; see step 3.
+- Is `subagentStatusLine` set to something that is not the console's? It wins
+  over the plugin's own, so the console loses each teammate's current-tool
+  line. Leave it, and say so in the report.
+- Is `subagentPromptCacheTtl` `"1h"`? An earlier version of this command wrote
+  it. It makes every subagent on the machine pay the 1-hour cache-write price,
+  for a gain that measured break-even for team8's teammates. Offer to remove it.
 
 ## 2. Say what you will change, then wait
 
@@ -83,7 +87,7 @@ Back it up first, in the same directory so it is easy to find:
 cp "$CFG" "$CFG.before-console-$(date +%s)" 2>/dev/null || true
 ```
 
-## 3. Write only these two keys
+## 3. Write only `env`
 
 **`env`** — set both to `"1"` as strings, leaving every other var alone:
 
@@ -95,21 +99,12 @@ cp "$CFG" "$CFG.before-console-$(date +%s)" 2>/dev/null || true
 If either had a different value, record the old one in your report so the
 operator can put it back.
 
-**`subagentStatusLine`** — take this key only if it is **absent**:
-
-```json
-{ "type": "command",
-  "command": "curl -sS -m 2 -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4823/substatus >/dev/null 2>&1; printf ''" }
-```
-
-If the operator already has one, leave it and tell them they gave up the
-per-agent current-tool line. The console's command ends in `printf ''` and draws
-nothing, so taking a key someone else draws with blanks their output.
-
-**`statusLine`** — **do not touch it, ever, unasked.** Same reasoning, louder:
-this is the key `ccstatusline`, `starship` and every custom prompt live in. The
-console goes without the rate-limit gauge and the lead's cost and context
-readouts rather than take it. Say that plainly in your report.
+**`statusLine`** — **do not touch it, ever, unasked.** The console's status
+commands end in `printf ''` and draw nothing, so taking a key someone else
+draws with blanks their output, and this is the key `ccstatusline`, `starship`
+and every custom prompt live in. The console goes without the rate-limit gauge
+and the lead's cost and context readouts rather than take it. Say that plainly
+in your report.
 
 Only if the operator asks for the gauge *by name*, and their own status line is a
 shape you can reason about, the two can share the key — the payload arrives on
@@ -142,8 +137,10 @@ load at startup, so they need a restart.
 
 ## Removing it
 
-Put the two `env` vars back to whatever they were before, and drop
-`subagentStatusLine` only if it is the console's. Ask before dropping
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` — that turns off agent teams themselves,
-not just the console. Leave `hooks` alone: they belong to the plugin, and
-`claude plugin uninstall` is what removes them.
+Put the two `env` vars back to whatever they were before. Drop a
+`subagentStatusLine` only if it is the console's (an earlier version of this
+command wrote it; the plugin carries its own now), and a
+`subagentPromptCacheTtl` of `"1h"` only if the operator agrees. Ask before
+dropping `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` — that turns off agent teams
+themselves, not just the console. Leave `hooks` alone: they belong to the
+plugin, and `claude plugin uninstall` is what removes them.

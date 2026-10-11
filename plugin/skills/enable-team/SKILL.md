@@ -9,8 +9,8 @@ Sets `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (agent teams) and
 `CLAUDE_CODE_ENABLE_TODO_TOOLS` (TaskCreate/TaskList/TaskUpdate/TaskGet on newer
 models) together in the `env` block of `~/.claude/settings.json`.
 
-For a full console install — these two vars plus `subagentStatusLine` — use
-`/setup` instead. This skill is just the fast toggle.
+For a full console install use `/setup` instead; the plugin carries its own
+`subagentStatusLine`. This skill is just the fast toggle.
 
 ## Argument
 
