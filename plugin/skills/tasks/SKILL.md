@@ -126,8 +126,8 @@ The closing message has four parts, in this order. Part 4 is an action, not a qu
 
 | # | Task | Blocked by | Model | Est. |
 |---|---|---|---|---|
-| 3 | Ingest the patch from the session transcript | 2 | sonnet · medium | ≈$1.15 |
-| | **Total** | | | **≈$9.40** |
+| 3 | Ingest the patch from the session transcript | 2 | sonnet · medium | ≈\$1.15 |
+| | **Total** | | | **≈\$9.40** |
 
 3. **The notes** — which tasks are startable now, and any sizing you were unsure about.
 
@@ -199,9 +199,9 @@ an invoice; the console's usage view shows what it actually cost.
 
 | Complexity | haiku | sonnet | opus |
 |---|---|---|---|
-| mechanical | ≈$0.20 | ≈$0.35 | ≈$0.85 |
-| standard | ≈$0.60 | ≈$1.15 | ≈$2.90 |
-| judgment | ≈$1.05 | ≈$2.10 | ≈$5.30 |
+| mechanical | ≈\$0.02 | ≈\$0.35 | ≈\$0.60 |
+| standard | ≈\$0.06 | ≈\$1.15 | ≈\$1.75 |
+| judgment | ≈\$0.11 | ≈\$2.10 | ≈\$3.05 |
 
 **Effort factor:**
 
@@ -214,16 +214,18 @@ output, the expensive class; it also buys more tool calls per task, which is
 why the factor climbs faster than the output share alone. Sum for the total.
 Always draw the figures with `≈$`: they are list price, not a bill.
 
-The sizing table's defaults price as: mechanical · haiku · low ≈$0.15,
-standard · sonnet · medium ≈$1.15, judgment · opus · high ≈$6.90. An
-escalated judgment task, opus · xhigh, is ≈$9.00.
+The sizing table's defaults price as: mechanical · haiku · low ≈\$0.01,
+standard · sonnet · medium ≈\$1.15, judgment · opus · high ≈\$3.95. An
+escalated judgment task, opus · xhigh, is ≈\$5.20.
 
 Behind the cells, one teammate working one task, most of its context served
 from cache: mechanical ≈ 15 turns at 40k context (0.6M cache-read, 8k output,
 60k written or uncached); standard ≈ 40 turns at 70k (2.8M, 25k, 140k);
 judgment ≈ 60 turns at 100k (6M, 40k, 210k). Priced at `catalog.json` rates
-as of 2026-09 (haiku 1/5, sonnet 2/10, opus 5/25 USD per million in/out;
-cache read a tenth of input).
+as of 2026-10 (haiku 0.10/0.50, sonnet 2/10, opus 4/20 USD per million
+in/out; cache reads 0.01, 0.20 and 0.20; written tokens at the 5-minute
+cache-write rate, 0.125, 2.50 and 5; haiku at its rate for prompts up to
+100K tokens).
 
 **Calibrate from the console, not from this table.** After a batch, the usage
 view's cost per task is the real number for this repo. When it disagrees with
