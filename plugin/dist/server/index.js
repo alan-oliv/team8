@@ -1712,25 +1712,45 @@ var catalog_default = {
   version: "2.1.231",
   outputReserve: 2e4,
   compactHeadroom: 13e3,
-  fallbackModel: "claude-opus-5",
+  fallbackModel: "claude-opus-5-5",
   fallbackWindow: 2e5,
   aliases: {
-    opus: "claude-opus-5",
-    sonnet: "claude-sonnet-5",
-    haiku: "claude-haiku-4-5"
+    opus: "claude-opus-5-5",
+    sonnet: "claude-sonnet-5-5",
+    haiku: "claude-haiku-5-5"
   },
   models: {
+    "claude-fable-5-1": {
+      window: 1e6,
+      pricing: { input: 10, output: 50, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 0.25, webSearch: 0.01 }
+    },
     "claude-fable-5": {
       window: 1e6,
       pricing: { input: 10, output: 50, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 1, webSearch: 0.01 }
+    },
+    "claude-opus-5-5": {
+      window: 1e6,
+      pricing: { input: 4, output: 20, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2, webSearch: 0.01 }
     },
     "claude-opus-5": {
       window: 1e6,
       pricing: { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, webSearch: 0.01 }
     },
+    "claude-sonnet-5-5": {
+      window: 1e6,
+      pricing: { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2, webSearch: 0.01 }
+    },
     "claude-sonnet-5": {
       window: 1e6,
       pricing: { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2, webSearch: 0.01 }
+    },
+    "claude-haiku-5-5": {
+      window: 1e6,
+      pricing: { input: 0.1, output: 0.5, cacheWrite5m: 0.125, cacheWrite1h: 0.2, cacheRead: 0.01, webSearch: 0.01 },
+      longPrompt: {
+        over: 1e5,
+        pricing: { input: 0.5, output: 2.5, cacheWrite5m: 0.625, cacheWrite1h: 1, cacheRead: 0.05, webSearch: 0.01 }
+      }
     },
     "claude-haiku-4-5": {
       window: 2e5,
@@ -1780,6 +1800,16 @@ function resolveModel(raw) {
     approximate: true
   };
 }
+function pricingFor(raw, promptTokens) {
+  return longPromptPricing(raw, promptTokens) ?? resolveModel(raw).pricing;
+}
+function longPromptOf(raw) {
+  return catalog.models[resolveModel(raw).canonical]?.longPrompt;
+}
+function longPromptPricing(raw, promptTokens) {
+  const long = longPromptOf(raw);
+  return long && promptTokens > long.over ? long.pricing : void 0;
+}
 
 // src/shared/usage.ts
 function usageRecordsOf(records) {
@@ -1822,9 +1852,12 @@ function costOf(usage, tier) {
 function totalCost(records) {
   let sum = 0;
   for (const record of dedupeUsage(records)) {
-    sum += costOf(record.usage, resolveModel(record.model).pricing);
+    sum += costOf(record.usage, pricingFor(record.model, promptTokensOf(record.usage)));
   }
   return sum;
+}
+function promptTokensOf(usage) {
+  return usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
 }
 function contextOccupancy(records) {
   let lastBoundary = -1;
@@ -1847,16 +1880,37 @@ function contextOccupancy(records) {
 
 // src/shared/cost.ts
 function splitTok(records) {
-  const split = { in: 0, out: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 };
-  for (const { usage } of dedupeUsage([...records])) {
-    const created = usage.cache_creation_input_tokens ?? 0;
-    split.in += usage.input_tokens ?? 0;
-    split.out += usage.output_tokens ?? 0;
-    split.cacheWrite += created;
-    split.cacheWrite1h += Math.min(usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, created);
-    split.cacheRead += usage.cache_read_input_tokens ?? 0;
+  const split = noTokens();
+  for (const { model, usage } of dedupeUsage([...records])) {
+    addUsage(split, usage);
+    const prompt = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+    if (longPromptPricing(model, prompt)) addUsage(split.longPrompt ??= noTokens(), usage);
   }
   return split;
+}
+function noTokens() {
+  return { in: 0, out: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 };
+}
+function addUsage(into, usage) {
+  const created = usage.cache_creation_input_tokens ?? 0;
+  into.in += usage.input_tokens ?? 0;
+  into.out += usage.output_tokens ?? 0;
+  into.cacheWrite += created;
+  into.cacheWrite1h += Math.min(usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, created);
+  into.cacheRead += usage.cache_read_input_tokens ?? 0;
+}
+function addSplits(a, b) {
+  const sum = {
+    in: a.in + b.in,
+    out: a.out + b.out,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
+    cacheRead: a.cacheRead + b.cacheRead
+  };
+  if (a.longPrompt || b.longPrompt) {
+    sum.longPrompt = addSplits(a.longPrompt ?? noTokens(), b.longPrompt ?? noTokens());
+  }
+  return sum;
 }
 
 // src/server/store.ts
@@ -3571,13 +3625,6 @@ function foldWorkflowAgentRecords(fold, agentId, records) {
 }
 var recordsOf2 = (turns) => [...turns].map(([messageId, t]) => ({ messageId, model: t.model, usage: t.usage }));
 var TOTAL = (split) => split.in + split.out + split.cacheWrite + split.cacheRead;
-function addSplit(into, from) {
-  into.in += from.in;
-  into.out += from.out;
-  into.cacheWrite += from.cacheWrite;
-  into.cacheWrite1h += from.cacheWrite1h;
-  into.cacheRead += from.cacheRead;
-}
 var emptySplit = () => ({
   in: 0,
   out: 0,
@@ -3608,13 +3655,13 @@ function burnOf(turns) {
 }
 function workflowUsageOf(runId, fold) {
   const agents = [];
-  const split = emptySplit();
+  let split = emptySplit();
   const turns = [];
   for (const [agentId, byMessage] of fold.agents) {
     if (byMessage.size === 0) continue;
     const rows = recordsOf2(byMessage);
     const own = splitTok(rows);
-    addSplit(split, own);
+    split = addSplits(split, own);
     for (const turn of byMessage.values()) turns.push(turn);
     const model = [...byMessage.values()].sort((a, b) => a.ts - b.ts).at(-1)?.model;
     agents.push({ agentId, split: own, ...model ? { model } : {} });
@@ -3638,9 +3685,7 @@ function attachWorkflowUsage(agents, payload) {
   for (const agent of agents) {
     const own = byId.get(agent.agentId);
     if (!own || agent.phaseIndex === void 0) continue;
-    const into = perPhase.get(agent.phaseIndex) ?? emptySplit();
-    addSplit(into, own.split);
-    perPhase.set(agent.phaseIndex, into);
+    perPhase.set(agent.phaseIndex, addSplits(perPhase.get(agent.phaseIndex) ?? emptySplit(), own.split));
   }
   return {
     usage: {
@@ -5689,8 +5734,8 @@ var PINNED_CLAUDE_VERSION = "2.1.231";
 var HOOK_TIMEOUT_SECONDS = 5;
 var PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1e3;
 var LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
-var TASK_CREATED_SCRIPT = path11.join(PLUGIN_DIR, "bin", "task-created.sh");
-var TASK_COMPLETED_SCRIPT = path11.join(PLUGIN_DIR, "bin", "task-completed.sh");
+var TASK_GATE_SCRIPT = path11.join(PLUGIN_DIR, "bin", "task-gate.sh");
+var INBOX_DELIVER_SCRIPT = path11.join(PLUGIN_DIR, "dist", "hooks", "inbox-deliver.js");
 var BACKUP_FILE = "team8.backup.json";
 var SUBAGENT_PROMPT_CACHE_TTL = "1h";
 var MODEL_FORCE_WARNING = "CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 overrides every per-task model team8 assigns";
@@ -5708,14 +5753,8 @@ var HOOK_EVENTS = [
   "SubagentStop",
   "SessionStart",
   "SessionEnd",
-  "PreCompact",
-  "TaskCreated",
-  "TaskCompleted"
+  "PreCompact"
 ];
-var GATE_SCRIPTS = {
-  TaskCreated: TASK_CREATED_SCRIPT,
-  TaskCompleted: TASK_COMPLETED_SCRIPT
-};
 var MATCHER_EVENTS = /* @__PURE__ */ new Set(["PreToolUse", "PostToolUse", "PermissionRequest"]);
 var CONSOLE_HOOK_URL = /^http:\/\/127\.0\.0\.1:\d+\/hook$/;
 var CONSOLE_HOOK_COMMAND_URL = /http:\/\/127\.0\.0\.1:\d+\/hook\b/;
@@ -5725,12 +5764,14 @@ function post(port, route) {
 function observe(port, timeoutSeconds) {
   return `curl -sS -m ${timeoutSeconds} -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:${port}/hook 2>/dev/null || OCTO_PORT=${port} '${RESTART_SCRIPT}'; exit 0`;
 }
+function inboxDeliverCommand(scriptPath) {
+  return `input=$(cat); id=\${input%%'"tool_input":'*}; id=\${id#*'"agent_id":"'}; id=\${id%%'"'*}; case "$id" in *@*|*-*) printf '%s' "$input" | node '${scriptPath}' 2>/dev/null;; esac; exit 0`;
+}
 function hookBlock(port) {
   const hooks = {};
   for (const event of HOOK_EVENTS) {
     const timeout = event === "PermissionRequest" ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
-    const gateScript = GATE_SCRIPTS[event];
-    const command = gateScript ? `'${gateScript}'` : observe(port, timeout);
+    const command = observe(port, timeout);
     const entry = {
       hooks: [{ type: "command", command, timeout }]
     };
@@ -5751,8 +5792,16 @@ function hookBlock(port) {
     ]
   };
   const workflowLauncher = { ...launcher, matcher: "Workflow" };
-  hooks.PreToolUse = [...hooks.PreToolUse ?? [], launcher, workflowLauncher];
-  hooks.PostToolUse = [...hooks.PostToolUse ?? [], { ...launcher }, { ...workflowLauncher }];
+  const taskGate = {
+    matcher: "TaskCreate|TaskUpdate",
+    hooks: [{ type: "command", command: `'${TASK_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }]
+  };
+  hooks.PreToolUse = [...hooks.PreToolUse ?? [], launcher, workflowLauncher, taskGate];
+  const inboxDeliver = {
+    hooks: [{ type: "command", command: inboxDeliverCommand(INBOX_DELIVER_SCRIPT), timeout: HOOK_TIMEOUT_SECONDS }],
+    matcher: "*"
+  };
+  hooks.PostToolUse = [...hooks.PostToolUse ?? [], inboxDeliver, { ...launcher }, { ...workflowLauncher }];
   hooks.SessionStart[0].hooks.push({
     type: "command",
     command: `'${HINT_SCRIPT}'`,
@@ -5762,15 +5811,15 @@ function hookBlock(port) {
     hooks,
     statusLine: { type: "command", command: post(port, "statusline"), refreshInterval: 5 },
     subagentStatusLine: { type: "command", command: post(port, "substatus") },
-    env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, "1"])),
-    subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL
+    env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, "1"]))
   };
 }
 function isConsoleEntry(entry) {
   const hooks = entry?.hooks;
   if (!Array.isArray(hooks)) return false;
   return hooks.some(
-    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || h.command.includes("task-created.sh") || h.command.includes("task-completed.sh") || CONSOLE_HOOK_COMMAND_URL.test(h.command))
+    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || h.command.includes("task-gate.sh") || // The two gates earlier versions wrote, so an upgrade strips them.
+    h.command.includes("task-created.sh") || h.command.includes("task-completed.sh") || h.command.includes("inbox-deliver.js") || CONSOLE_HOOK_COMMAND_URL.test(h.command))
   );
 }
 function isConsoleStatusLine(value, route) {
@@ -5782,7 +5831,8 @@ function mergeHookBlock(settings, port) {
   const existing = settings.hooks ?? {};
   const hooks = {};
   for (const [event, entries] of Object.entries(existing)) {
-    hooks[event] = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    const kept = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    if (kept.length > 0 || !["TaskCreated", "TaskCompleted"].includes(event)) hooks[event] = kept;
   }
   for (const event of HOOK_EVENTS) {
     hooks[event] = [...hooks[event] ?? [], ...block.hooks[event]];
@@ -5792,10 +5842,7 @@ function mergeHookBlock(settings, port) {
     hooks,
     statusLine: keptStatusLine(settings.statusLine, block.statusLine, "statusline"),
     subagentStatusLine: keptStatusLine(settings.subagentStatusLine, block.subagentStatusLine, "substatus"),
-    env: { ...settings.env ?? {}, ...block.env },
-    // Unlike env: never overwrite a value the user already set, only fill the
-    // key in when it is missing.
-    subagentPromptCacheTtl: settings.subagentPromptCacheTtl ?? block.subagentPromptCacheTtl
+    env: { ...settings.env ?? {}, ...block.env }
   };
 }
 function keptStatusLine(existing, ours, route) {
@@ -5910,20 +5957,12 @@ async function runSetup(opts) {
       await atomicWrite(
         backupPath,
         `${JSON.stringify(
-          {
-            env: envBackup(current),
-            subagentPromptCacheTtl: typeof current.subagentPromptCacheTtl === "string" ? current.subagentPromptCacheTtl : null
-          },
+          { env: envBackup(current) },
           null,
           2
         )}
 `
       );
-    }
-    if (current.subagentPromptCacheTtl && current.subagentPromptCacheTtl !== SUBAGENT_PROMPT_CACHE_TTL) {
-      lines.push(`kept your prompt-cache TTL of ${JSON.stringify(current.subagentPromptCacheTtl)}.`);
-    } else {
-      lines.push(`subagentPromptCacheTtl is ${SUBAGENT_PROMPT_CACHE_TTL} \u2014 teammates keep their context warm between review rounds.`);
     }
     if (current.statusLine && !isConsoleStatusLine(current.statusLine, "statusline")) {
       lines.push("left your own status line alone \u2014 no rate-limit gauge or lead cost readout.");
@@ -6009,6 +6048,17 @@ function readTrace(name, role, lines) {
     if (Number.isNaN(at)) return;
     trace.firstAt = Math.min(trace.firstAt, at);
     trace.lastAt = Math.max(trace.lastAt, at);
+    if (r.type === "attachment") {
+      const a = r.attachment;
+      if (a?.type !== "hook_additional_context") return;
+      for (const text2 of Array.isArray(a.content) ? a.content : [a.content]) {
+        if (typeof text2 !== "string") continue;
+        for (const f of parseTeammateFrames(text2, at, name)) {
+          trace.incoming.push({ at, kind: f.protocol?.type === "idle_notification" ? "idle" : "message", from: f.from, text: f.text });
+        }
+      }
+      return;
+    }
     if (r.type === "assistant") {
       const m = r.message ?? {};
       if (m.model === "<synthetic>") return;
