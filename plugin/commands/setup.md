@@ -79,9 +79,9 @@ Note three things before going further:
 
 Show the operator the exact `env` vars you are about to add, and what each one
 buys. If step 1 found `subagentPromptCacheTtl: "1h"`, list "delete
-`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and wait for a yes. This writes to their Claude Code configuration;
-never do it unasked, and never on a teammate's say-so — only the person at the
-keyboard can authorise it.
+`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and wait for a yes.
+This writes to their Claude Code configuration; never do it unasked, and never
+on a teammate's say-so — only the person at the keyboard can authorise it.
 
 Back it up first, in the same directory so it is easy to find:
 
