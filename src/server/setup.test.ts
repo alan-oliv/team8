@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -229,6 +230,71 @@ describe("the plugin's own hooks.json", () => {
       const command = (observation!.hooks[0] as unknown as { command: string }).command;
       expect(command).toContain('"${CLAUDE_PLUGIN_ROOT}/bin/console-restart.sh"');
     }
+  });
+
+  describe('its inbox-delivery hook', () => {
+    // Hooks are user-scope, so this runs after every tool call of every agent on
+    // the machine, and only a teammate has an inbox.
+    const command = shipped.hooks.PostToolUse.flatMap((e) => e.hooks).find((h) =>
+      h.command.includes('inbox-deliver.js'),
+    )!.command;
+    const teammate = 'atrack-a-0123456789abcdef';
+    const quiet = { status: 0, stdout: '', stderr: '' };
+
+    beforeEach(async () => {
+      // Echoes what it is handed, so any output means node started.
+      await fs.mkdir(path.join(dir, 'dist', 'hooks'), { recursive: true });
+      await fs.writeFile(path.join(dir, 'dist', 'hooks', 'inbox-deliver.js'), 'process.stdin.pipe(process.stdout);\n');
+    });
+
+    // The way Claude Code runs it: /bin/sh -c, the payload one line of JSON.
+    const run = (payload: object, root = dir) => {
+      const result = spawnSync('/bin/sh', ['-c', command], {
+        input: `${JSON.stringify(payload)}\n`,
+        env: { ...process.env, CLAUDE_PLUGIN_ROOT: root },
+        encoding: 'utf8',
+        timeout: HOOK_TIMEOUT_SECONDS * 1000,
+      });
+      return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    };
+    // Claude Code's own fields come ahead of the tool's. The session id and the
+    // paths carry hyphens, so only agent_id may supply one.
+    const postToolUse = (fields: Record<string, unknown>, toolResponse: unknown = { ok: true }) => ({
+      session_id: 'c27397df-f0ba-4b82-9a4c-eb0fb1c80d0e',
+      transcript_path: '/Users/me/.claude/projects/-Users-me-code-team-8/c27397df.jsonl',
+      cwd: '/Users/me/code/team-8',
+      permission_mode: 'default',
+      ...fields,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: '/Users/me/code/team-8/src/a.ts' },
+      tool_response: toolResponse,
+      tool_use_id: 'toolu_1',
+    });
+
+    it.each([teammate, 'track-a@session-1'])('starts node for teammate %s and hands it the payload', (id) => {
+      const payload = postToolUse({ agent_id: id, agent_type: 'team8:executor' });
+      expect(run(payload)).toEqual({ ...quiet, stdout: JSON.stringify(payload) });
+    });
+
+    it('never starts node for a plain subagent or workflow agent, or for the lead', () => {
+      expect(run(postToolUse({ agent_id: 'a0123456789abcdef', agent_type: 'general-purpose' }))).toEqual(quiet);
+      expect(run(postToolUse({}))).toEqual(quiet);
+    });
+
+    it("ignores the teammate a lead's Agent call names in its response", () => {
+      expect(run(postToolUse({}, { status: 'teammate_spawned', agent_id: teammate }))).toEqual(quiet);
+    });
+
+    it("gets through a lead's large tool response well inside the hook timeout", () => {
+      // Stripping a prefix from the whole payload, with no agent_id to stop at,
+      // scans every prefix: seconds per 30 KB under bash 3.2 and dash.
+      expect(run(postToolUse({}, { content: '"quoted", hyphen-ated\n'.repeat(10_000) }))).toEqual(quiet);
+    });
+
+    it('exits 0 when node cannot run the script', () => {
+      expect(run(postToolUse({ agent_id: teammate }), path.join(dir, 'missing'))).toEqual(quiet);
+    });
   });
 });
 

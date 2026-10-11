@@ -111,10 +111,18 @@ function observe(port: number, timeoutSeconds: number): string {
   return `curl -sS -m ${timeoutSeconds} -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:${port}/hook 2>/dev/null || OCTO_PORT=${port} '${RESTART_SCRIPT}'; exit 0`;
 }
 
-// Same bash pre-filter as plugin/hooks/hooks.json: only a teammate's hook
-// carries agent_id, so the lead never starts this.
+// Same sh pre-filter as plugin/hooks/hooks.json. Hooks are user-scope, so this
+// runs after every tool call on the machine, and it starts node for teammates
+// only: a teammate's agent_id is name@team on older builds and
+// a<name>-<16 hex> on 2.1.296, a plain subagent's or workflow agent's is "a"
+// plus hex, and the lead's hook has none, so the last cut stops at the
+// payload's first quote and leaves "{". Claude Code writes the payload with a
+// bare JSON.stringify (no space after a colon), its own fields ahead of
+// tool_input, so agent_id is only looked for there: a prefix strip over a whole
+// lead payload, with no agent_id to stop at, is quadratic in sh and takes
+// seconds on a large tool response.
 function inboxDeliverCommand(scriptPath: string): string {
-  return `input=$(cat); case "$input" in *'"agent_id"'*) printf '%s' "$input" | node '${scriptPath}' 2>/dev/null;; esac; exit 0`;
+  return `input=$(cat); id=\${input%%'"tool_input":'*}; id=\${id#*'"agent_id":"'}; id=\${id%%'"'*}; case "$id" in *@*|*-*) printf '%s' "$input" | node '${scriptPath}' 2>/dev/null;; esac; exit 0`;
 }
 
 export function hookBlock(port: number): HookBlock {
