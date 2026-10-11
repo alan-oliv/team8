@@ -194,9 +194,10 @@ about 1.9× list: player on 09-29 was logged at $80.21, $42.72 at list.
   above, reads 0.1× the input rate. Cache writes are 1.25× (5 minutes) and 2× (1 hour) the input
   rate.
 - `catalog.ts` prices haiku-5-5 by prompt length, the one model with two rate cards.
-- `aliases` follow what 2.1.296 resolves `opus`, `sonnet` and `haiku` to, read from recent spawns'
-  `resolvedModel` or transcript model ids; `version` becomes 2.1.296 and `fallbackModel` the current
-  Opus. Past run logs stay as written.
+- `aliases` follow what 2.1.296 resolves `opus`, `sonnet` and `haiku` to, checked with one headless
+  call per alias; `fallbackModel` becomes the current Opus. `version` stays: it is the console's
+  minimum Claude Code version, pinned to `PINNED_CLAUDE_VERSION` in `setup.ts`. Past run logs stay as
+  written.
 
 ### Acceptance
 `catalog.test.ts`: each new id prices a request to the cent, haiku-5-5 on both sides of 100K, and
