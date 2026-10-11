@@ -29,6 +29,29 @@ function folded(only?: string[]) {
 const agentSplit = (agentId: string) =>
   folded().agents.find((a) => a.agentId === agentId)!.split;
 
+/**
+ * A claude-haiku-5-5 run of two agents, only one of whose prompts went over the
+ * 100K that bills a request on the model's long-prompt card.
+ */
+function haikuFold() {
+  const turn = (id: string, cacheRead: number): TranscriptRecord => ({
+    type: 'assistant',
+    uuid: id,
+    timestamp: '2026-08-30T03:00:00.000Z',
+    message: {
+      id,
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: 1_000, output_tokens: 100, cache_read_input_tokens: cacheRead },
+    },
+  });
+  const fold = emptyWorkflowUsageFold();
+  foldWorkflowAgentRecords(fold, 'a1111111111111111', [turn('m1', 150_000)]);
+  foldWorkflowAgentRecords(fold, 'a2222222222222222', [turn('m2', 20_000)]);
+  return fold;
+}
+
+const CROSSED_SHARE = { in: 1_000, out: 100, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 150_000 };
+
 describe('workflowAgentIdOf', () => {
   it('reads the agentId a workflow transcript is named for', () => {
     expect(workflowAgentIdOf('agent-a2a07e2a8ef27d692.jsonl')).toBe('a2a07e2a8ef27d692');
@@ -152,6 +175,10 @@ describe('the run rollup', () => {
     ]);
     expect(workflowUsageOf(RUN, fold).agents).toEqual([]);
   });
+
+  it('keeps the long-prompt share of the agent whose prompt crossed', () => {
+    expect(workflowUsageOf(RUN, haikuFold()).split.longPrompt).toEqual(CROSSED_SHARE);
+  });
 });
 
 describe('the burn series', () => {
@@ -238,6 +265,17 @@ describe('attaching usage to the run model', () => {
       // phase 2: a6db0927 + a2a07e2a
       { phaseIndex: 2, split: { in: 60, out: 790, cacheWrite: 1700, cacheWrite1h: 0, cacheRead: 28000 } },
     ]);
+  });
+
+  it('keeps the long-prompt share in the phase it rolls up into', () => {
+    const { usage } = attachWorkflowUsage(
+      [
+        { agentId: 'a1111111111111111', state: 'done', phaseIndex: 1 },
+        { agentId: 'a2222222222222222', state: 'done', phaseIndex: 1 },
+      ],
+      workflowUsageOf(RUN, haikuFold()),
+    );
+    expect(usage.byPhase[0].split.longPrompt).toEqual(CROSSED_SHARE);
   });
 
   it('leaves a live run’s phase rollup EMPTY rather than zeroed', () => {

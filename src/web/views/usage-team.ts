@@ -1,5 +1,5 @@
 import type { Agent, MailMessage, Subagent, Task } from '../../shared/domain';
-import { rateOf, usdCost, type ModelRate, type TokenSplit } from '../../shared/cost';
+import { addSplits, rateOf, usdCost, type ModelRate, type TokenSplit } from '../../shared/cost';
 import { resolveModel } from '../../shared/catalog';
 
 export const EMPTY_SPLIT: TokenSplit = { in: 0, out: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 };
@@ -25,16 +25,7 @@ export function splitOf(agent: Agent): TokenSplit | undefined {
 export function sumSplit(agents: readonly Agent[]): TokenSplit | undefined {
   const splits = agents.map(splitOf);
   if (splits.some((s) => s === undefined)) return undefined;
-  return splits.reduce<TokenSplit>((sum, s) => {
-    const split = s!;
-    return {
-      in: sum.in + split.in,
-      out: sum.out + split.out,
-      cacheWrite: sum.cacheWrite + split.cacheWrite,
-      cacheWrite1h: sum.cacheWrite1h + split.cacheWrite1h,
-      cacheRead: sum.cacheRead + split.cacheRead,
-    };
-  }, EMPTY_SPLIT);
+  return splits.reduce<TokenSplit>((sum, s) => addSplits(sum, s!), EMPTY_SPLIT);
 }
 
 /**
@@ -70,8 +61,19 @@ export function dollarsAvoided(agents: readonly Agent[]): number | undefined {
     const split = splitOf(a);
     if (split === undefined) return undefined;
     if (split.cacheRead <= 0) continue;
-    const asInput = usdCost(a.model, { ...EMPTY_SPLIT, in: split.cacheRead });
-    const asCacheRead = usdCost(a.model, { ...EMPTY_SPLIT, cacheRead: split.cacheRead });
+    // A read billed as input leaves its request's prompt the same size, so the
+    // same requests stay on the long-prompt card.
+    const long = split.longPrompt;
+    const asInput = usdCost(a.model, {
+      ...EMPTY_SPLIT,
+      in: split.cacheRead,
+      ...(long && { longPrompt: { ...EMPTY_SPLIT, in: long.cacheRead } }),
+    });
+    const asCacheRead = usdCost(a.model, {
+      ...EMPTY_SPLIT,
+      cacheRead: split.cacheRead,
+      ...(long && { longPrompt: { ...EMPTY_SPLIT, cacheRead: long.cacheRead } }),
+    });
     sum += Math.max(0, asInput - asCacheRead);
   }
   return sum;

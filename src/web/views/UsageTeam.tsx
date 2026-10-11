@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { Agent, TeamState } from '../../shared/domain';
-import { RATES, rateOf } from '../../shared/cost';
+import { RATES, rateOf, type ModelRate } from '../../shared/cost';
 import { formatCost, formatElapsed, formatPct, formatTokens } from '../format';
 import { useAppearance } from '../state/useSettings';
 import { flattenSubagents } from '../../shared/subagents';
@@ -418,6 +418,14 @@ function RateCardPanel({ models }: { models: readonly ModelSpend[] }) {
   const rows = [...catalog, ...unknown];
 
   const CELL: CSSProperties = { width: '52px', flex: 'none', textAlign: 'right' };
+  const cells = (card: Pick<ModelRate, 'input' | 'output' | 'cacheWrite' | 'cacheRead'>) => (
+    <>
+      <span style={CELL}>{card.input.toFixed(2)}</span>
+      <span style={CELL}>{card.output.toFixed(2)}</span>
+      <span style={CELL}>{card.cacheWrite.toFixed(2)}</span>
+      <span style={{ ...CELL, color: 'var(--color-accent-500)' }}>{card.cacheRead.toFixed(2)}</span>
+    </>
+  );
 
   // The card shares its row. On `PANEL` alone its flex basis is its max-content
   // width — the rate note on one line — which took 1272px of a 1480px row and
@@ -436,19 +444,30 @@ function RateCardPanel({ models }: { models: readonly ModelSpend[] }) {
         <span style={CELL}>read</span>
       </div>
       {rows.map((rate) => (
-        <div key={rate.model} data-testid="usage-rate-row" style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--color-neutral-400)' }}>
-          <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>
-            {rate.model}
-            {rate.approximate && (
-              <span data-testid="usage-rate-approx" title="not in catalog.json — priced from the fallback tier" style={{ marginLeft: '5px', color: 'var(--color-accent-400)', fontSize: '10px' }}>
-                approx
+        <div key={rate.model} data-testid="usage-rate-row" style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '11px', color: 'var(--color-neutral-400)' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>
+              {rate.model}
+              {rate.approximate && (
+                <span data-testid="usage-rate-approx" title="not in catalog.json — priced from the fallback tier" style={{ marginLeft: '5px', color: 'var(--color-accent-400)', fontSize: '10px' }}>
+                  approx
+                </span>
+              )}
+            </span>
+            {cells(rate)}
+          </div>
+          {rate.longPrompt && (
+            <div
+              data-testid="usage-rate-long"
+              title={`a request whose prompt — input plus cache reads and writes — is over ${formatTokens(rate.longPrompt.over)} tokens bills every class on this card`}
+              style={{ display: 'flex', gap: '8px', fontSize: '10.5px' }}
+            >
+              <span style={{ flex: 1, minWidth: 0, paddingLeft: '10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-neutral-500)' }}>
+                {`prompt over ${formatTokens(rate.longPrompt.over)}`}
               </span>
-            )}
-          </span>
-          <span style={CELL}>{rate.input.toFixed(2)}</span>
-          <span style={CELL}>{rate.output.toFixed(2)}</span>
-          <span style={CELL}>{rate.cacheWrite.toFixed(2)}</span>
-          <span style={{ ...CELL, color: 'var(--color-accent-500)' }}>{rate.cacheRead.toFixed(2)}</span>
+              {cells(rate.longPrompt)}
+            </div>
+          )}
         </div>
       ))}
       <div data-testid="usage-rate-note" style={PROSE}>

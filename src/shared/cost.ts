@@ -1,5 +1,5 @@
 import catalogJson from './catalog.json';
-import { longPromptPricing, pricingFor, resolveModel, type PricingTier } from './catalog';
+import { longPromptOf, longPromptPricing, pricingFor, resolveModel, type PricingTier } from './catalog';
 import { dedupeUsage, type Usage, type UsageRecord } from './usage';
 
 /**
@@ -53,18 +53,29 @@ export interface ModelRate {
    * exists to prevent, so this rides with every rate.
    */
   approximate: boolean;
+  /**
+   * The second card a request bills on once its prompt is over `over` tokens —
+   * claude-haiku-5-5's. Absent for a model with one card.
+   */
+  longPrompt?: { over: number } & Pick<ModelRate, 'input' | 'output' | 'cacheWrite' | 'cacheWrite1h' | 'cacheRead'>;
 }
+
+const cardOf = (tier: PricingTier) => ({
+  input: tier.input,
+  output: tier.output,
+  cacheWrite: tier.cacheWrite5m,
+  cacheWrite1h: tier.cacheWrite1h,
+  cacheRead: tier.cacheRead,
+});
 
 const rateFromModel = (raw: string): ModelRate => {
   const { canonical, pricing, approximate } = resolveModel(raw);
+  const long = longPromptOf(canonical);
   return {
     model: canonical,
-    input: pricing.input,
-    output: pricing.output,
-    cacheWrite: pricing.cacheWrite5m,
-    cacheWrite1h: pricing.cacheWrite1h,
-    cacheRead: pricing.cacheRead,
+    ...cardOf(pricing),
     approximate,
+    ...(long && { longPrompt: { over: long.over, ...cardOf(long.pricing) } }),
   };
 };
 
@@ -109,6 +120,24 @@ function addUsage(into: TokenSplit, usage: Usage): void {
   into.cacheWrite += created;
   into.cacheWrite1h += Math.min(usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, created);
   into.cacheRead += usage.cache_read_input_tokens ?? 0;
+}
+
+/**
+ * Two splits added class by class, with their long-prompt shares: a sum that
+ * dropped the share would price every crossing request on the short card.
+ */
+export function addSplits(a: TokenSplit, b: TokenSplit): TokenSplit {
+  const sum: TokenSplit = {
+    in: a.in + b.in,
+    out: a.out + b.out,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
+    cacheRead: a.cacheRead + b.cacheRead,
+  };
+  if (a.longPrompt || b.longPrompt) {
+    sum.longPrompt = addSplits(a.longPrompt ?? noTokens(), b.longPrompt ?? noTokens());
+  }
+  return sum;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import catalog from './catalog.json';
-import { RATES, rateOf, splitByModel, splitTok, usdCost, type TokenSplit } from './cost';
+import { RATES, addSplits, rateOf, splitByModel, splitTok, usdCost, type TokenSplit } from './cost';
 import { totalCost, type UsageRecord } from './usage';
 
 interface FixtureRecord {
@@ -51,6 +51,24 @@ describe('RATES', () => {
 
   it('reports catalog rates as exact, not approximate', () => {
     expect(RATES().every((r) => r.approximate)).toBe(false);
+  });
+
+  // The totals price a claude-haiku-5-5 request whose prompt is over 100K on a
+  // second card, so the rate card has to show that card too.
+  it('carries the long-prompt card and the prompt size it starts above, read from the catalog', () => {
+    const long = catalog.models['claude-haiku-5-5'].longPrompt;
+    expect(RATES().find((r) => r.model === 'claude-haiku-5-5')!.longPrompt).toEqual({
+      over: long.over,
+      input: long.pricing.input,
+      output: long.pricing.output,
+      cacheWrite: long.pricing.cacheWrite5m,
+      cacheWrite1h: long.pricing.cacheWrite1h,
+      cacheRead: long.pricing.cacheRead,
+    });
+  });
+
+  it('carries no long-prompt card for a model with one card', () => {
+    expect(RATES().find((r) => r.model === 'claude-opus-5-5')!.longPrompt).toBeUndefined();
   });
 });
 
@@ -193,6 +211,38 @@ describe('splitTok', () => {
 
   it('adds up to nothing when there is nothing to add up', () => {
     expect(splitTok([])).toEqual(empty);
+  });
+});
+
+describe('addSplits', () => {
+  it('adds two splits class by class', () => {
+    expect(
+      addSplits(
+        { in: 1, out: 2, cacheWrite: 3, cacheWrite1h: 1, cacheRead: 4 },
+        { in: 10, out: 20, cacheWrite: 30, cacheWrite1h: 10, cacheRead: 40 },
+      ),
+    ).toStrictEqual({ in: 11, out: 22, cacheWrite: 33, cacheWrite1h: 11, cacheRead: 44 });
+  });
+
+  // A team or run total is priced as one usdCost over a summed split, so a sum
+  // that dropped the share would price every crossing request on the short card.
+  it('carries the long-prompt share from whichever side has one, so the sum prices as its parts do', () => {
+    const crossed = splitTok([
+      record('claude-haiku-5-5', { input_tokens: 2_000, output_tokens: 100, cache_read_input_tokens: 120_000 }),
+    ]);
+    const short = splitTok([
+      record('claude-haiku-5-5', { input_tokens: 2_000, output_tokens: 100, cache_read_input_tokens: 20_000 }),
+    ]);
+    const parts = usdCost('claude-haiku-5-5', crossed) + usdCost('claude-haiku-5-5', short);
+    expect(usdCost('claude-haiku-5-5', addSplits(short, crossed))).toBeCloseTo(parts, 10);
+    expect(usdCost('claude-haiku-5-5', addSplits(crossed, short))).toBeCloseTo(parts, 10);
+    expect(addSplits(crossed, crossed).longPrompt).toEqual({
+      in: 4_000,
+      out: 200,
+      cacheWrite: 0,
+      cacheWrite1h: 0,
+      cacheRead: 240_000,
+    });
   });
 });
 

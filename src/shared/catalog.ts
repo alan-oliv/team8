@@ -74,7 +74,12 @@ export function pricingFor(raw: string | undefined, promptTokens: number): Prici
   return longPromptPricing(raw, promptTokens) ?? resolveModel(raw).pricing;
 }
 
+/** A model's second rate card and the prompt size it starts above; undefined for a model with one card. */
+export function longPromptOf(raw: string | undefined): { over: number; pricing: PricingTier } | undefined {
+  return catalog.models[resolveModel(raw).canonical]?.longPrompt;
+}
+
 export function longPromptPricing(raw: string | undefined, promptTokens: number): PricingTier | undefined {
-  const long = catalog.models[resolveModel(raw).canonical]?.longPrompt;
+  const long = longPromptOf(raw);
   return long && promptTokens > long.over ? long.pricing : undefined;
 }

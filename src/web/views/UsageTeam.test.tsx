@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { FIXTURE_NOW, sampleTeamState } from '../test/state-fixture';
 import { formatCost, formatTokens } from '../format';
+import { pricingFor } from '../../shared/catalog';
 import { dollarsAvoided, seriesColors, spendByModel, subagentSpendUsd } from './usage-team';
 import { DEFAULT_SETTINGS, SettingsContext } from '../state/useSettings';
 import { UsageTeam } from './UsageTeam';
@@ -341,6 +342,28 @@ describe('UsageTeam — donut, rate card, pressure, coordination, worth-it', () 
     const note = screen.getByTestId('usage-rate-note').textContent ?? '';
     expect(note).toContain('5 minutes');
     expect(note).toContain('subagentPromptCacheTtl');
+  });
+
+  // The totals price claude-haiku-5-5's long prompts on its second card, so
+  // the card that shows which rates produced them has to show that one too.
+  it('shows claude-haiku-5-5’s long-prompt card under its row, at the rates its long prompts are priced at', () => {
+    renderUsage();
+    const haiku = screen.getAllByTestId('usage-rate-row').find((r) => r.textContent?.includes('claude-haiku-5-5'))!;
+    const long = within(haiku).getByTestId('usage-rate-long');
+    const card = pricingFor('claude-haiku-5-5', Infinity);
+    expect([...long.children].map((c) => c.textContent)).toEqual([
+      'prompt over 100k',
+      card.input.toFixed(2),
+      card.output.toFixed(2),
+      card.cacheWrite5m.toFixed(2),
+      card.cacheRead.toFixed(2),
+    ]);
+  });
+
+  it('draws no long-prompt line under a model with one card', () => {
+    renderUsage();
+    const opus = screen.getAllByTestId('usage-rate-row').find((r) => r.textContent?.includes('claude-opus-5-5'))!;
+    expect(within(opus).queryByTestId('usage-rate-long')).toBeNull();
   });
 
   it('hides the rate card when the appearance store turns it off', () => {
