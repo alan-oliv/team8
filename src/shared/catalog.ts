@@ -71,7 +71,10 @@ export function resolveModel(raw: string | undefined): ResolvedModel {
  * writes) is over 100K tokens. Every other model has one.
  */
 export function pricingFor(raw: string | undefined, promptTokens: number): PricingTier {
-  const resolved = resolveModel(raw);
-  const long = catalog.models[resolved.canonical]?.longPrompt;
-  return long && promptTokens > long.over ? long.pricing : resolved.pricing;
+  return longPromptPricing(raw, promptTokens) ?? resolveModel(raw).pricing;
+}
+
+export function longPromptPricing(raw: string | undefined, promptTokens: number): PricingTier | undefined {
+  const long = catalog.models[resolveModel(raw).canonical]?.longPrompt;
+  return long && promptTokens > long.over ? long.pricing : undefined;
 }

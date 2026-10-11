@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compactAtFor, pricingFor, resolveModel } from './catalog';
+import { compactAtFor, longPromptPricing, pricingFor, resolveModel } from './catalog';
 
 const usageRecords = JSON.parse(
   readFileSync(new URL('../../fixtures/usage-records.json', import.meta.url), 'utf8'),
@@ -151,5 +151,13 @@ describe('pricingFor', () => {
     expect(pricingFor('haiku', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
     expect(pricingFor('claude-haiku-5-5-20260101', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
     expect(pricingFor('haiku', 200_000).input).toBe(0.5);
+  });
+});
+
+describe('longPromptPricing', () => {
+  it('names a card only for a request that crosses onto its long-prompt card', () => {
+    expect(longPromptPricing('claude-haiku-5-5', 100_000)).toBeUndefined();
+    expect(longPromptPricing('claude-haiku-5-5', 100_001)?.input).toBe(0.5);
+    expect(longPromptPricing('claude-opus-5-5', 900_000)).toBeUndefined();
   });
 });

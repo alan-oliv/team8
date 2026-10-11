@@ -157,6 +157,40 @@ describe('splitTok', () => {
     expect(split.cacheWrite1h).toBe(600);
   });
 
+  // claude-haiku-5-5 bills a whole request on a second card once its prompt
+  // (input plus cache reads and writes) is over 100K. The four classes still
+  // count every token; the crossing requests ride along as a subset.
+  it('carries the requests billed on a long-prompt card as a subset of the four classes', () => {
+    const split = splitTok([
+      record('claude-haiku-5-5', {
+        input_tokens: 1_000,
+        output_tokens: 10,
+        cache_read_input_tokens: 90_000,
+        cache_creation_input_tokens: 9_001,
+        cache_creation: { ephemeral_1h_input_tokens: 4_000 },
+      }, 'over'),
+      record('claude-haiku-5-5', {
+        input_tokens: 1_000,
+        output_tokens: 20,
+        cache_read_input_tokens: 90_000,
+        cache_creation_input_tokens: 9_000,
+      }, 'at'),
+    ]);
+    expect(split).toEqual({
+      in: 2_000,
+      out: 30,
+      cacheWrite: 18_001,
+      cacheWrite1h: 4_000,
+      cacheRead: 180_000,
+      longPrompt: { in: 1_000, out: 10, cacheWrite: 9_001, cacheWrite1h: 4_000, cacheRead: 90_000 },
+    });
+  });
+
+  it('leaves the long-prompt subset off a model with one card, however long its prompt', () => {
+    const split = splitTok([record('claude-opus-5-5', { input_tokens: 900_000, output_tokens: 1 })]);
+    expect(split.longPrompt).toBeUndefined();
+  });
+
   it('adds up to nothing when there is nothing to add up', () => {
     expect(splitTok([])).toEqual(empty);
   });
@@ -253,5 +287,24 @@ describe('reconciliation with the spend the status bar ticks', () => {
     const byModel = splitByModel(withTtl);
     const summed = byModel.reduce((s, m) => s + usdCost(m.model, m.split), 0);
     expect(summed).toBeCloseTo(totalCost(withTtl), 10);
+  });
+
+  // The workflow view prices each agent as one usdCost over its whole split, so
+  // the split itself has to remember which of its requests crossed.
+  it('matches totalCost for a claude-haiku-5-5 agent whose prompts cross onto its long-prompt card', () => {
+    const haiku = [
+      record('claude-haiku-5-5', {
+        input_tokens: 3_000,
+        output_tokens: 2_000,
+        cache_read_input_tokens: 150_000,
+        cache_creation_input_tokens: 5_000,
+      }, 'long'),
+      record('claude-haiku-5-5', {
+        input_tokens: 3_000,
+        output_tokens: 2_000,
+        cache_read_input_tokens: 40_000,
+      }, 'short'),
+    ];
+    expect(usdCost('claude-haiku-5-5', splitTok(haiku))).toBeCloseTo(totalCost(haiku), 10);
   });
 });
