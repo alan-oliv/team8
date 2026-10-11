@@ -336,8 +336,8 @@ describe('UsageTeam — donut, rate card, pressure, coordination, worth-it', () 
   it('shows the derived cache-write and cache-read columns and the 5-minute TTL footnote', () => {
     renderUsage();
     const opus = screen.getAllByTestId('usage-rate-row').find((r) => r.textContent?.includes('claude-opus-5'))!;
-    expect(opus.textContent).toContain('6.25'); // 1.25x input
-    expect(opus.textContent).toContain('0.50'); // 0.1x input
+    expect(opus.textContent).toContain('5.00'); // 1.25x input
+    expect(opus.textContent).toContain('0.20'); // 0.05x input on Opus 5.5
     const note = screen.getByTestId('usage-rate-note').textContent ?? '';
     expect(note).toContain('5 minutes');
     expect(note).toContain('subagentPromptCacheTtl');
