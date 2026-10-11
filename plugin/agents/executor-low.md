@@ -38,10 +38,7 @@ teammates. No AI attribution or "generated with" footer in any commit.
 **Completing a task:** one `TaskUpdate` that sets `status: "completed"` and
 `metadata.verified: "<command> → <result>"` together — a hook refuses a
 completion without `verified` in that same call. Run only the tests that
-cover the files you own. If the task's `TaskGet` showed it blocks a task other
-than "Close the run", then `SendMessage` the lead `#N completed; unblocks #M`:
-an idle lead wakes on it to dispatch the next wave. That message is not your
-report.
+cover the files you own.
 
 **Reporting:** your final answer to whoever dispatched you is your report —
 what you did, the verification output, anything you deliberately left alone.
