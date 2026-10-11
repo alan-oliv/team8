@@ -23,14 +23,6 @@ import {
 interface ObserveHook { type: string; command: string; timeout: number }
 interface HookEntry { matcher?: string; hooks: ObserveHook[] }
 
-// TaskCreated/TaskCompleted run a local gate script, not the curl-to-console
-// observation every other event carries — excluded from the generic
-// observation-shape assertions below and covered by their own tests instead.
-const GATE_EVENTS = ['TaskCreated', 'TaskCompleted'] as const;
-const OBSERVED_EVENTS = HOOK_EVENTS.filter(
-  (e) => !(GATE_EVENTS as readonly string[]).includes(e),
-);
-
 let dir: string;
 
 beforeEach(async () => {
@@ -49,15 +41,16 @@ describe('hookBlock', () => {
 
   it('registers every event as a command hook posting to the right port', () => {
     expect(Object.keys(block.hooks)).toEqual([...HOOK_EVENTS]);
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const entries = block.hooks[event] as HookEntry[];
-      // Both tool arms carry two extra entries: the command-hook launcher on
+      // Both tool arms carry three extra entries: the command-hook launcher on
       // the Agent tool, and the same launcher on Workflow — a different tool,
-      // which the Agent matcher can never see. PostToolUse carries one more:
-      // the inbox-delivery hook, gated on agent_id so the lead never starts it.
+      // which the Agent matcher can never see. The third is PreToolUse's task
+      // gate, and PostToolUse's inbox-delivery hook, gated on agent_id so the
+      // lead never starts it.
       const carriesLauncher = event === 'PreToolUse' || event === 'PostToolUse';
-      const extra = event === 'PostToolUse' ? 1 : 0;
-      expect(entries).toHaveLength((carriesLauncher ? 3 : 1) + extra);
+      expect(entries).toHaveLength(carriesLauncher ? 4 : 1);
+      expect(entries.filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(event === 'PreToolUse' ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
       // SessionStart carries one extra hook: a pure nudge toward /team8:console
@@ -73,15 +66,15 @@ describe('hookBlock', () => {
     }
   });
 
-  it.each(GATE_EVENTS)('registers %s as a single unmatched gate-script hook', (event) => {
-    const entries = block.hooks[event] as HookEntry[];
-    expect(entries).toHaveLength(1);
-    expect(entries[0].matcher).toBeUndefined();
-    expect(entries[0].hooks).toHaveLength(1);
-    expect(entries[0].hooks[0].type).toBe('command');
-    const scriptName = event === 'TaskCreated' ? 'task-created.sh' : 'task-completed.sh';
-    expect(entries[0].hooks[0].command).toContain(scriptName);
-    expect(entries[0].hooks[0].command).not.toContain('http://127.0.0.1');
+  it('registers the task gate on PreToolUse, for TaskCreate and TaskUpdate only', () => {
+    const gates = (block.hooks.PreToolUse as HookEntry[]).filter((e) => e.matcher === 'TaskCreate|TaskUpdate');
+    expect(gates).toHaveLength(1);
+    expect(gates[0].hooks).toHaveLength(1);
+    expect(gates[0].hooks[0].type).toBe('command');
+    expect(gates[0].hooks[0].command).toContain('task-gate.sh');
+    expect(gates[0].hooks[0].command).not.toContain('http://127.0.0.1');
+    expect(Object.keys(block.hooks)).not.toContain('TaskCreated');
+    expect(Object.keys(block.hooks)).not.toContain('TaskCompleted');
   });
 
   it('sets an explicit timeout on every entry, long only for the deliberate hold', () => {
@@ -184,8 +177,7 @@ describe("the plugin's own hooks.json", () => {
       command
         .replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>')
         .replace(/(['"])[^'"]*\/bin\/console-hint\.sh\1/, '<hint>')
-        .replace(/(['"])[^'"]*\/bin\/task-created\.sh\1/, '<task-created>')
-        .replace(/(['"])[^'"]*\/bin\/task-completed\.sh\1/, '<task-completed>')
+        .replace(/(['"])[^'"]*\/bin\/task-gate\.sh\1/, '<task-gate>')
         .replace(/(['"])[^'"]*\/dist\/hooks\/inbox-deliver\.js\1/, '<inbox-deliver>');
     const normalise = (entries: HookEntry[]) =>
       JSON.stringify(
@@ -230,7 +222,7 @@ describe("the plugin's own hooks.json", () => {
   });
 
   it('resolves the restarter through the plugin root too', () => {
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const observation = shipped.hooks[event].find(
         (e) => e.matcher !== 'Agent' && e.matcher !== 'Workflow',
       );
@@ -247,7 +239,7 @@ describe('a POST that finds nothing listening', () => {
   // the refusal never reaches the operator's screen.
   it('falls back to the restarter on every observed event', () => {
     const block = hookBlock(4823);
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const command = (block.hooks[event][0].hooks[0] as unknown as { command: string }).command;
       expect(command).toContain('|| OCTO_PORT=4823 ');
       expect(command).toContain('console-restart.sh');
@@ -325,28 +317,32 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(removeHookBlock(original)).toEqual(original);
   });
 
-  it('writes both task gate hooks', () => {
+  it('writes the task gate on PreToolUse', () => {
     const merged = mergeHookBlock({}, 4823) as { hooks: Record<string, HookEntry[]> };
-    expect(merged.hooks.TaskCreated[0].hooks[0].command).toContain('task-created.sh');
-    expect(merged.hooks.TaskCompleted[0].hooks[0].command).toContain('task-completed.sh');
+    const gate = merged.hooks.PreToolUse.find((e) => e.matcher === 'TaskCreate|TaskUpdate');
+    expect(gate?.hooks[0].command).toContain('task-gate.sh');
+    expect(merged.hooks.TaskCreated).toBeUndefined();
+    expect(merged.hooks.TaskCompleted).toBeUndefined();
   });
 
-  it('uninstall removes both task gate hooks', () => {
-    const cleaned = removeHookBlock(mergeHookBlock({}, 4823)) as { hooks?: Record<string, unknown[]> };
-    expect(cleaned.hooks?.TaskCreated ?? []).toHaveLength(0);
-    expect(cleaned.hooks?.TaskCompleted ?? []).toHaveLength(0);
+  it('uninstall removes the task gate', () => {
+    const cleaned = removeHookBlock(mergeHookBlock({}, 4823)) as { hooks?: Record<string, HookEntry[]> };
+    expect((cleaned.hooks?.PreToolUse ?? []).filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(0);
   });
 
-  it('keeps an unrelated user hook on TaskCompleted', () => {
-    const original = {
-      hooks: { TaskCompleted: [{ hooks: [{ type: 'command', command: 'notify-slack' }] }] },
+  it("an upgrade strips the old gate entries and keeps a user's own hook beside them", () => {
+    const old = {
+      hooks: {
+        TaskCreated: [{ hooks: [{ type: 'command', command: "'/x/plugin/bin/task-created.sh'", timeout: 5 }] }],
+        TaskCompleted: [
+          { hooks: [{ type: 'command', command: "'/x/plugin/bin/task-completed.sh'", timeout: 5 }] },
+          { hooks: [{ type: 'command', command: 'notify-slack' }] },
+        ],
+      },
     };
-    const merged = mergeHookBlock(original, 4823) as { hooks: Record<string, HookEntry[]> };
-    expect(merged.hooks.TaskCompleted.map((e) => e.hooks[0].command)).toEqual(
-      expect.arrayContaining(['notify-slack']),
-    );
-    const cleaned = removeHookBlock(merged) as { hooks?: Record<string, HookEntry[]> };
-    expect(cleaned.hooks?.TaskCompleted).toEqual(original.hooks.TaskCompleted);
+    const merged = mergeHookBlock(old, 4823) as { hooks: Record<string, HookEntry[]> };
+    expect(merged.hooks.TaskCreated).toBeUndefined();
+    expect(merged.hooks.TaskCompleted.map((e) => e.hooks[0].command)).toEqual(['notify-slack']);
   });
 });
 

@@ -221,6 +221,60 @@ describe('console-hint.sh', () => {
   });
 });
 
+describe('task-gate.sh', () => {
+  const gate = (payload: unknown) => script('task-gate.sh', [], JSON.stringify(payload));
+  const create = (metadata?: Record<string, unknown>) => ({
+    tool_name: 'TaskCreate',
+    tool_input: { subject: 's', description: 'd', ...(metadata ? { metadata } : {}) },
+  });
+  const complete = (opts: { agentId?: string; verified?: string }) => ({
+    tool_name: 'TaskUpdate',
+    ...(opts.agentId ? { agent_id: opts.agentId } : {}),
+    tool_input: { taskId: '3', status: 'completed', ...(opts.verified ? { metadata: { verified: opts.verified } } : {}) },
+  });
+
+  it('passes a task that carries none of the four keys — a todo list, not a team8 task', async () => {
+    expect((await gate(create())).code).toBe(0);
+  });
+
+  it('refuses a team8 task missing some of its four keys, naming them', async () => {
+    const run = await gate(create({ model: 'sonnet', effort: 'medium' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('complexity, why');
+  });
+
+  it('passes a team8 task with all four keys', async () => {
+    const run = await gate(create({ complexity: 'standard', model: 'sonnet', effort: 'medium', why: 'one layer' }));
+    expect(run.code).toBe(0);
+  });
+
+  it("refuses a teammate's completion without verified in the same call", async () => {
+    const run = await gate(complete({ agentId: 'track-a@session-1' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('#3');
+    expect(run.stderr).toContain('verified');
+  });
+
+  it("passes a teammate's completion that carries verified", async () => {
+    const run = await gate(complete({ agentId: 'track-a@session-1', verified: 'npx vitest run → 12 passed' }));
+    expect(run.code).toBe(0);
+  });
+
+  it("passes the lead's own completion", async () => {
+    expect((await gate(complete({}))).code).toBe(0);
+  });
+
+  it('passes any other TaskUpdate', async () => {
+    const run = await gate({ tool_name: 'TaskUpdate', agent_id: 'a', tool_input: { taskId: '3', metadata: { progress: 50 } } });
+    expect(run.code).toBe(0);
+  });
+
+  it('passes input it cannot read', async () => {
+    expect((await script('task-gate.sh', [], 'not json')).code).toBe(0);
+    expect((await script('task-gate.sh', [], '')).code).toBe(0);
+  });
+});
+
 describe('console-open.sh', () => {
   const opener = async () => {
     const file = path.join(root, 'open.sh');

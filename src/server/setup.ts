@@ -19,9 +19,8 @@ export const HOOK_TIMEOUT_SECONDS = 5;
 /** The hook's timeout has to cover the hold window the handler actually uses. */
 export const PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1000;
 export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
-/** Absolute paths to the two task gates, used by hookBlock(). */
-export const TASK_CREATED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-created.sh');
-export const TASK_COMPLETED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-completed.sh');
+/** Absolute path to the task gate, used by hookBlock(). */
+export const TASK_GATE_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-gate.sh');
 /** The bundled inbox-delivery hook, used by hookBlock(); matches plugin/hooks/hooks.json. */
 export const INBOX_DELIVER_SCRIPT = path.join(PLUGIN_DIR, 'dist', 'hooks', 'inbox-deliver.js');
 /** Where the user's own env values are stashed while the console owns them. */
@@ -54,16 +53,7 @@ export const HOOK_EVENTS = [
   'SessionStart',
   'SessionEnd',
   'PreCompact',
-  'TaskCreated',
-  'TaskCompleted',
 ] as const;
-
-// The two gate events run a local script instead of the curl-to-console
-// observation every other event carries, and fire with no matcher.
-const GATE_SCRIPTS: Partial<Record<(typeof HOOK_EVENTS)[number], string>> = {
-  TaskCreated: TASK_CREATED_SCRIPT,
-  TaskCompleted: TASK_COMPLETED_SCRIPT,
-};
 
 const MATCHER_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PermissionRequest']);
 // Anchored form for the old `http`-type entries this version no longer
@@ -135,8 +125,7 @@ export function hookBlock(port: number): HookBlock {
     // event must not be able to stall the agent's turn.
     const timeout =
       event === 'PermissionRequest' ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
-    const gateScript = GATE_SCRIPTS[event];
-    const command = gateScript ? `'${gateScript}'` : observe(port, timeout);
+    const command = observe(port, timeout);
     const entry: HookEntry = {
       hooks: [{ type: 'command', command, timeout }],
     };
@@ -174,7 +163,14 @@ export function hookBlock(port: number): HookBlock {
   // team either, which is why it needs its own matcher rather than a looser
   // one: the launcher points the console at the session instead.
   const workflowLauncher: HookEntry = { ...launcher, matcher: 'Workflow' };
-  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher];
+  // The task gate reads only the call's input, so it runs on the tool call
+  // itself; on TaskCreated/TaskCompleted it had to find the task's file and
+  // could read the wrong list. Matches hooks/hooks.json, after the launchers.
+  const taskGate: HookEntry = {
+    matcher: 'TaskCreate|TaskUpdate',
+    hooks: [{ type: 'command', command: `'${TASK_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }],
+  };
+  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher, taskGate];
   // Hands a busy teammate its unread messages after its next tool call; the
   // lead's hooks carry no agent_id and never start it. Matches
   // plugin/hooks/hooks.json, right after the observation curl entry.
@@ -211,6 +207,8 @@ function isConsoleEntry(entry: unknown): boolean {
       (h?.type === 'command' &&
         typeof h.command === 'string' &&
         (h.command.includes('console-launch.sh') ||
+          h.command.includes('task-gate.sh') ||
+          // The two gates earlier versions wrote, so an upgrade strips them.
           h.command.includes('task-created.sh') ||
           h.command.includes('task-completed.sh') ||
           h.command.includes('inbox-deliver.js') ||
@@ -231,7 +229,10 @@ export function mergeHookBlock(
   const existing = (settings.hooks ?? {}) as Record<string, unknown[]>;
   const hooks: Record<string, unknown[]> = {};
   for (const [event, entries] of Object.entries(existing)) {
-    hooks[event] = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    const kept = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    // An event this version no longer writes, like the old TaskCreated and
+    // TaskCompleted gates, goes once nothing of the user's is left on it.
+    if (kept.length > 0 || (HOOK_EVENTS as readonly string[]).includes(event)) hooks[event] = kept;
   }
   for (const event of HOOK_EVENTS) {
     hooks[event] = [...(hooks[event] ?? []), ...block.hooks[event]];
