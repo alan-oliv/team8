@@ -6,13 +6,15 @@ wave notifier.
 
 ## Decisions
 
-- **Additive until general availability.** Every mod feature leaves today's behaviour standing when
-  its module does not load: the rollout flag `tengu_plugin_hooks_modules` off, a build that strips
-  `modules` (2.1.76 does), a teammate in a pane of its own. No classic path is deleted.
-- **Scope: the wave notifier only.** Everything else in the mods section is settled without a mod
+- **Mods are the default path.** A mod feature replaces the classic path it covers instead of
+  running beside it. Accepted cost: in a session where the module does not load (the rollout flag
+  `tengu_plugin_hooks_modules` off, as this machine saw once on 10-11; a build that strips
+  `modules`, as 2.1.76 does; a teammate in a pane of its own), that feature is simply absent.
+- **Scope: the wave notifier only.** The rest of the mods section is settled without a mod
   (mid-turn delivery by `src/hooks/inbox-deliver.ts`, task gates, git guards, report size, resume
-  hint), cannot be done by one (`Agent` `effort` never reaches a named teammate), or waits for
-  general availability (pushing events into the console, C7). A status line has no measured pain.
+  hint), cannot be done by one (`Agent` `effort` never reaches a named teammate), or has no measured
+  pain (a status line). Moving existing classic hooks into the module (delivery, the task gate, the
+  console's curl ingest) is a later batch.
 - **A console band above the prompt** was proposed and deferred to a fuller mod later.
 
 ## Probes (2026-10-11, Claude Code 2.1.296)
@@ -64,18 +66,20 @@ September, none measured in October.
   never held or changed. `notified` is a module variable, so a reload can repeat one notice; the
   code marks it with a `ponytail:` comment naming `$.state` as the upgrade.
 - **`plugin/hooks/hooks.json`** gains `"modules": ["./wave-notify.ts"]` beside `hooks`, and its
-  description gains a sentence for the module: what it watches, that it only wakes the lead, and
-  that nothing changes when it does not load.
-- **`plugin/skills/run/SKILL.md`**, teammates paragraph, one sentence: a team8 unblock notice and an
-  executor's "#N completed; unblocks #M" are one event; before spawning, check `TaskList` and the
-  roster, and never spawn a name that is already running.
-- `executor.md` keeps its message: it is the path when the module does not load.
+  description gains a sentence for the module: what it watches, and that it only wakes the lead.
+- **`plugin/agents/executor.md`** drops the "#N completed; unblocks #M" message (the sentence from
+  "If the task's `TaskGet` showed it blocks" to "That message is not your report."): the module
+  replaces it. `npm run agents` regenerates `executor-low/high/xhigh.md` from it.
+- **`plugin/skills/run/SKILL.md`**, teammates paragraph, one sentence: each later wave starts on a
+  team8 unblock notice, which names each unblocked task whose owner is idle or not running; message
+  an idle owner, and spawn one that is not running under the name its tasks carry.
 
 ### Acceptance
 - `src/hooks/wave.test.ts` (vitest): an absent owner and a `killed` one give `not running`; an
   `idle` owner gives `idle`; a `running` owner, a task still blocked, `team-lead`'s task, an unowned
   task, a task not `pending` and an id in `notified` give nothing.
-- `npm test` and `npm run typecheck` pass.
+- `npm test` (the agent-variants drift test included) and `npm run typecheck` pass;
+  `grep -rn 'unblocks #M' plugin` finds nothing.
 - `claude plugin validate plugin` passes and lists the `tool.call{tool=TaskUpdate}` hook.
 - The lead's live check at the close: copy `plugin/hooks/wave.ts` and `wave-notify.ts` into this
   session's dev-mods folder under a plugin of another name, rerun the probe's setup (A owned by a
@@ -89,5 +93,5 @@ since Claude Code compiles it.
 
 ## Out of scope
 
-The console band above the prompt (a fuller mod, later); a `$.ui.status` line; pushing events into
-the console; anything that would replace a classic hook before general availability.
+The console band above the prompt (a fuller mod, later); a `$.ui.status` line; moving the other
+classic hooks into the module (a later batch).
