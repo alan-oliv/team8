@@ -22,9 +22,10 @@ run logs and the 2.1.296 binary, plus two probes run on 2026-10-11. Mods get the
 
 - One branch, `fixes`, cut from `main` in `~/code/team8`. `plugin/dist` is never committed.
 - Section 3 lands first and alone: it is a merge, and a merge in a shared checkout must not meet a
-  neighbour's staged files. Sections 1 and 4 then share one track (`hooks.json`, `setup.ts`, the bin
-  scripts, `console-scripts.test.ts`); sections 2 and 5 share the other (the skills and agent files),
-  which also writes section 1's lines in `executor.md` and `run`.
+  neighbour's staged files. Then three tracks: sections 1, 4 and 6's server half (`hooks.json`,
+  `setup.ts`, `lifecycle.ts`, the bin scripts, `plugin/settings.json` and their tests); sections 2, 5
+  and 6's `setup.md` (the skills, agent and command files, including section 1's lines in
+  `executor.md` and `run`); section 7 (`src/shared/catalog.*`).
 
 ## 1. One task gate
 
@@ -98,24 +99,32 @@ Tests, typecheck and build pass on `fixes`. After the batch, in a session starte
 `claude --plugin-dir ~/code/team8/plugin`, the five-sleep probe shows the message after the next
 tool call instead of at turn end; this needs a fresh interactive session and is the user's check.
 
-## 4. Resume hint
+## 4. `console-hint.sh`: a resume hint, no startup nudge
 
 ### Problem
-`/resume` drops in-process teammates; `run`'s "After a resume" covers it, but nothing tells the lead
-it happened. `console-hint.sh` runs on every SessionStart and throws the payload away.
+- `/resume` drops in-process teammates; `run`'s "After a resume" covers it, but nothing tells the
+  lead it happened. `console-hint.sh` runs on every SessionStart and throws the payload away.
+- Every session on the machine starts with "team8 console available - run /team8:console to open
+  it", team8 run or not.
 
 ### Decision
+- Drop the nudge. `console-hint.sh` prints nothing unless it replaced an older console ("team8
+  console updated to …", unchanged) or the resume hint below applies. The comments that describe it
+  as a nudge follow: the script's header, the `hooks.json` description, `src/server/lifecycle.ts:36`,
+  `src/server/setup.ts:172` and `src/server/setup.test.ts:61`.
 - `console-hint.sh` reads the payload. When `source` is `resume` and
   `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/teams/session-<first 8 of session_id>/config.json` exists, its
   output adds `hookSpecificOutput.additionalContext`: "team8: this session was resumed and its
   in-process teammates are gone. Before messaging any of them, run TaskList, set each in_progress
   task whose owner is gone back to pending, and respawn its track per team8:run, After a resume."
 - 2.1.296 names a team after its lead's session, so the check is one file test, not
-  `console-launch.sh`'s team resolution. The existing `systemMessage` lines stay. Without `jq`, no hint.
+  `console-launch.sh`'s team resolution. Without `jq`, no hint.
 
 ### Acceptance
-`console-scripts.test.ts`: resume with the team's `config.json` present carries the context; resume
-without it, and `startup` with it, do not; the `systemMessage` cases still pass.
+`console-scripts.test.ts`: a start that replaces nothing prints nothing (the "leaves a console of the
+same or a newer build alone" case stops expecting the nudge); the upgrade cases still print their
+`systemMessage`; resume with the team's `config.json` present carries the context; resume without
+it, and `startup` with it, do not.
 
 ## 5. Prose fixes
 
@@ -135,13 +144,67 @@ without it, and `startup` with it, do not; the `systemMessage` cases still pass.
 - **Effort wording.** `src/server/agent-variants.ts:5` and `run/SKILL.md:229` say the Agent tool has
   no `effort` parameter. It has one; it does not reach a teammate (Probes). The 09-30 speed spec is a
   record and stays as written.
-- **`setup.md` step 3.** Line 25 lists `subagentPromptCacheTtl: "1h"`; step 3 is headed "Write only
-  these two keys" and omits it. Step 3 writes three keys, the TTL only when absent.
 - **Variants.** `executor.md` and `reviewer.md` change, so `npm run agents` regenerates
   `executor-low/high/xhigh` and `reviewer-light`, and the drift test passes.
+
+## 6. Setup: no cache TTL, the status line from the plugin
+
+### Problem
+- `/team8:setup` runs once per machine, so nothing added to it later reaches an existing install,
+  and what it writes into `~/.claude/settings.json` applies to every session.
+- `subagentPromptCacheTtl: "1h"` is one of those. It reaches in-process teammates (their cache writes
+  went from 5-minute to 1-hour on 10-07, when setup added it), but also every subagent, workflow agent
+  and helper request on the machine. Over 262 team8 teammates from 09-10 to 10-11 it nets −$7.49 on
+  $762.50 of spend at list prices, and the sign flips with the price table. It pays only for opus
+  executors with large contexts that wait 5–60 minutes between review rounds (speakers-playback,
+  +$16); sonnet executors and reviewers lose. A plugin cannot ship it: a plugin's own `settings.json`
+  accepts only `agent` and `subagentStatusLine`, and an agent file's `experimental.cacheTtl` is
+  dropped for in-process teammates.
+- `subagentStatusLine` is the other key a plugin's `settings.json` accepts, as the lowest-precedence
+  layer, so it can ship with the plugin and reach every install on update.
+
+### Decision
+- **No TTL.** `setup.md` drops it (the line 25 bullet and anything in step 3). `src/server/setup.ts`
+  stops adding it and stops reporting it; uninstall still removes a `"1h"` it finds, since earlier
+  setups wrote one. A machine that has the key removes it by hand.
+- **Status line from the plugin.** `plugin/settings.json` carries the console's `subagentStatusLine`,
+  the same command `setup.md` writes today (the `curl` to `127.0.0.1:4823/substatus` ending in
+  `printf ''`). `setup.md` stops writing it, so step 3 writes only `env`; a user's own
+  `subagentStatusLine` still wins, as today. `setup.ts` keeps its status-line handling, which serves
+  its `--port` installs.
+
+### Acceptance
+`setup.test.ts`: the written block carries no TTL and uninstall still removes `"1h"`.
+`claude plugin validate plugin` accepts `plugin/settings.json`. The user's check, in a fresh session
+started with `claude --plugin-dir ~/code/team8/plugin` and no user-level `subagentStatusLine`: the
+console's per-agent current-tool line updates for teammates.
+
+## 7. Prices for the current models
+
+### Problem
+`src/shared/catalog.json` stops at Claude Code 2.1.231: no `claude-opus-5-5`, `claude-fable-5-1`,
+`claude-sonnet-5-5` or `claude-haiku-5-5`. `claude-opus-5-5` is priced as `claude-opus-5` ($5 input
+and $0.50 cache reads instead of $4 and $0.20), so the console and `measure` put opus-5-5 agents at
+about 1.9× list: player on 09-29 was logged at $80.21, $42.72 at list.
+
+### Decision
+- Add the four models from the claude-api skill's `shared/models.md` (2.1.296 bundle), all 1M
+  context: opus-5-5 $4 / $20, cache reads $0.20; fable-5-1 $10 / $50, reads $0.25; sonnet-5-5
+  $2 / $10, reads $0.20; haiku-5-5 $0.10 / $0.50 for a prompt up to 100K tokens and $0.50 / $2.50
+  above, reads 0.1× the input rate. Cache writes are 1.25× (5 minutes) and 2× (1 hour) the input
+  rate.
+- `catalog.ts` prices haiku-5-5 by prompt length, the one model with two rate cards.
+- `aliases` follow what 2.1.296 resolves `opus`, `sonnet` and `haiku` to, read from recent spawns'
+  `resolvedModel` or transcript model ids; `version` becomes 2.1.296 and `fallbackModel` the current
+  Opus. Past run logs stay as written.
+
+### Acceptance
+`catalog.test.ts`: each new id prices a request to the cent, haiku-5-5 on both sides of 100K, and
+each alias resolves to the id 2.1.296 uses.
 
 ## Out of scope
 
 Mods (own spec); the git guard hook; dropping `reviewer-light` (needs a probe that the parameter
-beats a subagent's `effort:` frontmatter); a status line; `autoCompactWindow` (applies at each new
-prompt, per the binary; belongs with the cost work); speed PRs 3–4 (`2026-09-30-team8-speed-design.md`).
+beats a subagent's `effort:` frontmatter); a status line showing each teammate's task;
+`autoCompactWindow` (applies at each new prompt, per the binary; belongs with the cost work); speed
+PRs 3–4 (`2026-09-30-team8-speed-design.md`).

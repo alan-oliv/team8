@@ -243,7 +243,15 @@ qualquer conta.
   cache de 5 minutos. O ganho também é menor do que a melhoria 2 diz: no track-e só
   uma pausa passou de 5 minutos (8,5 min), e a releitura fria de 141k tokens foi
   uns 9% do custo do track. O resto dos ≈$4,35, contra ≈$1,15 estimado, foi o
-  trabalho das três rodadas, a maior parte no teste.
+  trabalho das três rodadas, a maior parte no teste. Medido em 262 teammates do
+  team8 (09-10 a 10-11), o TTL de 1h empata: −$7,49 em $762,50 a preço de lista, e
+  o sinal muda com a tabela de preços. Só compensa para executores opus com
+  contexto grande que esperam 5 a 60 min entre rodadas de revisão. Como a chave é
+  global, desde 10-07 todo subagent da máquina paga a escrita de 1h. Um plugin não
+  consegue escopar a chave: o `settings.json` de plugin só aceita `agent` e
+  `subagentStatusLine`, e o `experimental.cacheTtl` do arquivo de agente não chega a
+  teammates in-process. Decisão (spec `2026-10-11-team8-fixes-design.md`): o setup
+  deixa de gravar o TTL.
 - **Opcional: `autoCompactWindow` no `executor.md`.** Arquivos de agente de plugin
   aceitam a chave, e o binário mostra que ela vale para teammates in-process: a
   cada mensagem nova, o runner compacta o histórico que passa do
