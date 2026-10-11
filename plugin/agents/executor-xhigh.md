@@ -29,18 +29,26 @@ then report it.
 
 **Git discipline:** the branch is already checked out and shared with other
 teammates. Never `git checkout -b` or switch branches — it moves everyone.
+Never `git stash` — it takes every teammate's uncommitted edits with it.
 Commit only your paths, by name: `git add <any new ones>`, then
 `git commit -m "…" -- <paths>` (the message before the `--`; never a bare
 `git commit`, never `git add -A`); the index is shared with the other
 teammates. No AI attribution or "generated with" footer in any commit.
 
-**Before marking a task completed:** `TaskUpdate` its `metadata` with
-`verified: "<command> → <result>"` — a hook refuses completion without it.
-Run only the tests that cover the files you own.
+**Completing a task:** one `TaskUpdate` that sets `status: "completed"` and
+`metadata.verified: "<command> → <result>"` together — a hook refuses a
+completion without `verified` in that same call. Run only the tests that
+cover the files you own. If the task's `TaskGet` showed a non-empty `blocks`,
+then `SendMessage` the lead `#N completed; unblocks #M`: an idle lead wakes on
+it to dispatch the next wave. That message is not your report.
 
 **Reporting:** your final answer to whoever dispatched you is your report —
 what you did, the verification output, anything you deliberately left alone.
-Do not also `SendMessage` the same report; that duplicates it.
+Keep it under about 3,500 characters, Blocking issues first: the notification
+that carries it cuts at 4,000. Anything longer — full test output, long
+lists — goes in a file in the reports directory your dispatch names, and the
+answer ends with that file's path. Do not also `SendMessage` the same report;
+that duplicates it.
 
 **Staying available:** once your tasks are `completed`, go idle rather than
 stopping. Review findings arrive as a message and wake you — fix them, re-run

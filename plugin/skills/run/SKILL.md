@@ -179,6 +179,8 @@ file ownership**, and the dispatch prompt is where you create it:
 - One shared branch for the batch, unless step 2a derived otherwise. They share a
   checkout, so they share HEAD: a teammate running `git checkout -b` moves
   everyone. Create the branch yourself before dispatching.
+- Never `git stash`: the working tree is shared, so a stash takes every
+  teammate's uncommitted edits with it.
 - A test failure in a file a teammate does not own means a neighbour was
   mid-edit. Re-run once, then report it — never fix another teammate's file.
 - A commit can fail on an index lock. Wait, retry.
@@ -208,7 +210,8 @@ reviewer, and the executor stays alive until its track is clear.
    runs at high effort and carries no Edit or Write, so read-only is enforced), model sized like the
    track's biggest task (sonnet for standard, opus for judgment), with: the diff path,
    the task descriptions (`TaskGet` each, paste them), the plan sections those
-   tasks name, and the global constraints. Two verdicts, both required: does
+   tasks name, the global constraints, and the reports directory
+   (`<scratchpad>/reports/`) for findings over about 3,500 characters. Two verdicts, both required: does
    the diff do what the tasks say, nothing more and nothing less; and is it
    well built — tests that assert something, no duplication of a block that
    exists, no scope beyond the tasks. Findings labelled Blocking or Minor,
@@ -227,8 +230,9 @@ reviewer, and the executor stays alive until its track is clear.
 Spawn every executor from the definition that matches its task's `effort`:
 `team8:executor-low` for low, `team8:executor` for medium, `team8:executor-high`
 for high, and `team8:executor-xhigh` for xhigh or max. Spawn every reviewer as
-`subagent_type: "team8:reviewer"`, which runs at high. The Agent tool has no effort
-parameter, and an agent whose definition sets no `effort` inherits the lead's
+`subagent_type: "team8:reviewer"`, which runs at high. The Agent tool's `effort`
+parameter never reaches a teammate (Claude Code 2.1.296 drops it on a named
+spawn), and an agent whose definition sets no `effort` inherits the lead's
 `/effort`, so the definition is the only way a task's effort reaches its agent.
 A definition's `tools` list applies to a
 teammate and its body is appended to the teammate's prompt, so the reviewer's
@@ -273,16 +277,19 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    push lands in it and you just report that."
    For the commit case: "Commit on `<branch>` the same way. Do not push."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
-7. **Close out.** "Before each task closes, `TaskUpdate` its `metadata` with
-   `verified: "<command> → <result>"` — the part 5 commands and their one-line
-   outcome. A `TaskCompleted` hook refuses a completion without it. Then
-   `TaskUpdate` the task to `completed`. Your final answer IS the report — what
-   you did, the verification output, and anything you deliberately left alone.
-   Your idle notification carries it to the lead, so do not also send it by
-   `SendMessage`. Then go idle: idle is how you stay available — never poll the
-   task list waiting. The lead's message with review findings wakes you; fix,
-   re-run the covering tests, push, and answer again. Stop only when the lead
-   says the track is clear."
+7. **Close out.** "Close each task with one `TaskUpdate` that sets
+   `status: "completed"` and `metadata.verified: "<command> → <result>"`
+   together — the part 5 commands and their one-line outcome. A hook refuses a
+   completion without `verified` in that same call. Your final answer IS the
+   report — what you did, the verification output, and anything you
+   deliberately left alone — under about 3,500 characters, Blocking issues
+   first: the idle notification that carries it to the lead cuts at 4,000.
+   Anything longer goes in a file in `<scratchpad>/reports/`, and the answer
+   ends with its path. Do not also send the report by `SendMessage`. Then go
+   idle: idle is how you stay available — never poll the task list waiting.
+   The lead's message with review findings wakes you; fix, re-run the covering
+   tests, push, and answer again. Stop only when the lead says the track is
+   clear." Write your real scratchpad path in place of `<scratchpad>`.
 
 ## The Run Log at Close
 
