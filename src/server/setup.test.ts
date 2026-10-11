@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,14 +24,6 @@ import {
 interface ObserveHook { type: string; command: string; timeout: number }
 interface HookEntry { matcher?: string; hooks: ObserveHook[] }
 
-// TaskCreated/TaskCompleted run a local gate script, not the curl-to-console
-// observation every other event carries — excluded from the generic
-// observation-shape assertions below and covered by their own tests instead.
-const GATE_EVENTS = ['TaskCreated', 'TaskCompleted'] as const;
-const OBSERVED_EVENTS = HOOK_EVENTS.filter(
-  (e) => !(GATE_EVENTS as readonly string[]).includes(e),
-);
-
 let dir: string;
 
 beforeEach(async () => {
@@ -49,18 +42,21 @@ describe('hookBlock', () => {
 
   it('registers every event as a command hook posting to the right port', () => {
     expect(Object.keys(block.hooks)).toEqual([...HOOK_EVENTS]);
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const entries = block.hooks[event] as HookEntry[];
-      // Both tool arms carry two extra entries: the command-hook launcher on
+      // Both tool arms carry three extra entries: the command-hook launcher on
       // the Agent tool, and the same launcher on Workflow — a different tool,
-      // which the Agent matcher can never see.
+      // which the Agent matcher can never see. The third is PreToolUse's task
+      // gate, and PostToolUse's inbox-delivery hook, gated on agent_id so the
+      // lead never starts it.
       const carriesLauncher = event === 'PreToolUse' || event === 'PostToolUse';
-      expect(entries).toHaveLength(carriesLauncher ? 3 : 1);
+      expect(entries).toHaveLength(carriesLauncher ? 4 : 1);
+      expect(entries.filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(event === 'PreToolUse' ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
-      // SessionStart carries one extra hook: a pure nudge toward /team8:console
-      // for sessions that never spawn a team or workflow, appended to the same
-      // entry as the observation curl below.
+      // SessionStart carries one extra hook, console-hint.sh (console upgrades
+      // and the resume note), appended to the same entry as the observation
+      // curl below.
       expect(entries[0].hooks).toHaveLength(event === 'SessionStart' ? 2 : 1);
       // A command hook, not an http one: Claude Code renders an http hook's
       // connection refusal as a "<event> hook error" on EVERY tool call while
@@ -71,15 +67,15 @@ describe('hookBlock', () => {
     }
   });
 
-  it.each(GATE_EVENTS)('registers %s as a single unmatched gate-script hook', (event) => {
-    const entries = block.hooks[event] as HookEntry[];
-    expect(entries).toHaveLength(1);
-    expect(entries[0].matcher).toBeUndefined();
-    expect(entries[0].hooks).toHaveLength(1);
-    expect(entries[0].hooks[0].type).toBe('command');
-    const scriptName = event === 'TaskCreated' ? 'task-created.sh' : 'task-completed.sh';
-    expect(entries[0].hooks[0].command).toContain(scriptName);
-    expect(entries[0].hooks[0].command).not.toContain('http://127.0.0.1');
+  it('registers the task gate on PreToolUse, for TaskCreate and TaskUpdate only', () => {
+    const gates = (block.hooks.PreToolUse as HookEntry[]).filter((e) => e.matcher === 'TaskCreate|TaskUpdate');
+    expect(gates).toHaveLength(1);
+    expect(gates[0].hooks).toHaveLength(1);
+    expect(gates[0].hooks[0].type).toBe('command');
+    expect(gates[0].hooks[0].command).toContain('task-gate.sh');
+    expect(gates[0].hooks[0].command).not.toContain('http://127.0.0.1');
+    expect(Object.keys(block.hooks)).not.toContain('TaskCreated');
+    expect(Object.keys(block.hooks)).not.toContain('TaskCompleted');
   });
 
   it('sets an explicit timeout on every entry, long only for the deliberate hold', () => {
@@ -176,13 +172,14 @@ describe("the plugin's own hooks.json", () => {
     // The curl call wrapped around it is still compared in full, so the copies
     // still cannot drift to different ports, timeouts or routes. The SessionStart
     // hint script (absolute path here, ${CLAUDE_PLUGIN_ROOT} there) is the same
-    // kind of legitimate difference, so it is masked the same way.
+    // kind of legitimate difference, so it is masked the same way. So is the
+    // inbox-delivery hook's own script path.
     const maskRestart = (command: string) =>
       command
         .replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>')
         .replace(/(['"])[^'"]*\/bin\/console-hint\.sh\1/, '<hint>')
-        .replace(/(['"])[^'"]*\/bin\/task-created\.sh\1/, '<task-created>')
-        .replace(/(['"])[^'"]*\/bin\/task-completed\.sh\1/, '<task-completed>');
+        .replace(/(['"])[^'"]*\/bin\/task-gate\.sh\1/, '<task-gate>')
+        .replace(/(['"])[^'"]*\/dist\/hooks\/inbox-deliver\.js\1/, '<inbox-deliver>');
     const normalise = (entries: HookEntry[]) =>
       JSON.stringify(
         entries.map((e) =>
@@ -226,13 +223,91 @@ describe("the plugin's own hooks.json", () => {
   });
 
   it('resolves the restarter through the plugin root too', () => {
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const observation = shipped.hooks[event].find(
         (e) => e.matcher !== 'Agent' && e.matcher !== 'Workflow',
       );
       const command = (observation!.hooks[0] as unknown as { command: string }).command;
       expect(command).toContain('"${CLAUDE_PLUGIN_ROOT}/bin/console-restart.sh"');
     }
+  });
+
+  describe('its inbox-delivery hook', () => {
+    // Hooks are user-scope, so this runs after every tool call of every agent on
+    // the machine, and only a teammate has an inbox.
+    const command = shipped.hooks.PostToolUse.flatMap((e) => e.hooks).find((h) =>
+      h.command.includes('inbox-deliver.js'),
+    )!.command;
+    const teammate = 'atrack-a-0123456789abcdef';
+    const quiet = { status: 0, stdout: '', stderr: '' };
+
+    beforeEach(async () => {
+      // Echoes what it is handed, so any output means node started.
+      await fs.mkdir(path.join(dir, 'dist', 'hooks'), { recursive: true });
+      await fs.writeFile(path.join(dir, 'dist', 'hooks', 'inbox-deliver.js'), 'process.stdin.pipe(process.stdout);\n');
+    });
+
+    // The way Claude Code runs it: /bin/sh -c, the payload one line of JSON.
+    const run = (payload: object, root = dir) => {
+      const result = spawnSync('/bin/sh', ['-c', command], {
+        input: `${JSON.stringify(payload)}\n`,
+        env: { ...process.env, CLAUDE_PLUGIN_ROOT: root },
+        encoding: 'utf8',
+        timeout: HOOK_TIMEOUT_SECONDS * 1000,
+      });
+      return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    };
+    // Claude Code's own fields come ahead of the tool's. The session id and the
+    // paths carry hyphens, so only agent_id may supply one.
+    const postToolUse = (fields: Record<string, unknown>, toolResponse: unknown = { ok: true }) => ({
+      session_id: 'c27397df-f0ba-4b82-9a4c-eb0fb1c80d0e',
+      transcript_path: '/Users/me/.claude/projects/-Users-me-code-team-8/c27397df.jsonl',
+      cwd: '/Users/me/code/team-8',
+      permission_mode: 'default',
+      ...fields,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: '/Users/me/code/team-8/src/a.ts' },
+      tool_response: toolResponse,
+      tool_use_id: 'toolu_1',
+    });
+
+    it.each([teammate, 'track-a@session-1'])('starts node for teammate %s and hands it the payload', (id) => {
+      const payload = postToolUse({ agent_id: id, agent_type: 'team8:executor' });
+      expect(run(payload)).toEqual({ ...quiet, stdout: JSON.stringify(payload) });
+    });
+
+    it('never starts node for a plain subagent or workflow agent, or for the lead', () => {
+      expect(run(postToolUse({ agent_id: 'a0123456789abcdef', agent_type: 'general-purpose' }))).toEqual(quiet);
+      expect(run(postToolUse({}))).toEqual(quiet);
+    });
+
+    it("ignores the teammate a lead's Agent call names in its response", () => {
+      expect(run(postToolUse({}, { status: 'teammate_spawned', agent_id: teammate }))).toEqual(quiet);
+    });
+
+    it("gets through a lead's large tool response well inside the hook timeout", () => {
+      // Stripping a prefix from the whole payload, with no agent_id to stop at,
+      // scans every prefix: seconds per 30 KB under bash 3.2 and dash.
+      expect(run(postToolUse({}, { content: '"quoted", hyphen-ated\n'.repeat(10_000) }))).toEqual(quiet);
+    });
+
+    it('exits 0 when node cannot run the script', () => {
+      expect(run(postToolUse({ agent_id: teammate }), path.join(dir, 'missing'))).toEqual(quiet);
+    });
+  });
+});
+
+describe("the plugin's own settings.json", () => {
+  // A plugin's settings.json may carry only `agent` and `subagentStatusLine`
+  // (Claude Code 2.1.296), as the lowest-precedence layer. This one carries the
+  // console's status line, the same command the installer writes on the
+  // default port, so the two cannot drift.
+  it('carries exactly the subagent status line the installer writes on the default port', () => {
+    const shipped = JSON.parse(
+      readFileSync(new URL('../../plugin/settings.json', import.meta.url), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(shipped).toEqual({ subagentStatusLine: hookBlock(4823).subagentStatusLine });
   });
 });
 
@@ -243,7 +318,7 @@ describe('a POST that finds nothing listening', () => {
   // the refusal never reaches the operator's screen.
   it('falls back to the restarter on every observed event', () => {
     const block = hookBlock(4823);
-    for (const event of OBSERVED_EVENTS) {
+    for (const event of HOOK_EVENTS) {
       const command = (block.hooks[event][0].hooks[0] as unknown as { command: string }).command;
       expect(command).toContain('|| OCTO_PORT=4823 ');
       expect(command).toContain('console-restart.sh');
@@ -305,15 +380,15 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(removeHookBlock(off)).toEqual(off);
   });
 
-  it('sets the teammate prompt-cache TTL to an hour when absent', () => {
-    const merged = mergeHookBlock({}, 4823);
-    expect(merged.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
-    expect(removeHookBlock(merged).subagentPromptCacheTtl).toBeUndefined();
+  it('no longer writes a prompt-cache TTL, and removes the one earlier setups wrote', () => {
+    expect(mergeHookBlock({}, 4823).subagentPromptCacheTtl).toBeUndefined();
+    expect(removeHookBlock({ subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL }).subagentPromptCacheTtl).toBeUndefined();
   });
 
-  it("keeps the user's own prompt-cache TTL", () => {
-    const withTtl = { subagentPromptCacheTtl: '30m' };
-    expect(mergeHookBlock(withTtl, 4823).subagentPromptCacheTtl).toBe('30m');
+  it("leaves the user's own prompt-cache TTL alone", () => {
+    const withTtl = { subagentPromptCacheTtl: '5m' };
+    expect(mergeHookBlock(withTtl, 4823).subagentPromptCacheTtl).toBe('5m');
+    expect(removeHookBlock(withTtl).subagentPromptCacheTtl).toBe('5m');
   });
 
   it('leaves a settings file with no console hooks untouched', () => {
@@ -321,28 +396,37 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(removeHookBlock(original)).toEqual(original);
   });
 
-  it('writes both task gate hooks', () => {
+  it('writes the task gate on PreToolUse', () => {
     const merged = mergeHookBlock({}, 4823) as { hooks: Record<string, HookEntry[]> };
-    expect(merged.hooks.TaskCreated[0].hooks[0].command).toContain('task-created.sh');
-    expect(merged.hooks.TaskCompleted[0].hooks[0].command).toContain('task-completed.sh');
+    const gate = merged.hooks.PreToolUse.find((e) => e.matcher === 'TaskCreate|TaskUpdate');
+    expect(gate?.hooks[0].command).toContain('task-gate.sh');
+    expect(merged.hooks.TaskCreated).toBeUndefined();
+    expect(merged.hooks.TaskCompleted).toBeUndefined();
   });
 
-  it('uninstall removes both task gate hooks', () => {
-    const cleaned = removeHookBlock(mergeHookBlock({}, 4823)) as { hooks?: Record<string, unknown[]> };
-    expect(cleaned.hooks?.TaskCreated ?? []).toHaveLength(0);
-    expect(cleaned.hooks?.TaskCompleted ?? []).toHaveLength(0);
+  it("keeps a user's own empty event key", () => {
+    const merged = mergeHookBlock({ hooks: { Elicitation: [] } }, 4823) as { hooks: Record<string, unknown[]> };
+    expect(merged.hooks.Elicitation).toEqual([]);
   });
 
-  it('keeps an unrelated user hook on TaskCompleted', () => {
-    const original = {
-      hooks: { TaskCompleted: [{ hooks: [{ type: 'command', command: 'notify-slack' }] }] },
+  it('uninstall removes the task gate', () => {
+    const cleaned = removeHookBlock(mergeHookBlock({}, 4823)) as { hooks?: Record<string, HookEntry[]> };
+    expect((cleaned.hooks?.PreToolUse ?? []).filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(0);
+  });
+
+  it("an upgrade strips the old gate entries and keeps a user's own hook beside them", () => {
+    const old = {
+      hooks: {
+        TaskCreated: [{ hooks: [{ type: 'command', command: "'/x/plugin/bin/task-created.sh'", timeout: 5 }] }],
+        TaskCompleted: [
+          { hooks: [{ type: 'command', command: "'/x/plugin/bin/task-completed.sh'", timeout: 5 }] },
+          { hooks: [{ type: 'command', command: 'notify-slack' }] },
+        ],
+      },
     };
-    const merged = mergeHookBlock(original, 4823) as { hooks: Record<string, HookEntry[]> };
-    expect(merged.hooks.TaskCompleted.map((e) => e.hooks[0].command)).toEqual(
-      expect.arrayContaining(['notify-slack']),
-    );
-    const cleaned = removeHookBlock(merged) as { hooks?: Record<string, HookEntry[]> };
-    expect(cleaned.hooks?.TaskCompleted).toEqual(original.hooks.TaskCompleted);
+    const merged = mergeHookBlock(old, 4823) as { hooks: Record<string, HookEntry[]> };
+    expect(merged.hooks.TaskCreated).toBeUndefined();
+    expect(merged.hooks.TaskCompleted.map((e) => e.hooks[0].command)).toEqual(['notify-slack']);
   });
 });
 
@@ -465,32 +549,21 @@ describe('runSetup', () => {
     expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ env: mine });
   });
 
-  it('writes the prompt-cache TTL when absent, and takes it off on uninstall', async () => {
+  it('writes no prompt-cache TTL and says nothing about one', async () => {
     const settingsPath = path.join(dir, 'settings.json');
-    await runSetup({ settingsPath, port: 4823, confirm: true });
-    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
-      subagentPromptCacheTtl: string;
-    };
-    expect(installed.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
-
-    await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
-    const after = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { subagentPromptCacheTtl?: unknown };
-    expect(after.subagentPromptCacheTtl).toBeUndefined();
+    const output = await runSetup({ settingsPath, port: 4823, confirm: true });
+    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { subagentPromptCacheTtl?: unknown };
+    expect(installed.subagentPromptCacheTtl).toBeUndefined();
+    expect(output).not.toContain('subagentPromptCacheTtl');
+    expect(output).not.toContain('prompt-cache TTL');
   });
 
-  it("keeps and restores the user's own prompt-cache TTL", async () => {
+  it('uninstall still puts back the TTL an earlier install recorded', async () => {
     const settingsPath = path.join(dir, 'settings.json');
-    await fs.writeFile(settingsPath, JSON.stringify({ subagentPromptCacheTtl: '30m' }, null, 2));
-
-    const output = await runSetup({ settingsPath, port: 4823, confirm: true });
-    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
-      subagentPromptCacheTtl: string;
-    };
-    expect(installed.subagentPromptCacheTtl).toBe('30m');
-    expect(output).toContain('kept your prompt-cache TTL of "30m"');
-
+    await fs.writeFile(settingsPath, JSON.stringify({ subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL }, null, 2));
+    await fs.writeFile(backupPathFor(settingsPath), JSON.stringify({ env: {}, subagentPromptCacheTtl: '5m' }, null, 2));
     await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
-    expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ subagentPromptCacheTtl: '30m' });
+    expect(JSON.parse(await fs.readFile(settingsPath, 'utf8')).subagentPromptCacheTtl).toBe('5m');
   });
 
   it('warns when the model-force flag is set in settings env, and not otherwise', async () => {

@@ -19,15 +19,16 @@ export const HOOK_TIMEOUT_SECONDS = 5;
 /** The hook's timeout has to cover the hold window the handler actually uses. */
 export const PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1000;
 export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
-/** Absolute paths to the two task gates, used by hookBlock(). */
-export const TASK_CREATED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-created.sh');
-export const TASK_COMPLETED_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-completed.sh');
+/** Absolute path to the task gate, used by hookBlock(). */
+export const TASK_GATE_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-gate.sh');
+/** The bundled inbox-delivery hook, used by hookBlock(); matches plugin/hooks/hooks.json. */
+export const INBOX_DELIVER_SCRIPT = path.join(PLUGIN_DIR, 'dist', 'hooks', 'inbox-deliver.js');
 /** Where the user's own env values are stashed while the console owns them. */
 export const BACKUP_FILE = 'team8.backup.json';
-// The agent-teams doc: an in-process teammate's prompt cache holds 5 minutes
-// by default; this key stretches it to an hour so a fix round that starts
-// 3-10 minutes after the last one still reads its context warm instead of
-// paying for a cold re-read every round.
+// Earlier setups wrote this teammate prompt-cache TTL. The key is global, so
+// every subagent on the machine paid the 1-hour write price, and over 262
+// team8 teammates the warm re-reads it bought only broke even. Setup no longer
+// writes it; uninstall still removes it.
 export const SUBAGENT_PROMPT_CACHE_TTL = '1h';
 export const MODEL_FORCE_WARNING =
   'CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 overrides every per-task model team8 assigns';
@@ -52,16 +53,7 @@ export const HOOK_EVENTS = [
   'SessionStart',
   'SessionEnd',
   'PreCompact',
-  'TaskCreated',
-  'TaskCompleted',
 ] as const;
-
-// The two gate events run a local script instead of the curl-to-console
-// observation every other event carries, and fire with no matcher.
-const GATE_SCRIPTS: Partial<Record<(typeof HOOK_EVENTS)[number], string>> = {
-  TaskCreated: TASK_CREATED_SCRIPT,
-  TaskCompleted: TASK_COMPLETED_SCRIPT,
-};
 
 const MATCHER_EVENTS = new Set(['PreToolUse', 'PostToolUse', 'PermissionRequest']);
 // Anchored form for the old `http`-type entries this version no longer
@@ -94,7 +86,6 @@ export interface HookBlock {
   statusLine: StatusLineCommand;
   subagentStatusLine: StatusLineCommand;
   env: Record<string, string>;
-  subagentPromptCacheTtl: string;
 }
 
 function post(port: number, route: string): string {
@@ -120,6 +111,20 @@ function observe(port: number, timeoutSeconds: number): string {
   return `curl -sS -m ${timeoutSeconds} -X POST -H 'content-type: application/json' --data-binary @- http://127.0.0.1:${port}/hook 2>/dev/null || OCTO_PORT=${port} '${RESTART_SCRIPT}'; exit 0`;
 }
 
+// Same sh pre-filter as plugin/hooks/hooks.json. Hooks are user-scope, so this
+// runs after every tool call on the machine, and it starts node for teammates
+// only: a teammate's agent_id is name@team on older builds and
+// a<name>-<16 hex> on 2.1.296, a plain subagent's or workflow agent's is "a"
+// plus hex, and the lead's hook has none, so the last cut stops at the
+// payload's first quote and leaves "{". Claude Code writes the payload with a
+// bare JSON.stringify (no space after a colon), its own fields ahead of
+// tool_input, so agent_id is only looked for there: a prefix strip over a whole
+// lead payload, with no agent_id to stop at, is quadratic in sh and takes
+// seconds on a large tool response.
+function inboxDeliverCommand(scriptPath: string): string {
+  return `input=$(cat); id=\${input%%'"tool_input":'*}; id=\${id#*'"agent_id":"'}; id=\${id%%'"'*}; case "$id" in *@*|*-*) printf '%s' "$input" | node '${scriptPath}' 2>/dev/null;; esac; exit 0`;
+}
+
 export function hookBlock(port: number): HookBlock {
   const hooks: Record<string, HookEntry[]> = {};
   for (const event of HOOK_EVENTS) {
@@ -127,8 +132,7 @@ export function hookBlock(port: number): HookBlock {
     // event must not be able to stall the agent's turn.
     const timeout =
       event === 'PermissionRequest' ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
-    const gateScript = GATE_SCRIPTS[event];
-    const command = gateScript ? `'${gateScript}'` : observe(port, timeout);
+    const command = observe(port, timeout);
     const entry: HookEntry = {
       hooks: [{ type: 'command', command, timeout }],
     };
@@ -166,12 +170,26 @@ export function hookBlock(port: number): HookBlock {
   // team either, which is why it needs its own matcher rather than a looser
   // one: the launcher points the console at the session instead.
   const workflowLauncher: HookEntry = { ...launcher, matcher: 'Workflow' };
-  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher];
-  hooks.PostToolUse = [...(hooks.PostToolUse ?? []), { ...launcher }, { ...workflowLauncher }];
+  // The task gate reads only the call's input, so it runs on the tool call
+  // itself; on TaskCreated/TaskCompleted it had to find the task's file and
+  // could read the wrong list. Matches hooks/hooks.json, after the launchers.
+  const taskGate: HookEntry = {
+    matcher: 'TaskCreate|TaskUpdate',
+    hooks: [{ type: 'command', command: `'${TASK_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }],
+  };
+  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher, taskGate];
+  // Hands a busy teammate its unread messages after its next tool call; the
+  // lead's hooks carry no agent_id and never start it. Matches
+  // plugin/hooks/hooks.json, right after the observation curl entry.
+  const inboxDeliver: HookEntry = {
+    hooks: [{ type: 'command', command: inboxDeliverCommand(INBOX_DELIVER_SCRIPT), timeout: HOOK_TIMEOUT_SECONDS }],
+    matcher: '*',
+  };
+  hooks.PostToolUse = [...(hooks.PostToolUse ?? []), inboxDeliver, { ...launcher }, { ...workflowLauncher }];
 
-  // A pure nudge toward /team8:console for sessions that never spawn a team
-  // or workflow. Appended to the same entry as the observation curl, matching
-  // hooks/hooks.json, and never starts the server itself.
+  // Upgrades an older console and, after a resume, tells a lead its teammates
+  // are gone. Appended to the same entry as the observation curl, matching
+  // hooks/hooks.json, and never starts a console that is not running.
   hooks.SessionStart[0].hooks.push({
     type: 'command',
     command: `'${HINT_SCRIPT}'`,
@@ -183,7 +201,6 @@ export function hookBlock(port: number): HookBlock {
     statusLine: { type: 'command', command: post(port, 'statusline'), refreshInterval: 5 },
     subagentStatusLine: { type: 'command', command: post(port, 'substatus') },
     env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, '1'])),
-    subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL,
   };
 }
 
@@ -196,8 +213,11 @@ function isConsoleEntry(entry: unknown): boolean {
       (h?.type === 'command' &&
         typeof h.command === 'string' &&
         (h.command.includes('console-launch.sh') ||
+          h.command.includes('task-gate.sh') ||
+          // The two gates earlier versions wrote, so an upgrade strips them.
           h.command.includes('task-created.sh') ||
           h.command.includes('task-completed.sh') ||
+          h.command.includes('inbox-deliver.js') ||
           CONSOLE_HOOK_COMMAND_URL.test(h.command))),
   );
 }
@@ -215,7 +235,10 @@ export function mergeHookBlock(
   const existing = (settings.hooks ?? {}) as Record<string, unknown[]>;
   const hooks: Record<string, unknown[]> = {};
   for (const [event, entries] of Object.entries(existing)) {
-    hooks[event] = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    const kept = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
+    // The old TaskCreated and TaskCompleted gates go once nothing of the
+    // user's is left on them; every other event keeps its key as before.
+    if (kept.length > 0 || !['TaskCreated', 'TaskCompleted'].includes(event)) hooks[event] = kept;
   }
   for (const event of HOOK_EVENTS) {
     hooks[event] = [...(hooks[event] ?? []), ...block.hooks[event]];
@@ -226,10 +249,6 @@ export function mergeHookBlock(
     statusLine: keptStatusLine(settings.statusLine, block.statusLine, 'statusline'),
     subagentStatusLine: keptStatusLine(settings.subagentStatusLine, block.subagentStatusLine, 'substatus'),
     env: { ...((settings.env ?? {}) as Record<string, unknown>), ...block.env },
-    // Unlike env: never overwrite a value the user already set, only fill the
-    // key in when it is missing.
-    subagentPromptCacheTtl:
-      (settings.subagentPromptCacheTtl as string | undefined) ?? block.subagentPromptCacheTtl,
   };
 }
 
@@ -304,7 +323,8 @@ export async function readClaudeVersion(): Promise<string | null> {
 
 interface SettingsBackup {
   env: Record<string, string | null>;
-  subagentPromptCacheTtl: string | null;
+  /** Only in backups an earlier install wrote. */
+  subagentPromptCacheTtl?: string | null;
 }
 
 function envBackup(settings: Record<string, unknown>): Record<string, string | null> {
@@ -381,25 +401,16 @@ export async function runSetup(opts: {
     await fs.rm(backupPath, { force: true });
   } else {
     // Stash once: a second install would otherwise record the console's own
-    // "1" (or "1h") as if it were the user's.
+    // "1" as if it were the user's.
     if (saved === null) {
       await atomicWrite(
         backupPath,
         `${JSON.stringify(
-          {
-            env: envBackup(current),
-            subagentPromptCacheTtl:
-              typeof current.subagentPromptCacheTtl === 'string' ? current.subagentPromptCacheTtl : null,
-          },
+          { env: envBackup(current) },
           null,
           2,
         )}\n`,
       );
-    }
-    if (current.subagentPromptCacheTtl && current.subagentPromptCacheTtl !== SUBAGENT_PROMPT_CACHE_TTL) {
-      lines.push(`kept your prompt-cache TTL of ${JSON.stringify(current.subagentPromptCacheTtl)}.`);
-    } else {
-      lines.push(`subagentPromptCacheTtl is ${SUBAGENT_PROMPT_CACHE_TTL} — teammates keep their context warm between review rounds.`);
     }
     if (current.statusLine && !isConsoleStatusLine(current.statusLine, 'statusline')) {
       lines.push('left your own status line alone — no rate-limit gauge or lead cost readout.');

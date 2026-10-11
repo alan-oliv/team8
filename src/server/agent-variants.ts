@@ -2,9 +2,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The Agent tool has no effort parameter, and an agent without `effort` in its
-// definition inherits the lead's /effort, so each effort a task can ask for is its
-// own definition: a copy of its base file with only the frontmatter changed.
+// The Agent tool's effort parameter never reaches a teammate (Claude Code 2.1.296
+// drops it on a named spawn), and an agent without `effort` in its definition
+// inherits the lead's /effort, so each effort a task can ask for is its own
+// definition: a copy of its base file with only the frontmatter changed.
 export const VARIANTS = [
   { base: 'executor', name: 'executor-low', effort: 'low' },
   { base: 'executor', name: 'executor-high', effort: 'high' },

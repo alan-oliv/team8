@@ -207,7 +207,8 @@ function sameTokenSplit(prev: Agent['tokenSplit'], next: Agent['tokenSplit']): b
     prev.out === next.out &&
     prev.cacheWrite === next.cacheWrite &&
     prev.cacheWrite1h === next.cacheWrite1h &&
-    prev.cacheRead === next.cacheRead
+    prev.cacheRead === next.cacheRead &&
+    sameTokenSplit(prev.longPrompt, next.longPrompt)
   );
 }
 

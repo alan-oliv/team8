@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import catalog from './catalog.json';
-import { RATES, rateOf, splitByModel, splitTok, usdCost, type TokenSplit } from './cost';
+import { RATES, addSplits, rateOf, splitByModel, splitTok, usdCost, type TokenSplit } from './cost';
 import { totalCost, type UsageRecord } from './usage';
 
 interface FixtureRecord {
@@ -52,19 +52,40 @@ describe('RATES', () => {
   it('reports catalog rates as exact, not approximate', () => {
     expect(RATES().every((r) => r.approximate)).toBe(false);
   });
+
+  // The totals price a claude-haiku-5-5 request whose prompt is over 100K on a
+  // second card, so the rate card has to show that card too.
+  it('carries the long-prompt card and the prompt size it starts above, read from the catalog', () => {
+    const long = catalog.models['claude-haiku-5-5'].longPrompt;
+    expect(RATES().find((r) => r.model === 'claude-haiku-5-5')!.longPrompt).toEqual({
+      over: long.over,
+      input: long.pricing.input,
+      output: long.pricing.output,
+      cacheWrite: long.pricing.cacheWrite5m,
+      cacheWrite1h: long.pricing.cacheWrite1h,
+      cacheRead: long.pricing.cacheRead,
+    });
+  });
+
+  it('carries no long-prompt card for a model with one card', () => {
+    expect(RATES().find((r) => r.model === 'claude-opus-5-5')!.longPrompt).toBeUndefined();
+  });
 });
 
 // The design's cost model states cache writes bill at 1.25x the input rate and
-// cache reads at 0.1x. Those two multipliers are the difference between the
-// shown total and roughly 2.6x it, so the catalog is held to them rather than
-// trusted: a hand-edit that breaks the relationship must fail here, loudly.
+// cache reads at 0.1x, except the newer Opus and Fable, which read for less
+// (claude-api skill, models.md). Those multipliers are the difference between
+// the shown total and several times it, so the catalog is held to them rather
+// than trusted: a hand-edit that breaks the relationship must fail here, loudly.
 describe('the cache multipliers the whole model turns on', () => {
   it('prices a 5-minute cache write at 1.25x the input rate for every model', () => {
     for (const rate of RATES()) expect(rate.cacheWrite).toBeCloseTo(rate.input * 1.25, 10);
   });
 
-  it('prices a cache read at 0.1x the input rate for every model', () => {
-    for (const rate of RATES()) expect(rate.cacheRead).toBeCloseTo(rate.input * 0.1, 10);
+  const READ_SHARE: Record<string, number> = { 'claude-opus-5-5': 0.05, 'claude-fable-5-1': 0.025 };
+
+  it("prices a cache read at its model's share of the input rate", () => {
+    for (const rate of RATES()) expect(rate.cacheRead).toBeCloseTo(rate.input * (READ_SHARE[rate.model] ?? 0.1), 10);
   });
 
   it('charges a cache read a tenth of what the same tokens cost as input', () => {
@@ -82,7 +103,7 @@ describe('the cache multipliers the whole model turns on', () => {
 
 describe('rateOf', () => {
   it('resolves a bare alias to the model the catalog prices', () => {
-    expect(rateOf('sonnet').model).toBe('claude-sonnet-5');
+    expect(rateOf('sonnet').model).toBe('claude-sonnet-5-5');
   });
 
   it('resolves the 1M-window suffix to the same model', () => {
@@ -154,8 +175,74 @@ describe('splitTok', () => {
     expect(split.cacheWrite1h).toBe(600);
   });
 
+  // claude-haiku-5-5 bills a whole request on a second card once its prompt
+  // (input plus cache reads and writes) is over 100K. The four classes still
+  // count every token; the crossing requests ride along as a subset.
+  it('carries the requests billed on a long-prompt card as a subset of the four classes', () => {
+    const split = splitTok([
+      record('claude-haiku-5-5', {
+        input_tokens: 1_000,
+        output_tokens: 10,
+        cache_read_input_tokens: 90_000,
+        cache_creation_input_tokens: 9_001,
+        cache_creation: { ephemeral_1h_input_tokens: 4_000 },
+      }, 'over'),
+      record('claude-haiku-5-5', {
+        input_tokens: 1_000,
+        output_tokens: 20,
+        cache_read_input_tokens: 90_000,
+        cache_creation_input_tokens: 9_000,
+      }, 'at'),
+    ]);
+    expect(split).toEqual({
+      in: 2_000,
+      out: 30,
+      cacheWrite: 18_001,
+      cacheWrite1h: 4_000,
+      cacheRead: 180_000,
+      longPrompt: { in: 1_000, out: 10, cacheWrite: 9_001, cacheWrite1h: 4_000, cacheRead: 90_000 },
+    });
+  });
+
+  it('leaves the long-prompt subset off a model with one card, however long its prompt', () => {
+    const split = splitTok([record('claude-opus-5-5', { input_tokens: 900_000, output_tokens: 1 })]);
+    expect(split.longPrompt).toBeUndefined();
+  });
+
   it('adds up to nothing when there is nothing to add up', () => {
     expect(splitTok([])).toEqual(empty);
+  });
+});
+
+describe('addSplits', () => {
+  it('adds two splits class by class', () => {
+    expect(
+      addSplits(
+        { in: 1, out: 2, cacheWrite: 3, cacheWrite1h: 1, cacheRead: 4 },
+        { in: 10, out: 20, cacheWrite: 30, cacheWrite1h: 10, cacheRead: 40 },
+      ),
+    ).toStrictEqual({ in: 11, out: 22, cacheWrite: 33, cacheWrite1h: 11, cacheRead: 44 });
+  });
+
+  // A team or run total is priced as one usdCost over a summed split, so a sum
+  // that dropped the share would price every crossing request on the short card.
+  it('carries the long-prompt share from whichever side has one, so the sum prices as its parts do', () => {
+    const crossed = splitTok([
+      record('claude-haiku-5-5', { input_tokens: 2_000, output_tokens: 100, cache_read_input_tokens: 120_000 }),
+    ]);
+    const short = splitTok([
+      record('claude-haiku-5-5', { input_tokens: 2_000, output_tokens: 100, cache_read_input_tokens: 20_000 }),
+    ]);
+    const parts = usdCost('claude-haiku-5-5', crossed) + usdCost('claude-haiku-5-5', short);
+    expect(usdCost('claude-haiku-5-5', addSplits(short, crossed))).toBeCloseTo(parts, 10);
+    expect(usdCost('claude-haiku-5-5', addSplits(crossed, short))).toBeCloseTo(parts, 10);
+    expect(addSplits(crossed, crossed).longPrompt).toEqual({
+      in: 4_000,
+      out: 200,
+      cacheWrite: 0,
+      cacheWrite1h: 0,
+      cacheRead: 240_000,
+    });
   });
 });
 
@@ -212,11 +299,11 @@ describe('splitByModel', () => {
 
   it('groups a dated model id with its undated self', () => {
     const byModel = splitByModel([
-      record('claude-haiku-4-5-20251001', { input_tokens: 1, output_tokens: 1 }, 'a'),
+      record('claude-haiku-5-5-20260101', { input_tokens: 1, output_tokens: 1 }, 'a'),
       record('haiku', { input_tokens: 1, output_tokens: 1 }, 'b'),
     ]);
     expect(byModel).toHaveLength(1);
-    expect(byModel[0].model).toBe('claude-haiku-4-5');
+    expect(byModel[0].model).toBe('claude-haiku-5-5');
   });
 });
 
@@ -250,5 +337,24 @@ describe('reconciliation with the spend the status bar ticks', () => {
     const byModel = splitByModel(withTtl);
     const summed = byModel.reduce((s, m) => s + usdCost(m.model, m.split), 0);
     expect(summed).toBeCloseTo(totalCost(withTtl), 10);
+  });
+
+  // The workflow view prices each agent as one usdCost over its whole split, so
+  // the split itself has to remember which of its requests crossed.
+  it('matches totalCost for a claude-haiku-5-5 agent whose prompts cross onto its long-prompt card', () => {
+    const haiku = [
+      record('claude-haiku-5-5', {
+        input_tokens: 3_000,
+        output_tokens: 2_000,
+        cache_read_input_tokens: 150_000,
+        cache_creation_input_tokens: 5_000,
+      }, 'long'),
+      record('claude-haiku-5-5', {
+        input_tokens: 3_000,
+        output_tokens: 2_000,
+        cache_read_input_tokens: 40_000,
+      }, 'short'),
+    ];
+    expect(usdCost('claude-haiku-5-5', splitTok(haiku))).toBeCloseTo(totalCost(haiku), 10);
   });
 });

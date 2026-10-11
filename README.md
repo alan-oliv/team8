@@ -149,14 +149,15 @@ macOS or Linux. The console needs Claude Code `2.1.231` or newer: agent
 teams are experimental, and the files team8 reads can change shape between
 releases. On an older version it still runs, but warns at startup.
 
-`/team8:setup` writes the things a plugin manifest has nowhere to put: an
-`env` var that turns on agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`),
-one that turns on the task list (`CLAUDE_CODE_ENABLE_TODO_TOOLS`), one list
-shared by the whole team, each entry claimed and closed by whichever teammate
-picks it up, and a `subagentStatusLine` that shows each teammate's current
-tool in its header. It merges into your existing `settings.json` without
-touching anything already there, backs the file up next to itself first, and
-shows you exactly what it's about to write before it writes anything.
+`/team8:setup` writes the one thing a plugin has nowhere to put: the `env`
+vars that turn on agent teams (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`) and
+the task list (`CLAUDE_CODE_ENABLE_TODO_TOOLS`), one list shared by the whole
+team, each entry claimed and closed by whichever teammate picks it up. The
+`subagentStatusLine` that feeds each teammate's current tool to the console
+ships in the plugin's own `settings.json`. Setup merges into your existing
+`settings.json` without touching anything already there, backs the file up
+next to itself first, and shows you exactly what it's about to write before it
+writes anything.
 
 Restart Claude Code afterwards: `env` is read once at session start.
 
@@ -241,10 +242,10 @@ no plugin changes needed, in `~/.claude/settings.json` (or the project's
 claude plugin uninstall team8@team8
 ```
 
-That turns agent teams and the task list back off and removes the hooks. The
-`subagentStatusLine` that setup added stays in `settings.json` until you
-delete it. Setup's backup sits next to the file as
-`settings.json.before-console-<timestamp>`.
+That turns agent teams and the task list back off and removes the hooks and
+the plugin's status line. A `subagentStatusLine` or `subagentPromptCacheTtl`
+an earlier setup added stays in `settings.json` until you delete it. Setup's
+backup sits next to the file as `settings.json.before-console-<timestamp>`.
 
 ## Development
 

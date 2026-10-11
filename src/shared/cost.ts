@@ -1,6 +1,6 @@
 import catalogJson from './catalog.json';
-import { resolveModel } from './catalog';
-import { dedupeUsage, type UsageRecord } from './usage';
+import { longPromptOf, longPromptPricing, pricingFor, resolveModel, type PricingTier } from './catalog';
+import { dedupeUsage, type Usage, type UsageRecord } from './usage';
 
 /**
  * The usage dashboard's cost model: one rate source, one token split, one
@@ -27,6 +27,14 @@ export interface TokenSplit {
   cacheWrite: number;
   cacheWrite1h: number;
   cacheRead: number;
+  /**
+   * The share of each class above that billed on its model's long-prompt card:
+   * claude-haiku-5-5 bills a whole request on a second card once its prompt is
+   * over 100K tokens. A SUBSET for the reason `cacheWrite1h` is one — the
+   * classes stay four and the price is two — and absent when no request
+   * crossed, so every other split is exactly what it was.
+   */
+  longPrompt?: Omit<TokenSplit, 'longPrompt'>;
 }
 
 /** One row of the rate-card panel, in USD per million tokens. */
@@ -45,18 +53,29 @@ export interface ModelRate {
    * exists to prevent, so this rides with every rate.
    */
   approximate: boolean;
+  /**
+   * The second card a request bills on once its prompt is over `over` tokens —
+   * claude-haiku-5-5's. Absent for a model with one card.
+   */
+  longPrompt?: { over: number } & Pick<ModelRate, 'input' | 'output' | 'cacheWrite' | 'cacheWrite1h' | 'cacheRead'>;
 }
+
+const cardOf = (tier: PricingTier) => ({
+  input: tier.input,
+  output: tier.output,
+  cacheWrite: tier.cacheWrite5m,
+  cacheWrite1h: tier.cacheWrite1h,
+  cacheRead: tier.cacheRead,
+});
 
 const rateFromModel = (raw: string): ModelRate => {
   const { canonical, pricing, approximate } = resolveModel(raw);
+  const long = longPromptOf(canonical);
   return {
     model: canonical,
-    input: pricing.input,
-    output: pricing.output,
-    cacheWrite: pricing.cacheWrite5m,
-    cacheWrite1h: pricing.cacheWrite1h,
-    cacheRead: pricing.cacheRead,
+    ...cardOf(pricing),
     approximate,
+    ...(long && { longPrompt: { over: long.over, ...cardOf(long.pricing) } }),
   };
 };
 
@@ -80,16 +99,45 @@ export function rateOf(model: string): ModelRate {
  * summing the raw rows bills one turn once per rewrite.
  */
 export function splitTok(records: readonly UsageRecord[]): TokenSplit {
-  const split: TokenSplit = { in: 0, out: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 };
-  for (const { usage } of dedupeUsage([...records])) {
-    const created = usage.cache_creation_input_tokens ?? 0;
-    split.in += usage.input_tokens ?? 0;
-    split.out += usage.output_tokens ?? 0;
-    split.cacheWrite += created;
-    split.cacheWrite1h += Math.min(usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, created);
-    split.cacheRead += usage.cache_read_input_tokens ?? 0;
+  const split = noTokens();
+  for (const { model, usage } of dedupeUsage([...records])) {
+    addUsage(split, usage);
+    const prompt =
+      (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+    if (longPromptPricing(model, prompt)) addUsage((split.longPrompt ??= noTokens()), usage);
   }
   return split;
+}
+
+function noTokens(): TokenSplit {
+  return { in: 0, out: 0, cacheWrite: 0, cacheWrite1h: 0, cacheRead: 0 };
+}
+
+function addUsage(into: TokenSplit, usage: Usage): void {
+  const created = usage.cache_creation_input_tokens ?? 0;
+  into.in += usage.input_tokens ?? 0;
+  into.out += usage.output_tokens ?? 0;
+  into.cacheWrite += created;
+  into.cacheWrite1h += Math.min(usage.cache_creation?.ephemeral_1h_input_tokens ?? 0, created);
+  into.cacheRead += usage.cache_read_input_tokens ?? 0;
+}
+
+/**
+ * Two splits added class by class, with their long-prompt shares: a sum that
+ * dropped the share would price every crossing request on the short card.
+ */
+export function addSplits(a: TokenSplit, b: TokenSplit): TokenSplit {
+  const sum: TokenSplit = {
+    in: a.in + b.in,
+    out: a.out + b.out,
+    cacheWrite: a.cacheWrite + b.cacheWrite,
+    cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
+    cacheRead: a.cacheRead + b.cacheRead,
+  };
+  if (a.longPrompt || b.longPrompt) {
+    sum.longPrompt = addSplits(a.longPrompt ?? noTokens(), b.longPrompt ?? noTokens());
+  }
+  return sum;
 }
 
 /**
@@ -113,14 +161,20 @@ export function splitByModel(
 
 /** What a split costs at list price. The only place dollars are produced. */
 export function usdCost(model: string, split: TokenSplit): number {
-  const rate = rateOf(model);
-  const oneHour = Math.min(split.cacheWrite1h, split.cacheWrite);
+  const card = resolveModel(model).pricing;
+  const long = split.longPrompt;
+  if (!long) return priceAt(card, split);
+  return priceAt(card, split) - priceAt(card, long) + priceAt(pricingFor(model, Infinity), long);
+}
+
+function priceAt(tier: PricingTier, tokens: TokenSplit): number {
+  const oneHour = Math.min(tokens.cacheWrite1h, tokens.cacheWrite);
   return (
-    (split.in * rate.input +
-      split.out * rate.output +
-      oneHour * rate.cacheWrite1h +
-      (split.cacheWrite - oneHour) * rate.cacheWrite +
-      split.cacheRead * rate.cacheRead) /
+    (tokens.in * tier.input +
+      tokens.out * tier.output +
+      oneHour * tier.cacheWrite1h +
+      (tokens.cacheWrite - oneHour) * tier.cacheWrite5m +
+      tokens.cacheRead * tier.cacheRead) /
     1e6
   );
 }

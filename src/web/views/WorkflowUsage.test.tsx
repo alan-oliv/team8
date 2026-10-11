@@ -2,7 +2,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { WorkflowAgent, WorkflowRun, WorkflowUsage as WorkflowUsageFigures } from '../../shared/domain';
-import { usdCost, type TokenSplit } from '../../shared/cost';
+import { addSplits, usdCost, type TokenSplit } from '../../shared/cost';
+import type { TranscriptRecord } from '../../shared/transcript';
+import { totalCost, usageRecordsOf, type Usage } from '../../shared/usage';
+import {
+  attachWorkflowUsage,
+  emptyWorkflowUsageFold,
+  foldWorkflowAgentRecords,
+  workflowUsageOf,
+} from '../../shared/workflow-usage';
 import { billedTokens, cacheHitRatio } from './usage-team';
 import { formatCost, formatPct, formatTokens } from '../format';
 import { WorkflowUsage, bannerFires, concurrency, phaseRows, runCost } from './WorkflowUsage';
@@ -423,17 +431,9 @@ describe('what the mode still refuses, and why', () => {
 const SPLIT_A: TokenSplit = { in: 1_000, out: 500, cacheWrite: 2_000, cacheWrite1h: 0, cacheRead: 50_000 };
 const SPLIT_B: TokenSplit = { in: 800, out: 300, cacheWrite: 1_000, cacheWrite1h: 0, cacheRead: 30_000 };
 
-const sumSplits = (a: TokenSplit, b: TokenSplit): TokenSplit => ({
-  in: a.in + b.in,
-  out: a.out + b.out,
-  cacheWrite: a.cacheWrite + b.cacheWrite,
-  cacheWrite1h: a.cacheWrite1h + b.cacheWrite1h,
-  cacheRead: a.cacheRead + b.cacheRead,
-});
-
 const USAGE: WorkflowUsageFigures = {
-  split: sumSplits(SPLIT_A, SPLIT_B),
-  byPhase: [{ phaseIndex: 1, split: sumSplits(SPLIT_A, SPLIT_B) }],
+  split: addSplits(SPLIT_A, SPLIT_B),
+  byPhase: [{ phaseIndex: 1, split: addSplits(SPLIT_A, SPLIT_B) }],
   burn: { startedAt: T0, stepMs: 10_000, cumulative: [10_000, 40_000, 85_600] },
   agentsMeasured: 2,
 };
@@ -482,6 +482,30 @@ describe('the measured-spend figure (decision 31)', () => {
   it('runCost refuses to price a measured agent that names no model', () => {
     const agents = measuredAgents().map((a) => ({ ...a, model: undefined }));
     expect(runCost(run({ agents, usage: USAGE, defaultModel: undefined })).usd).toBeUndefined();
+  });
+
+  // claude-haiku-5-5 bills a request whose prompt is over 100K on a second
+  // card, and only the agent's own records know which requests did. The share
+  // has to survive the fold and the attach for runCost to agree with the
+  // status bar, which prices record by record.
+  it('runCost prices a claude-haiku-5-5 agent’s long prompts as the status bar does', () => {
+    const turn = (id: string, usage: Usage): TranscriptRecord => ({
+      type: 'assistant',
+      uuid: id,
+      timestamp: '2026-08-30T03:00:00.000Z',
+      message: { id, model: 'claude-haiku-5-5', usage },
+    });
+    const records = [
+      turn('m1', { input_tokens: 3_000, output_tokens: 2_000, cache_read_input_tokens: 150_000, cache_creation_input_tokens: 5_000 }),
+      turn('m2', { input_tokens: 3_000, output_tokens: 2_000, cache_read_input_tokens: 40_000 }),
+    ];
+    const fold = emptyWorkflowUsageFold();
+    foldWorkflowAgentRecords(fold, 'a1111111111111111', records);
+    const { usage, agents } = attachWorkflowUsage(
+      [agent({ agentId: 'a1111111111111111', phaseIndex: 1, model: 'claude-haiku-5-5' })],
+      workflowUsageOf('wf_c6178afd-453', fold),
+    );
+    expect(runCost(run({ agents, usage })).usd).toBeCloseTo(totalCost(usageRecordsOf(records)), 10);
   });
 
   it('shows the measured tokens with cache reads included, beside their split', () => {

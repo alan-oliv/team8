@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Agent } from '../../shared/domain';
 import type { TokenSplit } from '../../shared/cost';
 import { usdCost } from '../../shared/cost';
+import { pricingFor } from '../../shared/catalog';
 import {
   billedTokens,
   cacheHitRatio,
@@ -65,6 +66,13 @@ describe('splitOf / sumSplit', () => {
     expect(sumSplit([])).toEqual(split());
   });
 
+  it('keeps the long-prompt share of the one agent that has one', () => {
+    const crossed = split({ in: 10, cacheRead: 200_000 });
+    const a = agent({ tokenSplit: { ...crossed, longPrompt: crossed } });
+    const b = agent({ tokenSplit: split({ in: 1, cacheRead: 4 }) });
+    expect(sumSplit([b, a])?.longPrompt).toEqual(crossed);
+  });
+
   // The aggregate must not read as complete when it isn't: a partial sum
   // missing one agent's real (unknown) contribution is the same lie a bare
   // zero would tell.
@@ -105,6 +113,19 @@ describe('dollarsAvoided', () => {
     // 1M tokens at input rate minus 1M tokens at cache-read rate.
     expect(avoided).toBeGreaterThan(0);
     expect(avoided).toBeCloseTo(4.5, 5);
+  });
+
+  // A claude-haiku-5-5 request whose prompt is over 100K bills on a dearer
+  // card, so a cache read inside one avoided that card's input price.
+  it('prices the cache reads of a claude-haiku-5-5 agent’s long prompts on its long-prompt card', () => {
+    const short = pricingFor('claude-haiku-5-5', 0);
+    const long = pricingFor('claude-haiku-5-5', Infinity);
+    const a = agent({
+      model: 'claude-haiku-5-5',
+      tokenSplit: split({ cacheRead: 3_000_000, longPrompt: split({ cacheRead: 1_000_000 }) }),
+    });
+    // 2M reads on the short card and 1M on the long one, in $ per Mtok.
+    expect(dollarsAvoided([a])).toBeCloseTo(2 * (short.input - short.cacheRead) + (long.input - long.cacheRead), 10);
   });
 
   it('is undefined, not partial, when any agent in the roster has no split', () => {

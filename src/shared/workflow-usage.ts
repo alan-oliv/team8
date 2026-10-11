@@ -1,6 +1,6 @@
 import type { WorkflowAgent, WorkflowBurn, WorkflowUsage } from './domain';
 import { WORKFLOW_BURN_SAMPLES } from './domain';
-import { splitTok, type TokenSplit } from './cost';
+import { addSplits, splitTok, type TokenSplit } from './cost';
 import type { TranscriptRecord } from './transcript';
 import type { Usage, UsageRecord } from './usage';
 
@@ -97,14 +97,6 @@ const recordsOf = (turns: Map<string, Turn>): UsageRecord[] =>
 const TOTAL = (split: TokenSplit): number =>
   split.in + split.out + split.cacheWrite + split.cacheRead;
 
-function addSplit(into: TokenSplit, from: TokenSplit): void {
-  into.in += from.in;
-  into.out += from.out;
-  into.cacheWrite += from.cacheWrite;
-  into.cacheWrite1h += from.cacheWrite1h;
-  into.cacheRead += from.cacheRead;
-}
-
 export const emptySplit = (): TokenSplit => ({
   in: 0,
   out: 0,
@@ -168,7 +160,7 @@ export interface WorkflowUsagePayload {
 
 export function workflowUsageOf(runId: string, fold: WorkflowUsageFold): WorkflowUsagePayload {
   const agents: WorkflowAgentUsage[] = [];
-  const split = emptySplit();
+  let split = emptySplit();
   const turns: Turn[] = [];
   for (const [agentId, byMessage] of fold.agents) {
     // An agent whose transcript exists but holds no billed turn yet is NOT a
@@ -178,7 +170,7 @@ export function workflowUsageOf(runId: string, fold: WorkflowUsageFold): Workflo
     if (byMessage.size === 0) continue;
     const rows = recordsOf(byMessage);
     const own = splitTok(rows);
-    addSplit(split, own);
+    split = addSplits(split, own);
     for (const turn of byMessage.values()) turns.push(turn);
     // Last turn's model, not the first: an agent that fell back to another
     // model reports what it ended on, which is what its later turns were
@@ -222,9 +214,7 @@ export function attachWorkflowUsage(
   for (const agent of agents) {
     const own = byId.get(agent.agentId);
     if (!own || agent.phaseIndex === undefined) continue;
-    const into = perPhase.get(agent.phaseIndex) ?? emptySplit();
-    addSplit(into, own.split);
-    perPhase.set(agent.phaseIndex, into);
+    perPhase.set(agent.phaseIndex, addSplits(perPhase.get(agent.phaseIndex) ?? emptySplit(), own.split));
   }
 
   return {

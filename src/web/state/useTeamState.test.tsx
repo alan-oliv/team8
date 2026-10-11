@@ -170,6 +170,53 @@ it('gives a new identity to an agent whose tokenSplit value actually changed', (
   expect(second[1]).toBe(first[1]);
 });
 
+// The long-prompt share prices the same tokens differently, so a frame whose
+// classes match but whose share appeared is a different split.
+it('gives a new identity to an agent whose tokenSplit gained a long-prompt share', () => {
+  const { result } = renderHook(() => useTeamState());
+  const base = sampleTeamState();
+  act(() => MockEventSource.last().emit('snapshot', base));
+  const first = result.current.state!.agents;
+
+  const mutated: TeamState = {
+    ...base,
+    agents: base.agents.map((a, i) =>
+      i === 0 ? { ...a, tokenSplit: { ...a.tokenSplit!, longPrompt: { ...a.tokenSplit! } } } : a,
+    ),
+  };
+  act(() => MockEventSource.last().emit('state', mutated));
+  const second = result.current.state!.agents;
+
+  expect(second[0]).not.toBe(first[0]);
+  expect(second[1]).toBe(first[1]);
+});
+
+// Every frame is a fresh JSON.parse, so the share has to compare by value.
+const withShare = (state: TeamState, bump = 0): TeamState => ({
+  ...state,
+  agents: state.agents.map((a, i) =>
+    i === 0 ? { ...a, tokenSplit: { ...a.tokenSplit!, longPrompt: { ...a.tokenSplit!, in: a.tokenSplit!.in + bump } } } : a,
+  ),
+});
+
+it('keeps the identity of an agent whose long-prompt share arrives equal in a fresh frame', () => {
+  const { result } = renderHook(() => useTeamState());
+  act(() => MockEventSource.last().emit('snapshot', withShare(sampleTeamState())));
+  const first = result.current.state!.agents;
+
+  act(() => MockEventSource.last().emit('state', withShare(sampleTeamState())));
+  expect(result.current.state!.agents[0]).toBe(first[0]);
+});
+
+it('gives a new identity to an agent whose long-prompt share changed while its classes did not', () => {
+  const { result } = renderHook(() => useTeamState());
+  act(() => MockEventSource.last().emit('snapshot', withShare(sampleTeamState())));
+  const first = result.current.state!.agents;
+
+  act(() => MockEventSource.last().emit('state', withShare(sampleTeamState(), 1)));
+  expect(result.current.state!.agents[0]).not.toBe(first[0]);
+});
+
 it('gives a new identity to an agent that gained a transcript line', () => {
   const { result } = renderHook(() => useTeamState());
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { compactAtFor, resolveModel } from './catalog';
+import { compactAtFor, longPromptPricing, pricingFor, resolveModel } from './catalog';
 
 const usageRecords = JSON.parse(
   readFileSync(new URL('../../fixtures/usage-records.json', import.meta.url), 'utf8'),
@@ -48,11 +48,24 @@ describe('resolveModel', () => {
     expect(m.approximate).toBe(false);
   });
 
-  it('resolves the aliases config.json records verbatim', () => {
-    expect(resolveModel('haiku').canonical).toBe('claude-haiku-4-5');
-    expect(resolveModel('opus').canonical).toBe('claude-opus-5');
-    expect(resolveModel('sonnet').canonical).toBe('claude-sonnet-5');
-    expect(resolveModel('haiku').window).toBe(200_000);
+  it.each([
+    ['claude-opus-5-5', { input: 4, output: 20, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2, webSearch: 0.01 }],
+    ['claude-fable-5-1', { input: 10, output: 50, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 0.25, webSearch: 0.01 }],
+    ['claude-sonnet-5-5', { input: 2, output: 10, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2, webSearch: 0.01 }],
+    ['claude-haiku-5-5', { input: 0.1, output: 0.5, cacheWrite5m: 0.125, cacheWrite1h: 0.2, cacheRead: 0.01, webSearch: 0.01 }],
+  ])('prices %s at its own list rate, with a 1M window', (id, pricing) => {
+    const m = resolveModel(id);
+    expect(m.canonical).toBe(id);
+    expect(m.approximate).toBe(false);
+    expect(m.window).toBe(1_000_000);
+    expect(m.pricing).toEqual(pricing);
+  });
+
+  it('resolves the aliases to the models Claude Code 2.1.296 runs for them', () => {
+    expect(resolveModel('opus').canonical).toBe('claude-opus-5-5');
+    expect(resolveModel('sonnet').canonical).toBe('claude-sonnet-5-5');
+    expect(resolveModel('haiku').canonical).toBe('claude-haiku-5-5');
+    expect(resolveModel('haiku').window).toBe(1_000_000);
   });
 
   it('normalises dated ids', () => {
@@ -69,21 +82,21 @@ describe('resolveModel', () => {
     expect(resolveModel('claude-haiku-4-5-20251001[1M]').canonical).toBe('claude-haiku-4-5');
   });
 
-  it('falls back to the Opus-5 tier and a 200k window for an unknown model', () => {
+  it('falls back to the current Opus tier and a 200k window for an unknown model', () => {
     const m = resolveModel('claude-mystery-9');
     expect(m.canonical).toBe('claude-mystery-9');
     expect(m.window).toBe(200_000);
     expect(m.compactAt).toBe(167_000);
-    expect(m.pricing.input).toBe(5);
-    expect(m.pricing.output).toBe(25);
+    expect(m.pricing.input).toBe(4);
+    expect(m.pricing.output).toBe(20);
     expect(m.approximate).toBe(true);
   });
 
   it('resolves a point release to its family window, keeping the full id', () => {
-    // The lead ran claude-fable-5-1 and the console drew 465k / 200k: the catalog
-    // only knew claude-fable-5, so the id fell through to the 200k fallback.
-    const m = resolveModel('claude-fable-5-1');
-    expect(m.canonical).toBe('claude-fable-5-1');
+    // A point release the catalog does not list yet shares its family's window;
+    // without that the id fell through to the 200k fallback.
+    const m = resolveModel('claude-fable-5-2');
+    expect(m.canonical).toBe('claude-fable-5-2');
     expect(m.window).toBe(1_000_000);
     expect(m.compactAt).toBe(967_000);
     expect(m.pricing).toEqual(resolveModel('claude-fable-5').pricing);
@@ -118,5 +131,33 @@ describe('compactAtFor', () => {
   it('subtracts the 20k output reserve and 13k compact headroom', () => {
     expect(compactAtFor(1_000_000)).toBe(967_000);
     expect(compactAtFor(200_000)).toBe(167_000);
+  });
+});
+
+describe('pricingFor', () => {
+  it('bills claude-haiku-5-5 on its long-prompt card above 100K prompt tokens', () => {
+    expect(pricingFor('claude-haiku-5-5', 100_000).input).toBe(0.1);
+    expect(pricingFor('claude-haiku-5-5', 100_001)).toEqual({
+      input: 0.5, output: 2.5, cacheWrite5m: 0.625, cacheWrite1h: 1, cacheRead: 0.05, webSearch: 0.01,
+    });
+  });
+
+  it('bills every other model the same at any prompt length', () => {
+    expect(pricingFor('claude-opus-5-5', 900_000)).toEqual(resolveModel('claude-opus-5-5').pricing);
+    expect(pricingFor(undefined, 0)).toEqual(resolveModel(undefined).pricing);
+  });
+
+  it('applies the long-prompt card through an alias and a dated id', () => {
+    expect(pricingFor('haiku', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
+    expect(pricingFor('claude-haiku-5-5-20260101', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
+    expect(pricingFor('haiku', 200_000).input).toBe(0.5);
+  });
+});
+
+describe('longPromptPricing', () => {
+  it('names a card only for a request that crosses onto its long-prompt card', () => {
+    expect(longPromptPricing('claude-haiku-5-5', 100_000)).toBeUndefined();
+    expect(longPromptPricing('claude-haiku-5-5', 100_001)?.input).toBe(0.5);
+    expect(longPromptPricing('claude-opus-5-5', 900_000)).toBeUndefined();
   });
 });

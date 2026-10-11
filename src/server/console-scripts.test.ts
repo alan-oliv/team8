@@ -186,7 +186,7 @@ describe('console-hint.sh', () => {
 
       const run = await script('console-hint.sh', [], '{}');
 
-      expect(systemMessage(run.stdout)).toContain('/team8:console');
+      expect(run.stdout).toBe('');
       await new Promise((r) => setTimeout(r, 300));
       expect(await starts()).toHaveLength(1);
       await new Promise((r) => execFile('pkill', ['-f', `dist/server/index.js --port ${port}`], r));
@@ -216,8 +216,118 @@ describe('console-hint.sh', () => {
     await new Promise((r) => setTimeout(r, 300));
 
     expect(run.code).toBe(0);
-    expect(systemMessage(run.stdout)).toContain('/team8:console');
+    expect(run.stdout).toBe('');
     expect(await starts()).toEqual([]);
+  });
+  describe('after a resume', () => {
+    const lead = 'abcdef12-3456-7890-abcd-ef1234567890';
+    const start = (source: string) => JSON.stringify({ hook_event_name: 'SessionStart', source, session_id: lead });
+    const ledATeam = async () => {
+      await fs.mkdir(path.join(claudeDir, 'teams', 'session-abcdef12'), { recursive: true });
+      await fs.writeFile(path.join(claudeDir, 'teams', 'session-abcdef12', 'config.json'), '{}');
+    };
+    const hint = (stdout: string) =>
+      (JSON.parse(stdout) as { hookSpecificOutput?: { hookEventName: string; additionalContext: string } })
+        .hookSpecificOutput;
+
+    it('tells a resumed lead its teammates are gone', async () => {
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('resume'));
+      expect(run.code).toBe(0);
+      expect(hint(run.stdout)?.hookEventName).toBe('SessionStart');
+      expect(hint(run.stdout)?.additionalContext).toContain('TaskList');
+    });
+
+    it('says nothing to a resumed session that led no team', async () => {
+      const run = await script('console-hint.sh', [], start('resume'));
+      expect(run.stdout).toBe('');
+    });
+
+    it('says nothing on a fresh start, team or not', async () => {
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('startup'));
+      expect(run.stdout).toBe('');
+    });
+
+    it('keeps the upgrade notice beside the hint', async () => {
+      await fake({ health: { version: '1.0.43', build: 'installed' }, plugin: '1.0.44' });
+      await record({ kind: 'session', id: 'session-one' });
+      await startRunning();
+      await ledATeam();
+      const run = await script('console-hint.sh', [], start('resume'));
+      const out = JSON.parse(run.stdout) as { systemMessage: string; hookSpecificOutput: { additionalContext: string } };
+      expect(out.systemMessage).toContain('1.0.44');
+      expect(out.hookSpecificOutput.additionalContext).toContain('TaskList');
+    });
+  });
+});
+
+describe('task-gate.sh', () => {
+  const gate = (payload: unknown) => script('task-gate.sh', [], JSON.stringify(payload));
+  const create = (metadata?: Record<string, unknown>) => ({
+    tool_name: 'TaskCreate',
+    tool_input: { subject: 's', description: 'd', ...(metadata ? { metadata } : {}) },
+  });
+  const complete = (opts: { agentId?: string; verified?: string }) => ({
+    tool_name: 'TaskUpdate',
+    ...(opts.agentId ? { agent_id: opts.agentId } : {}),
+    tool_input: { taskId: '3', status: 'completed', ...(opts.verified ? { metadata: { verified: opts.verified } } : {}) },
+  });
+
+  it('passes a task that carries none of the four keys — a todo list, not a team8 task', async () => {
+    expect((await gate(create())).code).toBe(0);
+  });
+
+  it('refuses a team8 task missing some of its four keys, naming them', async () => {
+    const run = await gate(create({ model: 'sonnet', effort: 'medium' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('complexity, why');
+  });
+
+  it('passes a team8 task with all four keys', async () => {
+    const run = await gate(create({ complexity: 'standard', model: 'sonnet', effort: 'medium', why: 'one layer' }));
+    expect(run.code).toBe(0);
+  });
+
+  it("refuses a teammate's completion without verified in the same call", async () => {
+    const run = await gate(complete({ agentId: 'track-a@session-1' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('#3');
+    expect(run.stderr).toContain('verified');
+  });
+
+  it("passes a teammate's completion that carries verified", async () => {
+    const run = await gate(complete({ agentId: 'track-a@session-1', verified: 'npx vitest run → 12 passed' }));
+    expect(run.code).toBe(0);
+  });
+
+  it('refuses a completion from a 2.1.296 teammate id, passes a plain subagent', async () => {
+    expect((await gate(complete({ agentId: 'atrack-a-0123456789abcdef' }))).code).toBe(2);
+    expect((await gate(complete({ agentId: 'a0123456789abcdef' }))).code).toBe(0);
+  });
+
+  it('passes everything when jq is missing', async () => {
+    // A PATH holding cat and nothing else: /bin alone still finds jq where it
+    // links to /usr/bin, as on the Ubuntu CI runners.
+    const bin = path.join(root, 'bin-without-jq');
+    await fs.mkdir(bin);
+    await fs.symlink('/bin/cat', path.join(bin, 'cat'));
+    const run = await script('task-gate.sh', [], JSON.stringify(create({ model: 'sonnet' })), { PATH: bin });
+    expect(run.code).toBe(0);
+  });
+
+  it("passes the lead's own completion", async () => {
+    expect((await gate(complete({}))).code).toBe(0);
+  });
+
+  it('passes any other TaskUpdate', async () => {
+    const run = await gate({ tool_name: 'TaskUpdate', agent_id: 'a', tool_input: { taskId: '3', metadata: { progress: 50 } } });
+    expect(run.code).toBe(0);
+  });
+
+  it('passes input it cannot read', async () => {
+    expect((await script('task-gate.sh', [], 'not json')).code).toBe(0);
+    expect((await script('task-gate.sh', [], '')).code).toBe(0);
   });
 });
 

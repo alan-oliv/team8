@@ -208,5 +208,6 @@ task reads something the blocker produces — and its `metadata`
 `{ complexity, model, effort, why }`, sized by decisions required, not lines
 changed. A task missing `metadata` is not created.
 
-Then run the two checks `team8:tasks` runs before its closing: no file owned
-by two tracks, and every consumer blocked on its producer.
+Then run the three checks `team8:tasks` runs before its closing: no file owned
+by two tracks, every consumer blocked on its producer, and, in teammates
+mode, an owner on every task.

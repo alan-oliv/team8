@@ -29,10 +29,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    take the waves from the closing: teammates alive at any moment are the
    tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode: see Modes below. Teammates use the contract
-   below; set the owner of each track's *first* task with `TaskUpdate` **before**
-   the `Agent` call that spawns its teammate — an owner set afterwards arrives as
-   a fresh assignment, and the teammate re-reads work it is already doing. It
-   claims the rest of its track itself.
+   below. Spawn each one under the name `team8:tasks` set as the owner of its
+   track's tasks; with every task owned before the first spawn, Claude Code's
+   own auto-claim finds nothing to take. A list that came without owners gets
+   them now, before any spawn. Never set an owner after a spawn: it arrives as
+   a fresh assignment, and the teammate re-reads work it is already doing.
 6. **Teammates only: verify the roster before they get deep.** Every teammate you dispatched has
    to appear in `~/.claude/teams/<team>/config.json`:
    `jq -r '.members[].name' ~/.claude/teams/<team>/config.json`. A name missing
@@ -47,7 +48,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    the executors only ran the tests covering their own files. Then, when the PR
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
-   `plan`) and commit it on the branch.
+   `plan`) and commit it on the branch. In teammates mode, then complete the
+   "Close the run" task.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -178,6 +180,8 @@ file ownership**, and the dispatch prompt is where you create it:
 - One shared branch for the batch, unless step 2a derived otherwise. They share a
   checkout, so they share HEAD: a teammate running `git checkout -b` moves
   everyone. Create the branch yourself before dispatching.
+- Never `git stash`: the working tree is shared, so a stash takes every
+  teammate's uncommitted edits with it.
 - A test failure in a file a teammate does not own means a neighbour was
   mid-edit. Re-run once, then report it — never fix another teammate's file.
 - A commit can fail on an index lock. Wait, retry.
@@ -204,14 +208,16 @@ reviewer, and the executor stays alive until its track is clear.
    `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
    Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
-   runs at high effort and carries no Edit or Write, so read-only is enforced), model sized like the
-   track's biggest task (sonnet for standard, opus for judgment), with: the diff path,
-   the task descriptions (`TaskGet` each, paste them), the plan sections those
-   tasks name, and the global constraints. Two verdicts, both required: does
-   the diff do what the tasks say, nothing more and nothing less; and is it
-   well built — tests that assert something, no duplication of a block that
-   exists, no scope beyond the tasks. Findings labelled Blocking or Minor,
-   each with file, line and the fix. Do not tell it what not to flag.
+   runs at high effort and carries no Edit or Write, so read-only is enforced),
+   model sized like the track's biggest task (sonnet for standard, opus for
+   judgment), with: the diff path, the task descriptions (`TaskGet` each, paste
+   them), the plan sections those tasks name, the global constraints, and the
+   reports directory (`<scratchpad>/reports/`) for findings over about 3,500
+   characters. Two verdicts, both required: does the diff do what the tasks
+   say, nothing more and nothing less; and is it well built — tests that
+   assert something, no duplication of a block that exists, no scope beyond
+   the tasks. Findings labelled Blocking or Minor, each with file, line and the
+   fix. Do not tell it what not to flag.
 3. **Blocking findings go to the executor** by `SendMessage`, verbatim. It
    fixes, re-runs the covering tests, pushes, and reports. Then a scoped
    re-review: the diff since the last review, the findings list, verdict per
@@ -226,8 +232,9 @@ reviewer, and the executor stays alive until its track is clear.
 Spawn every executor from the definition that matches its task's `effort`:
 `team8:executor-low` for low, `team8:executor` for medium, `team8:executor-high`
 for high, and `team8:executor-xhigh` for xhigh or max. Spawn every reviewer as
-`subagent_type: "team8:reviewer"`, which runs at high. The Agent tool has no effort
-parameter, and an agent whose definition sets no `effort` inherits the lead's
+`subagent_type: "team8:reviewer"`, which runs at high. The Agent tool's `effort`
+parameter never reaches a teammate (Claude Code 2.1.296 drops it on a named
+spawn), and an agent whose definition sets no `effort` inherits the lead's
 `/effort`, so the definition is the only way a task's effort reaches its agent.
 A definition's `tools` list applies to a
 teammate and its body is appended to the teammate's prompt, so the reviewer's
@@ -241,15 +248,18 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 6 are the ones that get dropped.
 
 1. **The tasks.** The track's task ids in dependency order, and: "Call `TaskGet`
-   on each before you start it. Claim it with `TaskUpdate` (`owner` = your name,
-   `status` = `in_progress`, `metadata.progress` = 0) — the first now, each later
-   one once the previous closes. After every step, not only at the end,
-   `TaskUpdate` `metadata.progress` to round(100 × steps done ÷ steps), counting
-   the task's `Step` lines in the plan, or your own steps when it has none; when
-   something breaks and adds work, add steps and lower it." You set the owner of
-   the first task only, and before the spawn. The
-   progress sentence is here and not left to the definition because an
-   executor follows its dispatch and skips a definition-only rule.
+   on each before you start it. Claim it with `TaskUpdate` (`status` =
+   `in_progress`, `metadata.progress` = 0; the task already carries your name as
+   owner) — the first now, each later one once the previous closes. After
+   every step, not only at the end, `TaskUpdate` `metadata.progress` to
+   round(100 × steps done ÷ steps), counting the task's `Step` lines in the
+   plan, or your own steps when it has none; when something breaks and adds
+   work, add steps and lower it." Every task already
+   carries its owner; you set none. Claude Code queued one assignment notice per
+   task when the owners were set; they reach the teammate when it starts and
+   repeat this list. The progress sentence is here and not left to the
+   definition because an executor follows its dispatch and skips a
+   definition-only rule.
 2. **The goal.** The done state in one sentence — not a list of steps.
 3. **Skills.** "Check your available skills before you start and use what fits.
    If the shape of the work is unsettled, ask the lead before writing code. If
@@ -270,16 +280,19 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    push lands in it and you just report that."
    For the commit case: "Commit on `<branch>` the same way. Do not push."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
-7. **Close out.** "Before each task closes, `TaskUpdate` its `metadata` with
-   `verified: "<command> → <result>"` — the part 5 commands and their one-line
-   outcome. A `TaskCompleted` hook refuses a completion without it. Then
-   `TaskUpdate` the task to `completed`. Your final answer IS the report — what
-   you did, the verification output, and anything you deliberately left alone.
-   Your idle notification carries it to the lead, so do not also send it by
-   `SendMessage`. Then go idle: idle is how you stay available — never poll the
-   task list waiting. The lead's message with review findings wakes you; fix,
-   re-run the covering tests, push, and answer again. Stop only when the lead
-   says the track is clear."
+7. **Close out.** "Close each task with one `TaskUpdate` that sets
+   `status: "completed"` and `metadata.verified: "<command> → <result>"`
+   together — the part 5 commands and their one-line outcome. A hook refuses a
+   completion without `verified` in that same call. Your final answer IS the
+   report — what you did, the verification output, and anything you
+   deliberately left alone — under about 3,500 characters, Blocking issues
+   first: the idle notification that carries it to the lead cuts at 4,000.
+   Anything longer goes in a file in `<scratchpad>/reports/`, and the answer
+   ends with its path. Do not also send the report by `SendMessage`. Then go
+   idle: idle is how you stay available — never poll the task list waiting.
+   The lead's message with review findings wakes you; fix, re-run the covering
+   tests, push, and answer again. Stop only when the lead says the track is
+   clear." Write your real scratchpad path in place of `<scratchpad>`.
 
 ## The Run Log at Close
 
@@ -311,7 +324,7 @@ the PR next to the plan it describes.
 | Asking the user to choose a branching strategy | Step 2a derives it from the blockers. Only you have the graph |
 | Per-task branches or PRs while tracks run in parallel | One checkout, one HEAD. Concurrency already foreclosed it |
 | Keeping the small task for yourself | Delegate it. A busy lead can't review or unblock |
-| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Yours is the first task's owner, set before the spawn and nothing after it |
+| Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Owners are set when the tasks are created, before any spawn, never after it |
 | One teammate per task, mechanically | Count tracks. Two teammates in one file is a merge conflict |
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
