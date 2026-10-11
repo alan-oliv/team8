@@ -25,10 +25,10 @@ export const TASK_GATE_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-gate.sh');
 export const INBOX_DELIVER_SCRIPT = path.join(PLUGIN_DIR, 'dist', 'hooks', 'inbox-deliver.js');
 /** Where the user's own env values are stashed while the console owns them. */
 export const BACKUP_FILE = 'team8.backup.json';
-// The agent-teams doc: an in-process teammate's prompt cache holds 5 minutes
-// by default; this key stretches it to an hour so a fix round that starts
-// 3-10 minutes after the last one still reads its context warm instead of
-// paying for a cold re-read every round.
+// Earlier setups wrote this teammate prompt-cache TTL. The key is global, so
+// every subagent on the machine paid the 1-hour write price, and over 262
+// team8 teammates the warm re-reads it bought only broke even. Setup no longer
+// writes it; uninstall still removes it.
 export const SUBAGENT_PROMPT_CACHE_TTL = '1h';
 export const MODEL_FORCE_WARNING =
   'CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1 overrides every per-task model team8 assigns';
@@ -86,7 +86,6 @@ export interface HookBlock {
   statusLine: StatusLineCommand;
   subagentStatusLine: StatusLineCommand;
   env: Record<string, string>;
-  subagentPromptCacheTtl: string;
 }
 
 function post(port: number, route: string): string {
@@ -194,7 +193,6 @@ export function hookBlock(port: number): HookBlock {
     statusLine: { type: 'command', command: post(port, 'statusline'), refreshInterval: 5 },
     subagentStatusLine: { type: 'command', command: post(port, 'substatus') },
     env: Object.fromEntries(AGENT_ENV_VARS.map((name) => [name, '1'])),
-    subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL,
   };
 }
 
@@ -243,10 +241,6 @@ export function mergeHookBlock(
     statusLine: keptStatusLine(settings.statusLine, block.statusLine, 'statusline'),
     subagentStatusLine: keptStatusLine(settings.subagentStatusLine, block.subagentStatusLine, 'substatus'),
     env: { ...((settings.env ?? {}) as Record<string, unknown>), ...block.env },
-    // Unlike env: never overwrite a value the user already set, only fill the
-    // key in when it is missing.
-    subagentPromptCacheTtl:
-      (settings.subagentPromptCacheTtl as string | undefined) ?? block.subagentPromptCacheTtl,
   };
 }
 
@@ -321,7 +315,8 @@ export async function readClaudeVersion(): Promise<string | null> {
 
 interface SettingsBackup {
   env: Record<string, string | null>;
-  subagentPromptCacheTtl: string | null;
+  /** Only in backups an earlier install wrote. */
+  subagentPromptCacheTtl?: string | null;
 }
 
 function envBackup(settings: Record<string, unknown>): Record<string, string | null> {
@@ -398,25 +393,16 @@ export async function runSetup(opts: {
     await fs.rm(backupPath, { force: true });
   } else {
     // Stash once: a second install would otherwise record the console's own
-    // "1" (or "1h") as if it were the user's.
+    // "1" as if it were the user's.
     if (saved === null) {
       await atomicWrite(
         backupPath,
         `${JSON.stringify(
-          {
-            env: envBackup(current),
-            subagentPromptCacheTtl:
-              typeof current.subagentPromptCacheTtl === 'string' ? current.subagentPromptCacheTtl : null,
-          },
+          { env: envBackup(current) },
           null,
           2,
         )}\n`,
       );
-    }
-    if (current.subagentPromptCacheTtl && current.subagentPromptCacheTtl !== SUBAGENT_PROMPT_CACHE_TTL) {
-      lines.push(`kept your prompt-cache TTL of ${JSON.stringify(current.subagentPromptCacheTtl)}.`);
-    } else {
-      lines.push(`subagentPromptCacheTtl is ${SUBAGENT_PROMPT_CACHE_TTL} — teammates keep their context warm between review rounds.`);
     }
     if (current.statusLine && !isConsoleStatusLine(current.statusLine, 'statusline')) {
       lines.push('left your own status line alone — no rate-limit gauge or lead cost readout.');

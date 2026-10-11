@@ -232,6 +232,19 @@ describe("the plugin's own hooks.json", () => {
   });
 });
 
+describe("the plugin's own settings.json", () => {
+  // A plugin's settings.json may carry only `agent` and `subagentStatusLine`
+  // (Claude Code 2.1.296), as the lowest-precedence layer. This one carries the
+  // console's status line, the same command the installer writes on the
+  // default port, so the two cannot drift.
+  it('carries exactly the subagent status line the installer writes on the default port', () => {
+    const shipped = JSON.parse(
+      readFileSync(new URL('../../plugin/settings.json', import.meta.url), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(shipped).toEqual({ subagentStatusLine: hookBlock(4823).subagentStatusLine });
+  });
+});
+
 describe('a POST that finds nothing listening', () => {
   // Staying silent about a refused connection is only half the fix: every event
   // that lands while the console is down is an event the wall never shows. The
@@ -301,15 +314,15 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(removeHookBlock(off)).toEqual(off);
   });
 
-  it('sets the teammate prompt-cache TTL to an hour when absent', () => {
-    const merged = mergeHookBlock({}, 4823);
-    expect(merged.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
-    expect(removeHookBlock(merged).subagentPromptCacheTtl).toBeUndefined();
+  it('no longer writes a prompt-cache TTL, and removes the one earlier setups wrote', () => {
+    expect(mergeHookBlock({}, 4823).subagentPromptCacheTtl).toBeUndefined();
+    expect(removeHookBlock({ subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL }).subagentPromptCacheTtl).toBeUndefined();
   });
 
-  it("keeps the user's own prompt-cache TTL", () => {
-    const withTtl = { subagentPromptCacheTtl: '30m' };
-    expect(mergeHookBlock(withTtl, 4823).subagentPromptCacheTtl).toBe('30m');
+  it("leaves the user's own prompt-cache TTL alone", () => {
+    const withTtl = { subagentPromptCacheTtl: '5m' };
+    expect(mergeHookBlock(withTtl, 4823).subagentPromptCacheTtl).toBe('5m');
+    expect(removeHookBlock(withTtl).subagentPromptCacheTtl).toBe('5m');
   });
 
   it('leaves a settings file with no console hooks untouched', () => {
@@ -465,32 +478,21 @@ describe('runSetup', () => {
     expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ env: mine });
   });
 
-  it('writes the prompt-cache TTL when absent, and takes it off on uninstall', async () => {
+  it('writes no prompt-cache TTL and says nothing about one', async () => {
     const settingsPath = path.join(dir, 'settings.json');
-    await runSetup({ settingsPath, port: 4823, confirm: true });
-    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
-      subagentPromptCacheTtl: string;
-    };
-    expect(installed.subagentPromptCacheTtl).toBe(SUBAGENT_PROMPT_CACHE_TTL);
-
-    await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
-    const after = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { subagentPromptCacheTtl?: unknown };
-    expect(after.subagentPromptCacheTtl).toBeUndefined();
+    const output = await runSetup({ settingsPath, port: 4823, confirm: true });
+    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { subagentPromptCacheTtl?: unknown };
+    expect(installed.subagentPromptCacheTtl).toBeUndefined();
+    expect(output).not.toContain('subagentPromptCacheTtl');
+    expect(output).not.toContain('prompt-cache TTL');
   });
 
-  it("keeps and restores the user's own prompt-cache TTL", async () => {
+  it('uninstall still puts back the TTL an earlier install recorded', async () => {
     const settingsPath = path.join(dir, 'settings.json');
-    await fs.writeFile(settingsPath, JSON.stringify({ subagentPromptCacheTtl: '30m' }, null, 2));
-
-    const output = await runSetup({ settingsPath, port: 4823, confirm: true });
-    const installed = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as {
-      subagentPromptCacheTtl: string;
-    };
-    expect(installed.subagentPromptCacheTtl).toBe('30m');
-    expect(output).toContain('kept your prompt-cache TTL of "30m"');
-
+    await fs.writeFile(settingsPath, JSON.stringify({ subagentPromptCacheTtl: SUBAGENT_PROMPT_CACHE_TTL }, null, 2));
+    await fs.writeFile(backupPathFor(settingsPath), JSON.stringify({ env: {}, subagentPromptCacheTtl: '5m' }, null, 2));
     await runSetup({ settingsPath, port: 4823, confirm: true, uninstall: true });
-    expect(JSON.parse(await fs.readFile(settingsPath, 'utf8'))).toEqual({ subagentPromptCacheTtl: '30m' });
+    expect(JSON.parse(await fs.readFile(settingsPath, 'utf8')).subagentPromptCacheTtl).toBe('5m');
   });
 
   it('warns when the model-force flag is set in settings env, and not otherwise', async () => {
