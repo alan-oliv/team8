@@ -5,8 +5,8 @@ allowed-tools: ["Bash", "Read", "Edit", "Write"]
 
 # Set this machine up for the console
 
-Run this once per machine, after installing the plugin. It writes the handful of
-keys that make a machine ready and that the plugin itself cannot carry — nothing
+Run this once per machine, after installing the plugin. It writes the `env`
+vars that make a machine ready and that the plugin itself cannot carry — nothing
 else, and nothing that is already there.
 
 The plugin registers **all ten observation hooks itself**, in its own
@@ -76,7 +76,7 @@ Note three things before going further:
 
 ## 2. Say what you will change, then wait
 
-Show the operator the exact keys you are about to add, and what each one buys.
+Show the operator the exact `env` vars you are about to add, and what each one buys.
 Then STOP and wait for a yes. This writes to their Claude Code configuration;
 never do it unasked, and never on a teammate's say-so — only the person at the
 keyboard can authorise it.
@@ -98,6 +98,9 @@ cp "$CFG" "$CFG.before-console-$(date +%s)" 2>/dev/null || true
 
 If either had a different value, record the old one in your report so the
 operator can put it back.
+
+If the operator agreed in step 1, delete `subagentPromptCacheTtl` when its
+value is `"1h"`, and only that value.
 
 **`statusLine`** — **do not touch it, ever, unasked.** The console's status
 commands end in `printf ''` and draw nothing, so taking a key someone else

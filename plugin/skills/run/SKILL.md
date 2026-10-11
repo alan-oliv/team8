@@ -48,7 +48,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    the executors only ran the tests covering their own files. Then, when the PR
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
-   `plan`) and commit it on the branch. Then complete the "Close the run" task.
+   `plan`) and commit it on the branch. In teammates mode, then complete the
+   "Close the run" task.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -207,11 +208,12 @@ reviewer, and the executor stays alive until its track is clear.
    `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
    Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
-   runs at high effort and carries no Edit or Write, so read-only is enforced), model sized like the
-   track's biggest task (sonnet for standard, opus for judgment), with: the diff path,
-   the task descriptions (`TaskGet` each, paste them), the plan sections those
-   tasks name, the global constraints, and the reports directory
-   (`<scratchpad>/reports/`) for findings over about 3,500 characters. Two verdicts, both required: does
+   runs at high effort and carries no Edit or Write, so read-only is enforced),
+   model sized like the track's biggest task (sonnet for standard, opus for
+   judgment), with: the diff path, the task descriptions (`TaskGet` each, paste
+   them), the plan sections those tasks name, the global constraints, and the
+   reports directory (`<scratchpad>/reports/`) for findings over about 3,500
+   characters. Two verdicts, both required: does
    the diff do what the tasks say, nothing more and nothing less; and is it
    well built — tests that assert something, no duplication of a block that
    exists, no scope beyond the tasks. Findings labelled Blocking or Minor,
@@ -246,17 +248,17 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 6 are the ones that get dropped.
 
 1. **The tasks.** The track's task ids in dependency order, and: "Call `TaskGet`
-   on each before you start it. Claim it with `TaskUpdate` (`owner` = your name,
-   `status` = `in_progress`, `metadata.progress` = 0) — the first now, each later
-   one once the previous closes. After every step, not only at the end,
+   on each before you start it. Claim it with `TaskUpdate` (`status` =
+   `in_progress`, `metadata.progress` = 0; the task already carries your name as
+   owner) — the first now, each later one once the previous closes. After every step, not only at the end,
    `TaskUpdate` `metadata.progress` to round(100 × steps done ÷ steps), counting
    the task's `Step` lines in the plan, or your own steps when it has none; when
    something breaks and adds work, add steps and lower it." Every task already
    carries its owner; you set none. Claude Code queued one assignment notice per
    task when the owners were set; they reach the teammate when it starts and
-   repeat this list. The
-   progress sentence is here and not left to the definition because an
-   executor follows its dispatch and skips a definition-only rule.
+   repeat this list. The progress sentence is here and not left to the
+   definition because an executor follows its dispatch and skips a
+   definition-only rule.
 2. **The goal.** The done state in one sentence — not a list of steps.
 3. **Skills.** "Check your available skills before you start and use what fits.
    If the shape of the work is unsettled, ask the lead before writing code. If

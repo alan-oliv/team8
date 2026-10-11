@@ -79,6 +79,10 @@ unowned, unblocked task by itself, whatever track it belongs to: once at
 spawn, before it reads its prompt and without telling the model, and again
 whenever it goes idle. It never takes a task that has an owner.
 
+The mode is derived in the closing, after the tasks exist. Once it comes out as
+teammates, set the owners and add "Close the run" before the closing; in any
+other mode, neither.
+
 - **Name each track's teammate** when you draw the tracks: short, lowercase,
   from what the track builds (`gate`, `skills`, `prices`). `team8:run` spawns
   it under exactly that name.
