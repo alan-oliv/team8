@@ -146,4 +146,10 @@ describe('pricingFor', () => {
     expect(pricingFor('claude-opus-5-5', 900_000)).toEqual(resolveModel('claude-opus-5-5').pricing);
     expect(pricingFor(undefined, 0)).toEqual(resolveModel(undefined).pricing);
   });
+
+  it('applies the long-prompt card through an alias and a dated id', () => {
+    expect(pricingFor('haiku', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
+    expect(pricingFor('claude-haiku-5-5-20260101', 200_000)).toEqual(pricingFor('claude-haiku-5-5', 200_000));
+    expect(pricingFor('haiku', 200_000).input).toBe(0.5);
+  });
 });

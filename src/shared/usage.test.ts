@@ -124,6 +124,16 @@ describe('totalCost', () => {
     expect(totalCost([record(100_001)])).toBeCloseTo((100_001 * 0.5) / 1e6 + 2.5, 10);
   });
 
+  it('counts cache reads and writes toward the haiku-5-5 prompt length', () => {
+    const record = (cacheRead: number) => ({
+      messageId: `c${cacheRead}`,
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: 39_999, output_tokens: 0 },
+    });
+    expect(totalCost([record(60_000)])).toBeCloseTo((1 * 0.1 + 60_000 * 0.01 + 39_999 * 0.125) / 1e6, 10);
+    expect(totalCost([record(60_001)])).toBeCloseTo((1 * 0.5 + 60_001 * 0.05 + 39_999 * 0.625) / 1e6, 10);
+  });
+
   it('costs the charlie fixture on the haiku tier after deduping', () => {
     expect(totalCost(forAgent('charlie')).toFixed(6)).toBe('0.044338');
   });
