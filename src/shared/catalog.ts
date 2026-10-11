@@ -16,7 +16,7 @@ interface CatalogFile {
   fallbackModel: string;
   fallbackWindow: number;
   aliases: Record<string, string>;
-  models: Record<string, { window: number; pricing: PricingTier }>;
+  models: Record<string, { window: number; pricing: PricingTier; longPrompt?: { over: number; pricing: PricingTier } }>;
 }
 
 const catalog = catalogJson as CatalogFile;
@@ -63,4 +63,15 @@ export function resolveModel(raw: string | undefined): ResolvedModel {
     pricing: catalog.models[catalog.fallbackModel].pricing,
     approximate: true,
   };
+}
+
+/**
+ * The tier one request is billed at. claude-haiku-5-5 has two rate cards: its
+ * long-prompt card applies once a request's prompt (input plus cache reads and
+ * writes) is over 100K tokens. Every other model has one.
+ */
+export function pricingFor(raw: string | undefined, promptTokens: number): PricingTier {
+  const resolved = resolveModel(raw);
+  const long = catalog.models[resolved.canonical]?.longPrompt;
+  return long && promptTokens > long.over ? long.pricing : resolved.pricing;
 }

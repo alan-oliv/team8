@@ -1,4 +1,4 @@
-import { resolveModel, type PricingTier } from './catalog';
+import { pricingFor, type PricingTier } from './catalog';
 import type { TranscriptRecord } from './transcript';
 
 export interface Usage {
@@ -71,9 +71,13 @@ export function costOf(usage: Usage, tier: PricingTier): number {
 export function totalCost(records: UsageRecord[]): number {
   let sum = 0;
   for (const record of dedupeUsage(records)) {
-    sum += costOf(record.usage, resolveModel(record.model).pricing);
+    sum += costOf(record.usage, pricingFor(record.model, promptTokensOf(record.usage)));
   }
   return sum;
+}
+
+function promptTokensOf(usage: Usage): number {
+  return usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
 }
 
 export function contextOccupancy(records: TranscriptRecord[]): number {

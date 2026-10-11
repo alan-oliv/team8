@@ -114,6 +114,16 @@ describe('costOf', () => {
 });
 
 describe('totalCost', () => {
+  it('bills a claude-haiku-5-5 request over 100K prompt tokens on its long-prompt card', () => {
+    const record = (input: number) => ({
+      messageId: `m${input}`,
+      model: 'claude-haiku-5-5',
+      usage: { input_tokens: input, output_tokens: 1_000_000 },
+    });
+    expect(totalCost([record(100_000)])).toBeCloseTo((100_000 * 0.1) / 1e6 + 0.5, 10);
+    expect(totalCost([record(100_001)])).toBeCloseTo((100_001 * 0.5) / 1e6 + 2.5, 10);
+  });
+
   it('costs the charlie fixture on the haiku tier after deduping', () => {
     expect(totalCost(forAgent('charlie')).toFixed(6)).toBe('0.044338');
   });

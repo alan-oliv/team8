@@ -55,16 +55,19 @@ describe('RATES', () => {
 });
 
 // The design's cost model states cache writes bill at 1.25x the input rate and
-// cache reads at 0.1x. Those two multipliers are the difference between the
-// shown total and roughly 2.6x it, so the catalog is held to them rather than
-// trusted: a hand-edit that breaks the relationship must fail here, loudly.
+// cache reads at 0.1x, except the newer Opus and Fable, which read for less
+// (claude-api skill, models.md). Those multipliers are the difference between
+// the shown total and several times it, so the catalog is held to them rather
+// than trusted: a hand-edit that breaks the relationship must fail here, loudly.
 describe('the cache multipliers the whole model turns on', () => {
   it('prices a 5-minute cache write at 1.25x the input rate for every model', () => {
     for (const rate of RATES()) expect(rate.cacheWrite).toBeCloseTo(rate.input * 1.25, 10);
   });
 
-  it('prices a cache read at 0.1x the input rate for every model', () => {
-    for (const rate of RATES()) expect(rate.cacheRead).toBeCloseTo(rate.input * 0.1, 10);
+  const READ_SHARE: Record<string, number> = { 'claude-opus-5-5': 0.05, 'claude-fable-5-1': 0.025 };
+
+  it("prices a cache read at its model's share of the input rate", () => {
+    for (const rate of RATES()) expect(rate.cacheRead).toBeCloseTo(rate.input * (READ_SHARE[rate.model] ?? 0.1), 10);
   });
 
   it('charges a cache read a tenth of what the same tokens cost as input', () => {
@@ -82,7 +85,7 @@ describe('the cache multipliers the whole model turns on', () => {
 
 describe('rateOf', () => {
   it('resolves a bare alias to the model the catalog prices', () => {
-    expect(rateOf('sonnet').model).toBe('claude-sonnet-5');
+    expect(rateOf('sonnet').model).toBe('claude-sonnet-5-5');
   });
 
   it('resolves the 1M-window suffix to the same model', () => {
@@ -212,11 +215,11 @@ describe('splitByModel', () => {
 
   it('groups a dated model id with its undated self', () => {
     const byModel = splitByModel([
-      record('claude-haiku-4-5-20251001', { input_tokens: 1, output_tokens: 1 }, 'a'),
+      record('claude-haiku-5-5-20260101', { input_tokens: 1, output_tokens: 1 }, 'a'),
       record('haiku', { input_tokens: 1, output_tokens: 1 }, 'b'),
     ]);
     expect(byModel).toHaveLength(1);
-    expect(byModel[0].model).toBe('claude-haiku-4-5');
+    expect(byModel[0].model).toBe('claude-haiku-5-5');
   });
 });
 

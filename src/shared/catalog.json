@@ -2,25 +2,45 @@
   "version": "2.1.231",
   "outputReserve": 20000,
   "compactHeadroom": 13000,
-  "fallbackModel": "claude-opus-5",
+  "fallbackModel": "claude-opus-5-5",
   "fallbackWindow": 200000,
   "aliases": {
-    "opus": "claude-opus-5",
-    "sonnet": "claude-sonnet-5",
-    "haiku": "claude-haiku-4-5"
+    "opus": "claude-opus-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "haiku": "claude-haiku-5-5"
   },
   "models": {
+    "claude-fable-5-1": {
+      "window": 1000000,
+      "pricing": { "input": 10, "output": 50, "cacheWrite5m": 12.5, "cacheWrite1h": 20, "cacheRead": 0.25, "webSearch": 0.01 }
+    },
     "claude-fable-5": {
       "window": 1000000,
       "pricing": { "input": 10, "output": 50, "cacheWrite5m": 12.5, "cacheWrite1h": 20, "cacheRead": 1, "webSearch": 0.01 }
+    },
+    "claude-opus-5-5": {
+      "window": 1000000,
+      "pricing": { "input": 4, "output": 20, "cacheWrite5m": 5, "cacheWrite1h": 8, "cacheRead": 0.2, "webSearch": 0.01 }
     },
     "claude-opus-5": {
       "window": 1000000,
       "pricing": { "input": 5, "output": 25, "cacheWrite5m": 6.25, "cacheWrite1h": 10, "cacheRead": 0.5, "webSearch": 0.01 }
     },
+    "claude-sonnet-5-5": {
+      "window": 1000000,
+      "pricing": { "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.2, "webSearch": 0.01 }
+    },
     "claude-sonnet-5": {
       "window": 1000000,
       "pricing": { "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.2, "webSearch": 0.01 }
+    },
+    "claude-haiku-5-5": {
+      "window": 1000000,
+      "pricing": { "input": 0.1, "output": 0.5, "cacheWrite5m": 0.125, "cacheWrite1h": 0.2, "cacheRead": 0.01, "webSearch": 0.01 },
+      "longPrompt": {
+        "over": 100000,
+        "pricing": { "input": 0.5, "output": 2.5, "cacheWrite5m": 0.625, "cacheWrite1h": 1, "cacheRead": 0.05, "webSearch": 0.01 }
+      }
     },
     "claude-haiku-4-5": {
       "window": 200000,
