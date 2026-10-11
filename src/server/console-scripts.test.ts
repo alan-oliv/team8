@@ -307,7 +307,12 @@ describe('task-gate.sh', () => {
   });
 
   it('passes everything when jq is missing', async () => {
-    const run = await script('task-gate.sh', [], JSON.stringify(create({ model: 'sonnet' })), { PATH: '/bin' });
+    // A PATH holding cat and nothing else: /bin alone still finds jq where it
+    // links to /usr/bin, as on the Ubuntu CI runners.
+    const bin = path.join(root, 'bin-without-jq');
+    await fs.mkdir(bin);
+    await fs.symlink('/bin/cat', path.join(bin, 'cat'));
+    const run = await script('task-gate.sh', [], JSON.stringify(create({ model: 'sonnet' })), { PATH: bin });
     expect(run.code).toBe(0);
   });
 
