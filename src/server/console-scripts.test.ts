@@ -301,6 +301,16 @@ describe('task-gate.sh', () => {
     expect(run.code).toBe(0);
   });
 
+  it('refuses a completion from a 2.1.296 teammate id, passes a plain subagent', async () => {
+    expect((await gate(complete({ agentId: 'atrack-a-0123456789abcdef' }))).code).toBe(2);
+    expect((await gate(complete({ agentId: 'a0123456789abcdef' }))).code).toBe(0);
+  });
+
+  it('passes everything when jq is missing', async () => {
+    const run = await script('task-gate.sh', [], JSON.stringify(create({ model: 'sonnet' })), { PATH: '/bin' });
+    expect(run.code).toBe(0);
+  });
+
   it("passes the lead's own completion", async () => {
     expect((await gate(complete({}))).code).toBe(0);
   });

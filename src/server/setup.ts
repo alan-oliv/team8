@@ -228,9 +228,9 @@ export function mergeHookBlock(
   const hooks: Record<string, unknown[]> = {};
   for (const [event, entries] of Object.entries(existing)) {
     const kept = (Array.isArray(entries) ? entries : []).filter((e) => !isConsoleEntry(e));
-    // An event this version no longer writes, like the old TaskCreated and
-    // TaskCompleted gates, goes once nothing of the user's is left on it.
-    if (kept.length > 0 || (HOOK_EVENTS as readonly string[]).includes(event)) hooks[event] = kept;
+    // The old TaskCreated and TaskCompleted gates go once nothing of the
+    // user's is left on them; every other event keeps its key as before.
+    if (kept.length > 0 || !['TaskCreated', 'TaskCompleted'].includes(event)) hooks[event] = kept;
   }
   for (const event of HOOK_EVENTS) {
     hooks[event] = [...(hooks[event] ?? []), ...block.hooks[event]];

@@ -5,7 +5,9 @@
 # - a TaskCreate carrying any of team8's four metadata keys must carry all
 #   four; one carrying none of them is not team8's (a todo list, a checklist);
 # - a teammate's TaskUpdate to completed must carry metadata.verified in that
-#   same call; the lead's own completions carry no agent_id and pass.
+#   same call; the lead's own completions carry no agent_id and pass. A
+#   teammate's agent_id is name@team on older builds and a<name>-<16 hex> on
+#   2.1.296; a plain subagent's is a<hex> with no hyphen, so it passes.
 #
 # CONTRACT: exit 2 blocks the call and returns stderr to the model as the
 # reason, exit 0 allows it. A broken gate must never block work, so anything
@@ -27,7 +29,7 @@ reason=$(printf '%s' "$payload" | jq -r '
         then "TaskCreate: metadata is missing \($missing | join(", ")) — a team8 task carries complexity, model, effort and why (team8:tasks)"
         else empty end
     elif .tool_name == "TaskUpdate" and $in.status == "completed"
-      and (.agent_id // "") != ""
+      and ((.agent_id // "") | test("@|^a.+-[0-9a-f]{16}$"))
       and ((($m.verified // "") | tostring) == "") then
       "task #\($in.taskId): put metadata.verified \"<command> → <result>\" in the same TaskUpdate that sets status completed"
     else empty end

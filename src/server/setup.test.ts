@@ -338,6 +338,11 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(merged.hooks.TaskCompleted).toBeUndefined();
   });
 
+  it("keeps a user's own empty event key", () => {
+    const merged = mergeHookBlock({ hooks: { Elicitation: [] } }, 4823) as { hooks: Record<string, unknown[]> };
+    expect(merged.hooks.Elicitation).toEqual([]);
+  });
+
   it('uninstall removes the task gate', () => {
     const cleaned = removeHookBlock(mergeHookBlock({}, 4823)) as { hooks?: Record<string, HookEntry[]> };
     expect((cleaned.hooks?.PreToolUse ?? []).filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(0);
