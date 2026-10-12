@@ -100,3 +100,13 @@ test('the line sits under the bands beneath it', async ($, on) => {
   expect(texts[0]).toBe('other band')
   expect(texts.indexOf('team8')).toBeGreaterThan(0)
 })
+
+// With no other plugin drawing, next(e) hands up core's own node, which the
+// engine refuses under a Box with a size; the line has to survive that tree.
+test("the line draws over core's own band beneath it", async ($, on) => {
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }))
+  stub(on)
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: 'team8' })).toBeTruthy()
+})

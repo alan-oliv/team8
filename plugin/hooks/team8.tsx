@@ -94,8 +94,8 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Drawn after next(e), so whichever plugin is outermost the line sits last,
-  // under every other band and right above the prompt.
+  // Drawn after next(e), so the line sits under the bands of the plugins it wraps,
+  // right above the prompt. One outside it that answers without next(e) drops it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const rest = await next(e)
     try {

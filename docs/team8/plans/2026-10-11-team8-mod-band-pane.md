@@ -1690,6 +1690,8 @@ git commit -m "Make the band one line: the run's mode, its progress and the cons
 
 ### Task 6: session-cards draws the bands beneath it first (`~/code/claude-mods`)
 
+**Dropped on 2026-10-12:** claude-mods PR #4 was closed unmerged; see the spec's section 5.
+
 `session-cards`' `AbovePrompt` hook returns only its own tree. So whenever it sits outside another plugin's band hook, that other band is dropped, which is why the team8 band never showed in the operator's sessions. It should draw `await next(e)` above its cards.
 
 **Files.** These are in the repo `~/code/claude-mods`, not this one:
@@ -1786,6 +1788,8 @@ git commit -m "Draw the team8 line under the other bands, right above the prompt
 (Use `git add` first, and put the `.tsx` path in the pathspec, if the test file was renamed.)
 
 ### Task 8: session-cards draws its cards before the bands beneath it (`~/code/claude-mods`)
+
+**Dropped on 2026-10-12:** claude-mods PR #4 was closed unmerged; see the spec's section 5.
 
 This goes on the open branch `session-cards-keeps-other-bands` (PR #4). session-cards still keeps `next(e)`, now after its cards, so with Task 7 the team8 line sits under the cards whichever plugin is outermost. The branch row's `marginTop={2}` goes back to separating the cards from the transcript.
 

@@ -23,10 +23,11 @@ three rounds with the operator (see Decisions).
   Buttons and no digit hotkeys, so a digit typed into an empty prompt is never taken over.
 - **Last above the prompt, under the cards.** Claude Code nests the plugins' `AbovePrompt` hooks
   in an order no plugin chooses. The operator wants the line under `session-cards`' cards (their
-  own mod, `~/code/claude-mods`). So the team8 band draws itself after `next(e)`, and
-  `session-cards` draws `next(e)` after its cards, where it used to drop it. Whichever of the two
-  is outermost, the team8 line comes last, right above the prompt. (An earlier round drew it
-  first; the operator moved it under the cards at the live check.)
+  own mod, `~/code/claude-mods`), and does not want that mod changed for team8. So the team8 band
+  draws itself after `next(e)`. team8's module loads before `session-cards` and wraps it, so
+  `next(e)` hands up the cards and the line comes last, right above the prompt. `session-cards`
+  answers without `next(e)`, so if the order ever flipped it would hide the line. (An earlier
+  round drew it first; the operator moved it under the cards at the live check.)
 - **The mode is the console's.** It's the one `team8:tasks` decided: the last
   `mode: <solo|subagents|teammates|workflow> —` line the lead wrote into `docs/team8/runs/`.
   The console reads it from the lead's transcript (`src/server/index.ts`, `lastDecidedMode`).
@@ -41,8 +42,15 @@ three rounds with the operator (see Decisions).
 A throwaway `t8ui` mod and a live-check copy `t8live` in this session's dev-mods folder.
 
 - **Band.** A `ui.render` hook on `AbovePrompt` draws a tree, and `await next(e)` returns the
-  tree of the plugins beneath it. `session-cards` returned only its own tree, so whenever it sat
-  outside team8 the team8 band was dropped. That is why the operator saw no band.
+  tree of the plugins beneath it. `session-cards` returns only its own tree, so whenever it sits
+  outside team8 the team8 band is dropped. That is why the operator saw no band from the
+  `t8live` copy, which loads after `session-cards`. The installed plugin, and the repo's plugin
+  under `--plugin-dir`, load before it: the debug log names the chain `team8@…,
+  session-cards@claude-mods` (2026-10-12).
+- **Engine node.** With no other plugin drawing, `next(e)` hands up core's own drawing,
+  `{ type: 'engine', ref }`. The engine refuses a whole band tree that puts it under a Box with
+  `width`, `height`, `minWidth`, `minHeight`, `position`, `display`, `overflow` or an offset, and
+  draws its own instead.
 - **Pane (removed).** `$.ui.open` placed it `inline` on the default renderer and docked it only
   under `/tui fullscreen`. The mods interface doc says so in one line.
 - **Reads.** `$.agent.list()`, `TaskList` from a `$.clock.every` timer and
@@ -104,12 +112,13 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
 - A refused tree costs only that site: Claude Code draws its own there.
 - The wave notifier is unchanged.
 
-## 5. session-cards (`~/code/claude-mods`)
+## 5. session-cards (`~/code/claude-mods`): unchanged
 
-- In `session-cards/hooks/register.tsx`, the `AbovePrompt` hook awaits `next(e)` and draws it
-  last, under its own cards. When it has nothing of its own to draw, it still returns `next(e)`.
-- The change goes on a branch of `claude-mods`, with a version bump following that repo's
-  convention and a PR against its `main`.
+- An earlier round changed `session-cards` to draw `next(e)` under its cards (claude-mods PR #4).
+  It was dropped on 2026-10-12: the band is team8's, and the operator does not want their own mod
+  changed for it. It also hid the cards in every session, since it put core's engine node under
+  the cards' `width` Box.
+- team8's band does not need it: its module loads before `session-cards` (Probes).
 
 ## Acceptance
 
@@ -124,8 +133,7 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
     `team8 is running a subagents session · total progress 1/2 (50%) · see details here …`;
   - it passes through with no mode, and with no tasks;
   - with the console down it shows the off text.
-- **`session-cards`:** its own tests pass, plus one new test that a tree from beneath is drawn
-  above the cards.
+  - the line still draws when the tree beneath is core's own engine node.
 - **The repo:** `npm test` and `npm run typecheck` pass, and `claude plugin validate plugin`
   passes.
 - **The live check (by the operator):** the team8 line shows under `session-cards`' cards, right

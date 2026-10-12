@@ -3,7 +3,7 @@
 spec: docs/team8/specs/2026-10-11-team8-mod-band-pane-design.md
 plan: docs/team8/plans/2026-10-11-team8-mod-band-pane.md
 branch: team8-mod
-pr: https://github.com/alan-oliv/team8/pull/41 · session-cards: https://github.com/alan-oliv/claude-mods/pull/4
+pr: https://github.com/alan-oliv/team8/pull/41 · session-cards: https://github.com/alan-oliv/claude-mods/pull/4 (closed unmerged 2026-10-12)
 
 ## Brainstorm
 - path: architectural, from the design handoff in `docs/design_handoff_team8_mod/`, with a probe spike before the design
@@ -95,3 +95,4 @@ pr: https://github.com/alan-oliv/team8/pull/41 · session-cards: https://github.
   - Claude Code clears a task list once every task in it is completed. That lost the checklist tasks once and dropped the live-check teammate with it. Keep a "Close the run" task open in subagents mode too.
   - When the lead claims tasks as `team-lead`, each claim echoes back as a `task_assignment` notice, again. It's harmless.
   - The PR hook matched `gh pr create` inside a plan heredoc. Write plan text with the Edit tool.
+  - Tasks 6 and 8 (claude-mods PR #4) were wrong and were dropped on 2026-10-12. The band is team8's, and the operator doesn't want their own mod changed for it. The change also hid their cards in every session: it put `next(e)`'s engine node under the cards' `width` Box, which the engine refuses whole. Its test passed because the layer beneath answered with a plain Box, not core's node. team8 never needed it: the installed module loads before session-cards and wraps it. Only the `t8live` dev copy loaded after it. Next time, judge a band from the installed or `--plugin-dir` plugin, and test with `{ type: 'engine', ref: 0 }` beneath. team8.test.tsx now does.
