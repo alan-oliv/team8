@@ -32,6 +32,7 @@ let tasks: Task[] = []
 let health: Health | undefined
 let drawn = ''
 let refreshing = false
+let ticking = false
 let tab: 'team' | 'tasks' = 'team'
 let focusName: string | undefined
 
@@ -40,6 +41,10 @@ function glyphColor(m: Member): string | undefined {
 }
 
 async function refresh($: EngineInterface) {
+  // /clear keeps the process under a new session id and fires no session.start.
+  try {
+    sessionId = await $.session.id()
+  } catch {}
   try {
     roster = await $.agent.list()
   } catch {}
@@ -57,26 +62,30 @@ async function refresh($: EngineInterface) {
   const key = JSON.stringify([roster, tasks, health, [...activity], Math.floor(Date.now() / 60_000)])
   if (key !== drawn) {
     drawn = key
-    $.ui.invalidate('ui.render')
+    try {
+      $.ui.invalidate('ui.render')
+    } catch {}
   }
 }
 
 // At most once a second, trailing, so a burst of tool calls costs one read.
 function refreshSoon($: EngineInterface) {
   if (refreshing) return
-  refreshing = true
-  $.clock.after(1000, () => {
-    refreshing = false
-    void refresh($)
-  })
+  try {
+    $.clock.after(1000, () => {
+      refreshing = false
+      void refresh($)
+    })
+    refreshing = true
+  } catch {}
 }
 
 async function openPane($: EngineInterface, name?: string) {
   focusName = name
   try {
     await $.ui.open({ id: PANE, title: 'team8', focus: true, closeOnEscape: true, rows: 16, columns: 46 })
+    $.ui.invalidate('ui.render')
   } catch {}
-  $.ui.invalidate('ui.render')
 }
 
 // Unasked, so Claude Code places it only from 144 columns (110 once opened by
@@ -111,11 +120,14 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     try {
-      sessionId = await $.session.id()
+      // session.start can fire again in the same module; one timer is enough.
+      if (!ticking) {
+        $.clock.every(5000, () => void refresh($))
+        ticking = true
+      }
       await $.command.register({ name: 'team8', description: 'Open the team8 pane: teammates and tasks', immediate: true })
-      await refresh($)
-      $.clock.every(5000, () => void refresh($))
     } catch {}
+    await refresh($)
     return next(e)
   })
 
@@ -145,7 +157,9 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
-    refreshSoon($)
+    try {
+      refreshSoon($)
+    } catch {}
     return next(e)
   })
 

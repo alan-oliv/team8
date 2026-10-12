@@ -13,10 +13,10 @@ const TASKS = [
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} }
 const PANE = { title: 'team8', isFocused: true, bodyColumns: 46, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 16 }, view: {} }
 
-type Seen = { opened: Record<string, unknown>[]; prompts: string[] }
+type Seen = { opened: Record<string, unknown>[]; prompts: string[]; toasts: string[] }
 
-function stub(on: On, roster: AgentInfo[] = ROSTER): Seen {
-  const seen: Seen = { opened: [], prompts: [] }
+function stub(on: On, roster: AgentInfo[] = ROSTER, isPlaced = true): Seen {
+  const seen: Seen = { opened: [], prompts: [], toasts: [] }
   // The kit's bottom hook throws on anything left unanswered: the module's
   // timers and the engine's own drawing beneath the band are answered here.
   mock.clock(on)
@@ -36,7 +36,11 @@ function stub(on: On, roster: AgentInfo[] = ROSTER): Seen {
   }))
   on('ui.open', (_, e) => {
     seen.opened.push({ ...e })
-    return { value: { isPlaced: true } }
+    return { value: isPlaced ? { isPlaced: true } : { isPlaced: false, reason: 'narrow terminal' } }
+  })
+  on('ui.toast', (_, e) => {
+    seen.toasts.push(e.text)
+    return { value: undefined }
   })
   on('prompt.submit', (_, e) => {
     seen.prompts.push(e.text)
@@ -85,4 +89,12 @@ test('the lead invoking team8:run opens the pane without taking the keyboard', a
   await $.tool.call({ tool: 'Skill', skill: 'team8:run' })
   expect(seen.opened).toEqual([expect.objectContaining({ id: 'team8' })])
   expect(seen.opened[0]).not.toHaveProperty('focus')
+})
+
+test('a team8:run open that is not placed says how to open the pane', async ($, on) => {
+  const seen = stub(on, ROSTER, false)
+  on('tool.call', { tool: 'Skill' }, () => ({ result: {} }))
+  await $.session.start(START)
+  await $.tool.call({ tool: 'Skill', skill: 'team8:run' })
+  expect(seen.toasts).toEqual(['team8: /team8 opens the team pane'])
 })
