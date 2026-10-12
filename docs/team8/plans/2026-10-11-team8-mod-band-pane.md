@@ -913,3 +913,402 @@ git commit -m "Offer Claude Code's fullscreen layout in team8:setup, for the tea
 
 - Full suite: `npm test` and `npm run typecheck`; `claude plugin validate plugin`; `claude plugin test plugin`.
 - Live check: copy `plugin/hooks/team.ts`, `team8.tsx`, `wave.ts` and `wave-notify.ts` into this session's dev-mods folder under a plugin of another name (with `.claude-plugin/plugin.json` and `hooks/hooks.json` naming `./team8.tsx`), spawn a haiku teammate owning one throwaway task that runs a few `sleep 2` Bash calls, and confirm by the operator's eye: the band shows its row with `#<task>` and a digit; the digit opens the pane with its row and live activity; the tasks tab counts it; `/team8` opens the pane; invoking `team8:run` opens it unfocused. Once in fullscreen, once on the main screen. Then stop the teammate, delete the task and the copy.
+
+---
+
+### Task 4: Remove the pane, keep only the band
+
+Revised after the live check, on the operator's call: the pane docks as a side panel only under `/tui fullscreen`, so the batch ships the band alone. Everything that existed for the pane goes: the `Pane` render, `/team8`, the open on `team8:run`, the Lead field, the teammates' activity line, and `/team8:setup`'s fullscreen step. A band digit now opens the console on that teammate, when the console is up.
+
+**Files:**
+- Modify: `plugin/hooks/team.ts`, `src/hooks/team.test.ts`
+- Modify: `plugin/hooks/team8.tsx`, `plugin/hooks/team8.test.ts`
+- Modify: `plugin/hooks/hooks.json` (the `description` sentence about `team8.tsx` only)
+- Restore: `plugin/commands/setup.md` to its state before the fullscreen step (`git checkout c536eb5 -- plugin/commands/setup.md`)
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces, from `plugin/hooks/team.ts`: `Task`, `RosterAgent`, `MemberState`, `Member = { id; name; state; taskId?; needs? }`, `members(roster, tasks): Member[]`, `bandDetail(m): string`, `TaskCounts = { completed; total }`, `taskCounts(tasks): TaskCounts`, `Health = { ok?: boolean }`, `ConsoleLink = { href; label }`, `consoleLink(health, sessionId): ConsoleLink | undefined`. Removed: `Activity`, `TaskRow`, `claimedAndBlocked`, `barCells`, `teamOf`, `ago`, `activityLine`, `members`' third parameter, `Member.activity`/`at`, `ConsoleLink.watching`.
+
+- [ ] **Step 1: Rewrite the rules' test**
+
+Replace `src/hooks/team.test.ts` with:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { bandDetail, consoleLink, members, taskCounts, type RosterAgent, type Task } from '../../plugin/hooks/team';
+
+const mate = (name: string, status: string): RosterAgent => ({
+  id: `a${name}-0000000000000001`,
+  name,
+  teammateId: `${name}@session-abcd1234`,
+  status,
+});
+const task = (id: string, status: string, owner?: string, blockedBy: string[] = []): Task => ({
+  id,
+  subject: `Task ${id}`,
+  status,
+  owner,
+  blockedBy,
+});
+
+describe('members', () => {
+  it('maps each roster status to a state', () => {
+    const roster = ['running', 'pending', 'waiting', 'idle', 'failed'].map((s, i) => mate(`m${i}`, s));
+    expect(members(roster, []).map((m) => m.state)).toEqual(['working', 'working', 'working', 'idle', 'failed']);
+  });
+
+  it('leaves out ended agents and agents that are not teammates', () => {
+    const roster = [mate('done', 'completed'), mate('gone', 'killed'), { id: 'a1234', status: 'running' }, mate('live', 'running')];
+    expect(members(roster, []).map((m) => m.name)).toEqual(['live']);
+  });
+
+  it('calls a working teammate with nothing claimed and a still-blocked task blocked', () => {
+    const [m] = members([mate('Tom', 'running')], [task('9', 'pending', 'Tom', ['4'])]);
+    expect(m).toMatchObject({ state: 'blocked', taskId: '9', needs: '4' });
+  });
+
+  it('keeps a teammate working while it has a claimed task beside a blocked one', () => {
+    const tasks = [task('9', 'pending', 'Vito', ['4']), task('5', 'in_progress', 'Vito')];
+    expect(members([mate('Vito', 'running')], tasks)[0]).toMatchObject({ state: 'working', taskId: '5' });
+  });
+
+  it('shows the in-progress task before a pending one and ignores completed ones', () => {
+    const tasks = [task('1', 'completed', 'Ana'), task('2', 'pending', 'Ana'), task('3', 'in_progress', 'Ana')];
+    expect(members([mate('Ana', 'idle')], tasks)[0].taskId).toBe('3');
+  });
+});
+
+describe('bandDetail', () => {
+  it('names the task of a working teammate and the state of any other', () => {
+    const list = members(
+      [mate('W', 'running'), mate('I', 'idle'), mate('B', 'running'), mate('F', 'failed'), mate('N', 'running')],
+      [task('4', 'in_progress', 'W'), task('9', 'pending', 'B', ['3'])],
+    );
+    expect(list.map(bandDetail)).toEqual(['#4', 'idle', 'needs #3', 'failed', 'working']);
+  });
+});
+
+describe('taskCounts', () => {
+  it('counts completed and total', () => {
+    const tasks = [task('1', 'completed', 'A'), task('2', 'in_progress', 'A'), task('3', 'pending', 'B', ['2']), task('4', 'pending')];
+    expect(taskCounts(tasks)).toEqual({ completed: 1, total: 4 });
+  });
+});
+
+describe('consoleLink', () => {
+  const id = 'abcd1234-0000-0000-0000-000000000000';
+
+  it('links this session while the console is up', () => {
+    expect(consoleLink({ ok: true }, id)).toEqual({ href: `http://127.0.0.1:4823/s/${id}`, label: '127.0.0.1:4823/s/abcd1234' });
+  });
+
+  it('gives nothing when the console is down or the session is unknown', () => {
+    expect(consoleLink(undefined, id)).toBeUndefined();
+    expect(consoleLink({ ok: false }, id)).toBeUndefined();
+    expect(consoleLink({ ok: true }, '')).toBeUndefined();
+  });
+});
+```
+
+- [ ] **Step 2: Trim the rules**
+
+Replace `plugin/hooks/team.ts` with:
+
+```ts
+// The band's rules, kept free of Claude Code imports so vitest and the repo's
+// typecheck can load them; team8.tsx is the module around them.
+// No relative imports either: Claude Code wants `./x.ts`, which tsc refuses.
+
+export type Task = { id: string; subject: string; status: string; owner?: string; blockedBy: readonly string[] };
+export type RosterAgent = { id: string; name?: string; teammateId?: string; status: string };
+export type MemberState = 'working' | 'idle' | 'blocked' | 'failed';
+export type Member = { id: string; name: string; state: MemberState; taskId?: string; needs?: string };
+
+const ENDED = new Set(['completed', 'killed']);
+
+export function members(roster: readonly RosterAgent[], tasks: readonly Task[]): Member[] {
+  const out: Member[] = [];
+  for (const a of roster) {
+    if (!a.teammateId || !a.name || ENDED.has(a.status)) continue;
+    const name = a.name;
+    const own = tasks.filter((t) => t.owner === name);
+    const claimed = own.find((t) => t.status === 'in_progress');
+    const next = own.find((t) => t.status === 'pending');
+    const blocked = own.find((t) => t.status === 'pending' && t.blockedBy.length > 0);
+    let state: MemberState = a.status === 'failed' ? 'failed' : a.status === 'idle' ? 'idle' : 'working';
+    // The console's rule (src/server/project.ts): working, nothing claimed, and
+    // a task of its own still waiting on another.
+    const needs = state === 'working' && !claimed ? blocked?.blockedBy[0] : undefined;
+    if (needs) state = 'blocked';
+    out.push({ id: a.id, name, state, taskId: (claimed ?? (needs ? blocked : next))?.id, needs });
+  }
+  return out;
+}
+
+export function bandDetail(m: Member): string {
+  if (m.state === 'working') return m.taskId ? `#${m.taskId}` : 'working';
+  return m.needs ? `needs #${m.needs}` : m.state;
+}
+
+export type TaskCounts = { completed: number; total: number };
+
+export function taskCounts(tasks: readonly Task[]): TaskCounts {
+  return { completed: tasks.filter((t) => t.status === 'completed').length, total: tasks.length };
+}
+
+export type Health = { ok?: boolean };
+export type ConsoleLink = { href: string; label: string };
+
+const CONSOLE = '127.0.0.1:4823';
+
+export function consoleLink(health: Health | undefined, sessionId: string): ConsoleLink | undefined {
+  if (!health?.ok || !sessionId) return undefined;
+  return { href: `http://${CONSOLE}/s/${sessionId}`, label: `${CONSOLE}/s/${sessionId.slice(0, 8)}` };
+}
+```
+
+Run: `npx vitest run src/hooks/team.test.ts && npm run typecheck`
+Expected: PASS; `tsc --noEmit` prints nothing.
+
+- [ ] **Step 3: Rewrite the plugin test for the band alone**
+
+Replace `plugin/hooks/team8.test.ts` with the following. Keep the stub answers the kit already proved in this file (`{ value: … }` for method calls, `session.start` and `ui.render` answered); if `process.run`'s input or answer has another shape in the types, fix the stub and keep what each test asserts.
+
+```ts
+import type { AgentInfo, On } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
+
+const SESSION = 'abcd1234-0000-0000-0000-000000000000'
+const ROSTER: AgentInfo[] = [
+  { id: 'aVito-0000000000000001', teammateId: 'Vito@session-abcd1234', name: 'Vito', description: 'track A', type: 'team8:executor', status: 'running' },
+  { id: 'aAna-0000000000000002', teammateId: 'Ana@session-abcd1234', name: 'Ana', description: 'track B', type: 'team8:executor', status: 'idle' },
+]
+const TASKS = [
+  { id: '4', subject: 'Build the band', status: 'in_progress', owner: 'Vito', blockedBy: [] },
+  { id: '5', subject: 'Open the console', status: 'pending', owner: 'Ana', blockedBy: ['4'] },
+]
+const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} }
+const START = { cwd: '/tmp', surface: 'terminal', isInteractive: true } as const
+
+// Answers beneath the module for each call it makes on $, and records the
+// commands it runs. The kit's bottom hook throws on anything left unanswered.
+function stub(on: On, roster: AgentInfo[] = ROSTER, consoleUp = true): unknown[] {
+  const runs: unknown[] = []
+  mock.clock(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('ui.render', () => ({ type: 'Box' }))
+  on('session.id', () => ({ value: SESSION }))
+  on('agent.list', () => ({ value: roster }))
+  on('tool.call', { tool: 'TaskList' }, () => ({ result: { tasks: TASKS } }))
+  on('http.fetch', () => ({
+    value: consoleUp
+      ? { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true }) }
+      : { status: 503, ok: false, headers: {}, text: '{}' },
+  }))
+  on('process.run', (_, e) => {
+    runs.push(e.argv)
+    return { value: { code: 0, stdout: '', stderr: '' } }
+  })
+  return runs
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the band draws a button per teammate and the task count, on ${surface}`, async ($, on) => {
+    stub(on)
+    await $.session.start(START)
+    const band = await $.ui.mount({ plugin: 'team8', surface, component: 'AbovePrompt', props: BAND })
+    expect(await band.findAll({ type: 'Button' })).toHaveLength(2)
+    expect(await band.find({ type: 'Text', text: /tasks 0\/2/ })).toBeTruthy()
+  })
+}
+
+test('a digit opens the console on that teammate', async ($, on) => {
+  const runs = stub(on)
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  await band.press({ key: 'agent-Ana' })
+  expect(runs).toEqual([['open', `http://127.0.0.1:4823/s/${SESSION}?agent=Ana`]])
+})
+
+test('a digit does nothing while the console is down', async ($, on) => {
+  const runs = stub(on, ROSTER, false)
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  await band.press({ key: 'agent-Ana' })
+  expect(runs).toEqual([])
+})
+
+test('the band draws nothing of its own with no teammates', async ($, on) => {
+  stub(on, [])
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.findAll({ type: 'Button' })).toHaveLength(0)
+})
+```
+
+Run: `claude plugin test plugin`
+Expected: FAIL. The band's digits still open the pane, so `runs` stays empty.
+
+- [ ] **Step 4: Cut the module down to the band**
+
+Replace `plugin/hooks/team8.tsx` with:
+
+```tsx
+import type { EngineInterface, Register } from 'claude-code'
+import { register as registerWave } from './wave-notify.ts'
+import { bandDetail, consoleLink, members, taskCounts, type Health, type Member, type RosterAgent, type Task } from './team.ts'
+
+const ACCENT = '#9184d9'
+const FAIL = '#c98d8d'
+const GLYPH = { working: '●', idle: '○', blocked: '✕', failed: '✕' } as const
+
+// ponytail: module memory, so a reload draws nothing until its first refresh,
+// at most 5 s later; $.state if that ever shows.
+let sessionId = ''
+let roster: RosterAgent[] = []
+let tasks: Task[] = []
+let health: Health | undefined
+let drawn = ''
+let refreshing = false
+let ticking = false
+
+function glyphColor(m: Member): string | undefined {
+  return m.state === 'working' ? ACCENT : m.state === 'idle' ? undefined : FAIL
+}
+
+async function refresh($: EngineInterface) {
+  // /clear keeps the process under a new session id and fires no session.start.
+  try {
+    sessionId = await $.session.id()
+  } catch {}
+  try {
+    roster = await $.agent.list()
+  } catch {}
+  try {
+    const list = await $.tool.call({ tool: 'TaskList' })
+    tasks = (list.result as { tasks?: Task[] } | undefined)?.tasks ?? []
+  } catch {}
+  try {
+    const r = await $.http.fetch('http://127.0.0.1:4823/health')
+    health = r.ok ? (JSON.parse(r.text) as Health) : undefined
+  } catch {
+    health = undefined
+  }
+  const key = JSON.stringify([sessionId, roster, tasks, health])
+  if (key !== drawn) {
+    drawn = key
+    try {
+      $.ui.invalidate('ui.render')
+    } catch {}
+  }
+}
+
+// At most once a second, trailing, so a burst of tool calls costs one read.
+function refreshSoon($: EngineInterface) {
+  if (refreshing) return
+  try {
+    $.clock.after(1000, () => {
+      refreshing = false
+      void refresh($)
+    })
+    refreshing = true
+  } catch {}
+}
+
+async function openInConsole($: EngineInterface, name?: string) {
+  const link = consoleLink(health, sessionId)
+  if (!link) return
+  const url = name ? `${link.href}?agent=${encodeURIComponent(name)}` : link.href
+  try {
+    await $.process.run(['open', url], { timeoutMs: 5000 })
+  } catch {}
+}
+
+export const register: Register = (on, options) => {
+  registerWave(on, options)
+
+  on('session.start', async ($, e, next) => {
+    try {
+      // session.start can fire again in the same module; one timer is enough.
+      if (!ticking) {
+        $.clock.every(5000, () => void refresh($))
+        ticking = true
+      }
+    } catch {}
+    await refresh($)
+    return next(e)
+  })
+
+  // A teammate's task and status changes ride on its tool calls and turn ends.
+  on('tool.call', async ($, e, next) => {
+    if (e.agentId) refreshSoon($)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.complete', async ($, e, next) => {
+    try {
+      refreshSoon($)
+    } catch {}
+    return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const rest = await next(e)
+    try {
+      const list = members(roster, tasks)
+      if (e.props.hasSurvey || list.length === 0) return rest
+      const { Box, Text, Button, Link } = $.ui.resolve(e)
+      const counts = taskCounts(tasks)
+      const link = consoleLink(health, sessionId)
+      const shown = list.length > 9 ? list.slice(0, 8) : list
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="row" columnGap={3} flexWrap="wrap">
+            <Text bold>team8</Text>
+            {shown.map((m, i) => (
+              <Button key={`agent-${m.name}`} hotkey={String(i + 1)} plain onPress={() => void openInConsole($, m.name)}>
+                <Text color={glyphColor(m)} dimColor={m.state === 'idle'}>{GLYPH[m.state]}</Text>
+                {` ${m.name} `}
+                <Text color={m.state === 'failed' ? FAIL : undefined} dimColor={m.state !== 'failed'}>{bandDetail(m)}</Text>
+              </Button>
+            ))}
+            {shown.length < list.length && (
+              <Button key="more" plain onPress={() => void openInConsole($)}>{`+${list.length - shown.length}`}</Button>
+            )}
+            <Text dimColor>{`tasks ${counts.completed}/${counts.total}`}</Text>
+            <Box flexGrow={1} />
+            {link && <Link href={link.href} label={link.label} />}
+          </Box>
+          {rest}
+        </Box>
+      )
+    } catch {
+      return rest
+    }
+  })
+}
+```
+
+- [ ] **Step 5: Correct `hooks.json`'s sentence and restore `setup.md`**
+
+In `plugin/hooks/hooks.json`'s `description`, replace the sentence that starts ` The module's entry, team8.tsx, registers that notifier and draws the team inside Claude Code:` and ends `never the files the console ingests.` with:
+
+```
+ The module's entry, team8.tsx, registers that notifier and draws a band above the prompt: each teammate with a digit hotkey, its state and task, the task count and the console link; a digit opens the console on that teammate. It reads the roster, TaskList and the console's /health, never the files the console ingests.
+```
+
+Check it parses: `node -e 'JSON.parse(require("fs").readFileSync("plugin/hooks/hooks.json","utf8"))'`.
+
+Restore `setup.md`: `git checkout c536eb5 -- plugin/commands/setup.md` (the fullscreen step existed only for the pane).
+
+- [ ] **Step 6: Run everything that covers these files**
+
+Run: `claude plugin validate plugin && claude plugin test plugin && npx vitest run src/hooks src/server/setup.test.ts src/server/plugin-texts.test.ts && npm run typecheck && ! grep -n 'tui' plugin/commands/setup.md`
+Expected: validation passes and lists `./team8.tsx` hooks `tool.call{tool=TaskUpdate}, session.start, tool.call, turn.complete, ui.render{component=AbovePrompt}`, with no `command.run`, `Skill` or `Pane` hook; 5 plugin tests pass; vitest passes; `tsc` prints nothing; `setup.md` has no `tui`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "Keep only the band: drop the team pane, /team8, the team8:run open and the fullscreen setup step" -- plugin/hooks/team.ts src/hooks/team.test.ts plugin/hooks/team8.tsx plugin/hooks/team8.test.ts plugin/hooks/hooks.json plugin/commands/setup.md
+```
