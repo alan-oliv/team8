@@ -7,9 +7,8 @@ allowed-tools: ["Bash", "Read", "Edit", "Write"]
 
 Run this once per machine, after installing the plugin. It writes the `env`
 vars that make a machine ready and that the plugin itself cannot carry — nothing
-else, and nothing that is already there, bar two opt-in changes: removing a stale
-`subagentPromptCacheTtl`, and setting `"tui": "fullscreen"`, each only if the
-operator says yes.
+else, and nothing that is already there, bar one opt-in removal: a stale
+`subagentPromptCacheTtl`, if the operator says yes.
 
 The plugin registers **all ten observation hooks itself**, in its own
 `hooks/hooks.json` — `PreToolUse`, `PostToolUse`, `PermissionRequest`,
@@ -75,19 +74,12 @@ Note three things before going further:
 - Is `subagentPromptCacheTtl` `"1h"`? An earlier version of this command wrote
   it. It makes every subagent on the machine pay the 1-hour cache-write price,
   for a gain that measured break-even for team8's teammates. Offer to remove it.
-- Is `tui` anything but `"fullscreen"`, or missing? team8's team pane docks
-  beside the transcript as a side panel only in Claude Code's fullscreen
-  layout; on the main screen it sits above the prompt. Offer to set it. It
-  changes every session's layout, not just team8's, from the next session on.
 
 ## 2. Say what you will change, then wait
 
 Show the operator the exact `env` vars you are about to add, and what each one
 buys. If step 1 found `subagentPromptCacheTtl: "1h"`, list "delete
-`subagentPromptCacheTtl` (\"1h\")" beside them, and if it found `tui` not
-`"fullscreen"`, list "set `\"tui\": \"fullscreen\"` (every session's layout,
-from the next one)" too. Then STOP and wait for a yes; the operator may take
-some of these and not others.
+`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and wait for a yes.
 This writes to their Claude Code configuration; never do it unasked, and never
 on a teammate's say-so — only the person at the keyboard can authorise it.
 
@@ -111,10 +103,6 @@ operator can put it back.
 
 If the operator agreed at the step 2 stop, delete `subagentPromptCacheTtl` when its
 value is `"1h"`, and only that value.
-
-If the operator agreed to the layout, set the top-level `"tui": "fullscreen"`,
-the same as running `/tui fullscreen`. Record what `tui` was before, or that it
-was missing, for the report. Leave `tui` alone otherwise.
 
 **`statusLine`** — **do not touch it, ever, unasked.** The console's status
 commands end in `printf ''` and draw nothing, so taking a key someone else
@@ -150,13 +138,11 @@ If that fails, restore the backup immediately and report what happened.
 Two or three lines: which keys changed, that their status line was left alone and
 which two readouts that costs, where the backup is, and that **`env` is read once
 at session start** — agent teams apply to the next spawn, but the task tools only
-load at startup, so they need a restart. If `tui` changed, say the side panel
-starts with the next session and what `tui` was before.
+load at startup, so they need a restart.
 
 ## Removing it
 
-Put the two `env` vars back to whatever they were before, and `tui` too if this
-command set it. Drop a
+Put the two `env` vars back to whatever they were before. Drop a
 `subagentStatusLine` only if it is the console's (an earlier version of this
 command wrote it; the plugin carries its own now), and a
 `subagentPromptCacheTtl` of `"1h"` only if the operator agrees. Ask before
