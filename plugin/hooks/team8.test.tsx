@@ -87,3 +87,16 @@ test('the band forgets the mode when /clear starts a new session', async ($, on)
   await clock.advance(5000)
   expect(await (await mount()).find({ type: 'Text', text: /is running a/ })).toBeFalsy()
 })
+
+test('the line sits under the bands beneath it', async ($, on) => {
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>other band</Text>
+  })
+  stub(on)
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const texts = (await band.findAll({ type: 'Text' })).map(t => t.text)
+  expect(texts[0]).toBe('other band')
+  expect(texts.indexOf('team8')).toBeGreaterThan(0)
+})

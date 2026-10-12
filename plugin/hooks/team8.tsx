@@ -94,7 +94,8 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Drawn before next(e), so whichever plugin is outermost the line comes first.
+  // Drawn after next(e), so whichever plugin is outermost the line sits last,
+  // under every other band and right above the prompt.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const rest = await next(e)
     try {
@@ -104,6 +105,7 @@ export const register: Register = (on, options) => {
       const link = consoleLink(health, sessionId)
       return (
         <Box flexDirection="column">
+          {rest}
           <Box flexDirection="row" flexWrap="wrap">
             <Text bold>team8</Text>
             <Text dimColor>{` is running a ${mode} session · `}</Text>
@@ -112,7 +114,6 @@ export const register: Register = (on, options) => {
             {link && <Link href={link.href} label={link.label} />}
             {!link && <Text dimColor>{' · console off, /team8:console starts it'}</Text>}
           </Box>
-          {rest}
         </Box>
       )
     } catch {
