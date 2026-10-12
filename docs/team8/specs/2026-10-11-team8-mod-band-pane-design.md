@@ -111,7 +111,8 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
      - blocked: `✕` in fail, `needs #3` dim (its task's first open blocker)
      - failed: `✕` in fail, `failed` in fail
   3. `tasks {completed}/{total}`, dim.
-  4. A spacer, then the console `Link` in accent when the console is up.
+  4. A spacer, then the console `Link` when the console is up (`Link` takes no colour; Claude
+     Code draws links in its own style).
 - More than 9 teammates: 1–8, then a plain Button `+{n}` that opens the pane.
 - A digit (composer empty, or the band focused) opens the pane focused, on that teammate's row.
 - Colours (truecolor hex, Nocturne): accent `#9184d9`, fail `#c98d8d`, text default; dim is
