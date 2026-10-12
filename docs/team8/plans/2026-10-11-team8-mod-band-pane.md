@@ -1312,3 +1312,429 @@ Expected: validation passes and lists `./team8.tsx` hooks `tool.call{tool=TaskUp
 ```bash
 git commit -m "Keep only the band: drop the team pane, /team8, the team8:run open and the fullscreen setup step" -- plugin/hooks/team.ts src/hooks/team.test.ts plugin/hooks/team8.tsx plugin/hooks/team8.test.ts plugin/hooks/hooks.json plugin/commands/setup.md
 ```
+
+---
+
+### Task 5: The band says the run's mode, its progress and where the console is
+
+Revised again after the live check, on the operator's call (see the revised spec). The band is one line, first above the prompt: `team8 is running a {mode} session · total progress {completed}/{total} ({pct}%) · see details here {console link}`. It has no Buttons, no digits, no per-teammate items and no roster read.
+
+**Files:**
+- Modify: `plugin/hooks/team.ts`, `src/hooks/team.test.ts`, `plugin/hooks/team8.tsx`, `plugin/hooks/team8.test.ts`, `plugin/hooks/hooks.json` (only the `description` sentence about `team8.tsx`)
+
+**Interfaces:**
+- Consumes: nothing new.
+- Produces, from `plugin/hooks/team.ts`:
+  - `Task = { id: string; status: string }`
+  - `Mode = 'solo' | 'subagents' | 'teammates' | 'workflow'`
+  - `modeIn(input: unknown): Mode | undefined`
+  - `decidedMode(messages: readonly { toolUses?: readonly { input?: unknown }[] }[]): Mode | undefined`
+  - `Progress = { completed; total; pct }` and `progress(tasks): Progress`
+  - `Health`, `ConsoleLink` and `consoleLink(health, sessionId)`, all unchanged
+- Removed: `RosterAgent`, `MemberState`, `Member`, `members`, `bandDetail`, `TaskCounts`, `taskCounts`.
+
+- [ ] **Step 1: Rewrite the rules' test**
+
+Replace `src/hooks/team.test.ts` with:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { consoleLink, decidedMode, modeIn, progress, type Task } from '../../plugin/hooks/team';
+
+const runLog = (content: string) => ({ file_path: '/repo/docs/team8/runs/2026-10-12-x.md', content });
+
+describe('modeIn', () => {
+  it('reads the mode the lead wrote into a run log, by Write or by Edit', () => {
+    expect(modeIn(runLog('- tasks: 3 · mode: subagents — one track'))).toBe('subagents');
+    expect(modeIn({ file_path: '/r/docs/team8/runs/a.md', old_string: 'x', new_string: '- mode: workflow — fan-out' })).toBe('workflow');
+  });
+
+  it('takes the last mode line in one write', () => {
+    expect(modeIn(runLog('mode: solo — first\nmode: teammates — second'))).toBe('teammates');
+  });
+
+  it('ignores the template, other files, logs with no mode and non-objects', () => {
+    expect(modeIn(runLog('- tasks: <n> · mode: solo | subagents | teammates | workflow — <reason>'))).toBeUndefined();
+    expect(modeIn({ file_path: '/r/docs/team8/plans/p.md', content: 'mode: teammates — x' })).toBeUndefined();
+    expect(modeIn(runLog('## Brainstorm'))).toBeUndefined();
+    expect(modeIn('mode: solo — x')).toBeUndefined();
+    expect(modeIn(undefined)).toBeUndefined();
+  });
+});
+
+describe('decidedMode', () => {
+  it('takes the last decided mode across the messages', () => {
+    const messages = [
+      { role: 'assistant', toolUses: [{ input: runLog('mode: solo — first') }] },
+      { role: 'user' },
+      { role: 'assistant', toolUses: [{ input: { command: 'ls' } }, { input: runLog('mode: teammates — later') }] },
+    ];
+    expect(decidedMode(messages)).toBe('teammates');
+    expect(decidedMode([])).toBeUndefined();
+  });
+});
+
+describe('progress', () => {
+  const task = (id: string, status: string): Task => ({ id, status });
+
+  it('counts completed tasks against the total, with the percentage', () => {
+    const tasks = [task('1', 'completed'), task('2', 'completed'), task('3', 'completed'), task('4', 'in_progress'), task('5', 'pending')];
+    expect(progress(tasks)).toEqual({ completed: 3, total: 5, pct: 60 });
+  });
+
+  it('is zero with no tasks', () => {
+    expect(progress([])).toEqual({ completed: 0, total: 0, pct: 0 });
+  });
+});
+
+describe('consoleLink', () => {
+  const id = 'abcd1234-0000-0000-0000-000000000000';
+
+  it('links this session while the console is up', () => {
+    expect(consoleLink({ ok: true }, id)).toEqual({ href: `http://127.0.0.1:4823/s/${id}`, label: '127.0.0.1:4823/s/abcd1234' });
+  });
+
+  it('gives nothing when the console is down or the session is unknown', () => {
+    expect(consoleLink(undefined, id)).toBeUndefined();
+    expect(consoleLink({ ok: false }, id)).toBeUndefined();
+    expect(consoleLink({ ok: true }, '')).toBeUndefined();
+  });
+});
+```
+
+- [ ] **Step 2: Rewrite the rules**
+
+Replace `plugin/hooks/team.ts` with:
+
+```ts
+// The band's rules, kept free of Claude Code imports so vitest and the repo's
+// typecheck can load them; team8.tsx is the module around them.
+// No relative imports either: Claude Code wants `./x.ts`, which tsc refuses.
+
+export type Task = { id: string; status: string };
+export type Mode = 'solo' | 'subagents' | 'teammates' | 'workflow';
+
+const RUN_LOG = 'docs/team8/runs/';
+// The console's rule (src/server/index.ts, lastDecidedMode): the dash after the
+// word tells a filled run log from the template's `mode: solo | subagents …`.
+const DECIDED = /mode: (solo|subagents|teammates|workflow) —/g;
+
+// Only a Write or Edit of a run log counts, so a plan or a spec that quotes a
+// mode line, or names the run-log folder, decides nothing.
+export function modeIn(input: unknown): Mode | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const { file_path, content, new_string } = input as Record<string, unknown>;
+  if (typeof file_path !== 'string' || !file_path.includes(RUN_LOG)) return undefined;
+  const text = typeof content === 'string' ? content : typeof new_string === 'string' ? new_string : '';
+  let found: Mode | undefined;
+  for (const m of text.matchAll(DECIDED)) found = m[1] as Mode;
+  return found;
+}
+
+export function decidedMode(messages: readonly { toolUses?: readonly { input?: unknown }[] }[]): Mode | undefined {
+  let found: Mode | undefined;
+  for (const message of messages) for (const use of message.toolUses ?? []) found = modeIn(use.input) ?? found;
+  return found;
+}
+
+export type Progress = { completed: number; total: number; pct: number };
+
+export function progress(tasks: readonly Task[]): Progress {
+  const completed = tasks.filter((t) => t.status === 'completed').length;
+  return { completed, total: tasks.length, pct: tasks.length ? Math.round((100 * completed) / tasks.length) : 0 };
+}
+
+export type Health = { ok?: boolean };
+export type ConsoleLink = { href: string; label: string };
+
+const CONSOLE = '127.0.0.1:4823';
+
+export function consoleLink(health: Health | undefined, sessionId: string): ConsoleLink | undefined {
+  if (!health?.ok || !sessionId) return undefined;
+  return { href: `http://${CONSOLE}/s/${sessionId}`, label: `${CONSOLE}/s/${sessionId.slice(0, 8)}` };
+}
+```
+
+Run: `npx vitest run src/hooks/team.test.ts && npm run typecheck`
+Expected: PASS; `tsc --noEmit` prints nothing.
+
+- [ ] **Step 3: Rewrite the plugin test**
+
+Replace `plugin/hooks/team8.test.ts` with the following. It keeps the stub answers the kit already accepted in this file: `{ value: … }` for method calls, `session.start` and `ui.render` answered, and `mock.clock(on)`. If `session.messages` or the clock's `advance` has a different shape in the types, fix the call and keep what each test asserts.
+
+```ts
+import type { On } from 'claude-code'
+import { expect, mock, test } from 'claude-code/testing'
+
+const SESSION = 'abcd1234-0000-0000-0000-000000000000'
+const RUN_LOG = '/repo/docs/team8/runs/2026-10-12-x.md'
+const DECIDED = [{ role: 'assistant', text: '', toolUses: [{ input: { file_path: RUN_LOG, content: '- tasks: 2 · mode: subagents — one track' } }] }]
+const TASKS = [
+  { id: '1', subject: 'Draw the line', status: 'completed', blockedBy: [] },
+  { id: '2', subject: 'Seat it first', status: 'in_progress', blockedBy: [] },
+]
+const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} }
+const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as const
+
+// Answers beneath the module for each call it makes on $. The kit's bottom
+// hook throws on anything left unanswered.
+function stub(on: On, { messages = DECIDED, tasks = TASKS, consoleUp = true } = {}) {
+  const clock = mock.clock(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('ui.render', () => ({ type: 'Box' }))
+  on('session.id', () => ({ value: SESSION }))
+  on('session.messages', () => ({ value: messages }))
+  on('tool.call', { tool: 'TaskList' }, () => ({ result: { tasks } }))
+  on('tool.call', { tool: 'Write' }, () => ({ result: {} }))
+  on('http.fetch', () => ({
+    value: consoleUp
+      ? { status: 200, ok: true, headers: {}, text: JSON.stringify({ ok: true }) }
+      : { status: 503, ok: false, headers: {}, text: '{}' },
+  }))
+  return clock
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the band says the mode, the progress and the console link, on ${surface}`, async ($, on) => {
+    stub(on)
+    await $.session.start(START)
+    const band = await $.ui.mount({ plugin: 'team8', surface, component: 'AbovePrompt', props: BAND })
+    expect(await band.find({ type: 'Text', text: /is running a subagents session/ })).toBeTruthy()
+    expect(await band.find({ type: 'Text', text: /total progress 1\/2 \(50%\)/ })).toBeTruthy()
+    expect(await band.find({ type: 'Link' })).toBeTruthy()
+  })
+}
+
+test('the band passes through with no decided mode', async ($, on) => {
+  stub(on, { messages: [] })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+})
+
+test('the band passes through with no tasks', async ($, on) => {
+  stub(on, { tasks: [] })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+})
+
+test('the band says how to start the console while it is down', async ($, on) => {
+  stub(on, { consoleUp: false })
+  await $.session.start(START)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /console off, \/team8:console starts it/ })).toBeTruthy()
+  expect(await band.find({ type: 'Link' })).toBeFalsy()
+})
+
+test('a run-log write that decides the mode shows the band', async ($, on) => {
+  const clock = stub(on, { messages: [] })
+  await $.session.start(START)
+  await $.tool.call({ tool: 'Write', file_path: RUN_LOG, content: '- mode: teammates — two tracks' })
+  await clock.advance(1000)
+  const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ type: 'Text', text: /is running a teammates session/ })).toBeTruthy()
+})
+```
+
+Run: `claude plugin test plugin`
+Expected: FAIL. The module still draws per-teammate Buttons from the roster.
+
+- [ ] **Step 4: Rewrite the module**
+
+Replace `plugin/hooks/team8.tsx` with:
+
+```tsx
+import type { EngineInterface, Register } from 'claude-code'
+import { register as registerWave } from './wave-notify.ts'
+import { consoleLink, decidedMode, modeIn, progress, type Health, type Mode, type Task } from './team.ts'
+
+// ponytail: module memory; a reload re-reads the mode from the session's newest
+// 4096 messages, so a mode decided further back waits for the next run-log write.
+let sessionId = ''
+let mode: Mode | undefined
+let tasks: Task[] = []
+let health: Health | undefined
+let drawn = ''
+let refreshing = false
+let ticking = false
+
+async function refresh($: EngineInterface) {
+  // /clear keeps the process under a new session id and fires no session.start.
+  try {
+    sessionId = await $.session.id()
+  } catch {}
+  try {
+    const list = await $.tool.call({ tool: 'TaskList' })
+    tasks = (list.result as { tasks?: Task[] } | undefined)?.tasks ?? []
+  } catch {}
+  try {
+    const r = await $.http.fetch('http://127.0.0.1:4823/health')
+    health = r.ok ? (JSON.parse(r.text) as Health) : undefined
+  } catch {
+    health = undefined
+  }
+  const key = JSON.stringify([sessionId, mode, tasks, health])
+  if (key !== drawn) {
+    drawn = key
+    try {
+      $.ui.invalidate('ui.render')
+    } catch {}
+  }
+}
+
+// At most once a second, trailing, so a burst of task calls costs one read.
+function refreshSoon($: EngineInterface) {
+  if (refreshing) return
+  try {
+    $.clock.after(1000, () => {
+      refreshing = false
+      void refresh($)
+    })
+    refreshing = true
+  } catch {}
+}
+
+async function readMode($: EngineInterface) {
+  try {
+    mode = decidedMode(await $.session.messages()) ?? mode
+  } catch {}
+}
+
+export const register: Register = (on, options) => {
+  registerWave(on, options)
+
+  on('session.start', async ($, e, next) => {
+    try {
+      // session.start can fire again in the same module; one timer is enough.
+      if (!ticking) {
+        $.clock.every(5000, () => void refresh($))
+        ticking = true
+      }
+    } catch {}
+    await readMode($)
+    await refresh($)
+    return next(e)
+  })
+
+  // A run-log write can decide the mode; a TaskCreate or TaskUpdate changes the
+  // count. Not TaskList: refresh calls it, and that would refresh forever.
+  on('tool.call', async ($, e, next) => {
+    try {
+      const found = modeIn(e)
+      if (found) mode = found
+      if (found || e.tool === 'TaskCreate' || e.tool === 'TaskUpdate') refreshSoon($)
+    } catch {}
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('turn.complete', async ($, e, next) => {
+    try {
+      refreshSoon($)
+    } catch {}
+    return next(e)
+  })
+
+  // Drawn before next(e), so whichever plugin is outermost the line comes first.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const rest = await next(e)
+    try {
+      if (e.props.hasSurvey || !mode || tasks.length === 0) return rest
+      const { Box, Text, Link } = $.ui.resolve(e)
+      const p = progress(tasks)
+      const link = consoleLink(health, sessionId)
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="row" flexWrap="wrap">
+            <Text bold>team8</Text>
+            <Text dimColor>{` is running a ${mode} session · `}</Text>
+            <Text>{`total progress ${p.completed}/${p.total} (${p.pct}%)`}</Text>
+            {link && <Text dimColor>{' · see details here '}</Text>}
+            {link && <Link href={link.href} label={link.label} />}
+            {!link && <Text dimColor>{' · console off, /team8:console starts it'}</Text>}
+          </Box>
+          {rest}
+        </Box>
+      )
+    } catch {
+      return rest
+    }
+  })
+}
+```
+
+- [ ] **Step 5: Correct `hooks.json`'s sentence**
+
+In `plugin/hooks/hooks.json`'s `description`, find the sentence that starts ` The module's entry, team8.tsx, registers that notifier and draws a band above the prompt:` and ends `never the files the console ingests.`, and replace it with:
+
+```
+ The module's entry, team8.tsx, registers that notifier and draws one line first above the prompt while a team8 run is going: the mode team8:tasks decided (read from the lead's run-log write), the tasks completed out of the total, and the console's address or how to start it. It reads the session's messages, TaskList and the console's /health, never the files the console ingests.
+```
+
+Check it parses: `node -e 'JSON.parse(require("fs").readFileSync("plugin/hooks/hooks.json","utf8"))'`.
+
+- [ ] **Step 6: Run everything that covers these files**
+
+Run: `claude plugin validate plugin && claude plugin test plugin && npx vitest run src/hooks src/server/setup.test.ts src/server/plugin-texts.test.ts && npm run typecheck`
+
+Expected:
+- Validation passes and lists these `./team8.tsx` hooks: `tool.call{tool=TaskUpdate}, session.start, tool.call, turn.complete, ui.render{component=AbovePrompt}`.
+- All 6 plugin tests pass, and vitest passes.
+- `tsc` prints nothing.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git commit -m "Make the band one line: the run's mode, its progress and the console's address" -- plugin/hooks/team.ts src/hooks/team.test.ts plugin/hooks/team8.tsx plugin/hooks/team8.test.ts plugin/hooks/hooks.json
+```
+
+### Task 6: session-cards draws the bands beneath it first (`~/code/claude-mods`)
+
+`session-cards`' `AbovePrompt` hook returns only its own tree. So whenever it sits outside another plugin's band hook, that other band is dropped, which is why the team8 band never showed in the operator's sessions. It should draw `await next(e)` above its cards.
+
+**Files.** These are in the repo `~/code/claude-mods`, not this one:
+- Modify: `session-cards/hooks/register.tsx`, its `ui.render` hook on `AbovePrompt`.
+- Test: next to the repo's existing `session-cards/tests/cards.test.ts`, the way that repo writes its tests.
+- Version: bump `session-cards`' version the way that repo's history does it. `git log --oneline -- session-cards/.claude-plugin` shows the convention; the last bump was `chore(plugin): session-cards 0.2.4`.
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: nothing this repo reads.
+
+- [ ] **Step 1: Branch from an up-to-date main**
+
+```bash
+cd ~/code/claude-mods && git checkout main && git pull --ff-only && git checkout -b session-cards-keeps-other-bands
+```
+
+- [ ] **Step 2: Write the failing test**
+
+Add a test that mounts `session-cards`' `AbovePrompt` with a snapshot present and a tree beneath it, and asserts that the beneath tree is drawn before the cards. For the tree beneath, have the test's own `on('ui.render', …)` answer with a recognisable tree, or use the kit's equivalent. Run the repo's test command and see the test fail.
+
+- [ ] **Step 3: Draw `next(e)` first**
+
+In `session-cards/hooks/register.tsx`, change the start of the `AbovePrompt` hook to:
+
+```tsx
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const s = await read($, snapshot)
+    if (e.props.hasSurvey || s === null) return next(e)
+    // Other mods' bands go first; returning only the cards dropped them.
+    const rest = await next(e)
+```
+
+Then make `rest` the first child of the outer `<Box flexDirection="column" width={e.props.bodyColumns}>`, before the branch and session row.
+
+- [ ] **Step 4: Run its tests and validate**
+
+Run these in `~/code/claude-mods`:
+- the repo's test command for `session-cards`: `claude plugin test session-cards`, plus any vitest it has;
+- `claude plugin validate session-cards`.
+
+Expected: PASS, including the new test.
+
+- [ ] **Step 5: Bump, commit, push, open the PR**
+
+Bump the version as the Files list says, then commit by pathspec with a message in that repo's style and no AI attribution. Push the branch.
+
+Then open a PR against `main` in `alan-oliv/claude-mods` with the gh CLI. The machine's PR hook asks for the `grimoire:alanizer` skill first: load it, write the title and body in its voice, and prefix the command with `ALANIZED=1`. Report the URL.
