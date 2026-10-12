@@ -1738,3 +1738,63 @@ Expected: PASS, including the new test.
 Bump the version as the Files list says, then commit by pathspec with a message in that repo's style and no AI attribution. Push the branch.
 
 Then open a PR against `main` in `alan-oliv/claude-mods` with the gh CLI. The machine's PR hook asks for the `grimoire:alanizer` skill first: load it, write the title and body in its voice, and prefix the command with `ALANIZED=1`. Report the URL.
+
+---
+
+### Task 7: The team8 line goes last, under every other band
+
+The operator wants the line under session-cards' cards, right above the prompt. The team8 hook now draws `next(e)` first and its line after it, so the line sits last whichever plugin is outermost. Task 8 flips session-cards to match.
+
+**Files:**
+- Modify: `plugin/hooks/team8.tsx` (the `AbovePrompt` hook's tree and its comment), `plugin/hooks/team8.test.ts` (one order test), `plugin/hooks/hooks.json` (one phrase of the `description`)
+
+**Interfaces:** none change.
+
+- [ ] **Step 1: Write the failing order test**
+
+Add to `plugin/hooks/team8.test.ts` a test called "the line sits under the bands beneath it". It answers the `ui.render` beneath with a recognisable tree instead of the stub's empty Box. session-cards' `tests/beneath.test.tsx` in `~/code/claude-mods` shows the shape that works: `$.ui.resolve(e).Text` returning `other band`. The test then asserts that the drawn Texts list `other band` before `team8`. If the test needs JSX, the file becomes `team8.test.tsx`. Run `claude plugin test plugin` and see it fail.
+
+- [ ] **Step 2: Draw `next(e)` first**
+
+In `plugin/hooks/team8.tsx`, replace the comment above the `AbovePrompt` hook with:
+
+```tsx
+  // Drawn after next(e), so whichever plugin is outermost the line sits last,
+  // under every other band and right above the prompt.
+```
+
+and in the returned tree move `{rest}` from after the line's row to before it:
+
+```tsx
+        <Box flexDirection="column">
+          {rest}
+          <Box flexDirection="row" flexWrap="wrap">
+```
+
+- [ ] **Step 3: Correct `hooks.json`'s phrase**
+
+In `plugin/hooks/hooks.json`'s `description`, replace `draws one line first above the prompt while a team8 run is going` with `draws one line under every other band, right above the prompt, while a team8 run is going`. Check it parses.
+
+- [ ] **Step 4: Run and commit**
+
+Run: `claude plugin validate plugin && claude plugin test plugin && npx vitest run src/hooks src/server/setup.test.ts src/server/plugin-texts.test.ts && npm run typecheck`
+Expected: PASS, the new order test included.
+
+```bash
+git commit -m "Draw the team8 line under the other bands, right above the prompt" -- plugin/hooks/team8.tsx plugin/hooks/team8.test.ts plugin/hooks/hooks.json
+```
+(Use `git add` first, and put the `.tsx` path in the pathspec, if the test file was renamed.)
+
+### Task 8: session-cards draws its cards before the bands beneath it (`~/code/claude-mods`)
+
+This goes on the open branch `session-cards-keeps-other-bands` (PR #4). session-cards still keeps `next(e)`, now after its cards, so with Task 7 the team8 line sits under the cards whichever plugin is outermost. The branch row's `marginTop={2}` goes back to separating the cards from the transcript.
+
+**Files (repo `~/code/claude-mods`):**
+- Modify: `session-cards/hooks/register.tsx`: move `{rest}` from the first child of the outer `Box` to its last, after the cards row, and change the comment above `const rest` to `// Other mods' bands go under the cards; returning only the cards dropped them.`
+- Modify: `session-cards/tests/beneath.test.tsx`: rename the test to `draws the bands beneath it under its own cards` and assert that `other band` is the last Text drawn. While there, fold the copied `mountBand` into the one in `cards.test.ts` (an optional `ui.render` answer, or export the helper), and drop the doubled blank line.
+- Version: leave 0.2.5. It isn't released yet; the bump is already on this branch.
+
+- [ ] **Step 1:** Change the test's expectation and see it fail: `claude plugin test session-cards`.
+- [ ] **Step 2:** Move `{rest}` and change the comment.
+- [ ] **Step 3:** Run `claude plugin test session-cards && claude plugin validate session-cards` and see both pass.
+- [ ] **Step 4:** Commit by pathspec in the repo's style and push to the branch, so it lands in PR #4. Update PR #4's title and body to say "under its own cards" with `ALANIZED=1 gh pr edit 4 -R alan-oliv/claude-mods …`, after loading the `grimoire:alanizer` skill.

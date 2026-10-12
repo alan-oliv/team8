@@ -1,6 +1,6 @@
 # team8 mod: the band — design
 
-One line of team8 drawn inside Claude Code, first above the prompt, as part of the plugin's
+One line of team8 drawn inside Claude Code, last above the prompt (under every other band), as part of the plugin's
 hooks module:
 
 ```
@@ -21,10 +21,12 @@ three rounds with the operator (see Decisions).
 
   The band now says the run's mode, its total progress and where the console is. It has no
   Buttons and no digit hotkeys, so a digit typed into an empty prompt is never taken over.
-- **First above the prompt.** Claude Code nests the plugins' `AbovePrompt` hooks in an order no
-  plugin chooses. The team8 band draws itself before `next(e)`, and the operator's own
-  `session-cards` mod (`~/code/claude-mods`) draws `next(e)` before its cards, where it used to
-  drop it. Whichever of the two is outermost, the team8 line comes first.
+- **Last above the prompt, under the cards.** Claude Code nests the plugins' `AbovePrompt` hooks
+  in an order no plugin chooses. The operator wants the line under `session-cards`' cards (their
+  own mod, `~/code/claude-mods`). So the team8 band draws itself after `next(e)`, and
+  `session-cards` draws `next(e)` after its cards, where it used to drop it. Whichever of the two
+  is outermost, the team8 line comes last, right above the prompt. (An earlier round drew it
+  first; the operator moved it under the cards at the live check.)
 - **The mode is the console's.** It's the one `team8:tasks` decided: the last
   `mode: <solo|subagents|teammates|workflow> —` line the lead wrote into `docs/team8/runs/`.
   The console reads it from the lead's transcript (`src/server/index.ts`, `lastDecidedMode`).
@@ -85,8 +87,8 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
   - `e.props.hasSurvey`;
   - no mode has been decided;
   - the task list is empty.
-- **Otherwise** it draws one `Box` column: the line first, then `await next(e)`, so every other
-  mod's band stays below it.
+- **Otherwise** it draws one `Box` column: `await next(e)` first, then the line, so every other
+  mod's band stays above it.
 - **The line** is one `Box` row that wraps only when the terminal is too narrow:
   1. `team8` in bold;
   2. ` is running a {mode} session · ` in dim;
@@ -105,7 +107,7 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
 ## 5. session-cards (`~/code/claude-mods`)
 
 - In `session-cards/hooks/register.tsx`, the `AbovePrompt` hook awaits `next(e)` and draws it
-  first, above its own tree. When it has nothing of its own to draw, it still returns `next(e)`.
+  last, under its own cards. When it has nothing of its own to draw, it still returns `next(e)`.
 - The change goes on a branch of `claude-mods`, with a version bump following that repo's
   convention and a PR against its `main`.
 
@@ -126,8 +128,8 @@ A `ui.render` hook on `{ component: 'AbovePrompt' }`.
   above the cards.
 - **The repo:** `npm test` and `npm run typecheck` pass, and `claude plugin validate plugin`
   passes.
-- **The live check (by the operator):** the team8 line shows first, above `session-cards`, in
-  this session.
+- **The live check (by the operator):** the team8 line shows under `session-cards`' cards, right
+  above the prompt, in this session.
 
 ## Out of scope
 
