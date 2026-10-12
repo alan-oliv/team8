@@ -15,7 +15,13 @@ let ticking = false
 async function refresh($: EngineInterface) {
   // /clear keeps the process under a new session id and fires no session.start.
   try {
-    sessionId = await $.session.id()
+    const id = await $.session.id()
+    const cleared = sessionId !== '' && id !== sessionId
+    sessionId = id
+    if (cleared) {
+      mode = undefined
+      await readMode($)
+    }
   } catch {}
   try {
     const list = await $.tool.call({ tool: 'TaskList' })

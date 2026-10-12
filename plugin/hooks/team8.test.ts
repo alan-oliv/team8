@@ -11,14 +11,18 @@ const TASKS = [
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} }
 const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as const
 
+const live = { id: SESSION, messages: DECIDED as unknown[] }
+
 // Answers beneath the module for each call it makes on $. The kit's bottom
 // hook throws on anything left unanswered.
 function stub(on: On, { messages = DECIDED, tasks = TASKS, consoleUp = true } = {}) {
+  live.id = SESSION
+  live.messages = messages
   const clock = mock.clock(on)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('ui.render', () => ({ type: 'Box' }))
-  on('session.id', () => ({ value: SESSION }))
-  on('session.messages', () => ({ value: messages }))
+  on('session.id', () => ({ value: live.id }))
+  on('session.messages', () => ({ value: live.messages }))
   on('tool.call', { tool: 'TaskList' }, () => ({ result: { tasks } }))
   on('tool.call', { tool: 'Write' }, () => ({ result: {} }))
   on('http.fetch', () => ({
@@ -71,4 +75,15 @@ test('a run-log write that decides the mode shows the band', async ($, on) => {
   await clock.advance(1000)
   const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /is running a teammates session/ })).toBeTruthy()
+})
+
+test('the band forgets the mode when /clear starts a new session', async ($, on) => {
+  const clock = stub(on)
+  await $.session.start(START)
+  const mount = () => $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  expect(await (await mount()).find({ type: 'Text', text: /is running a subagents session/ })).toBeTruthy()
+  live.id = 'ffff0000-0000-0000-0000-000000000000'
+  live.messages = []
+  await clock.advance(5000)
+  expect(await (await mount()).find({ type: 'Text', text: /is running a/ })).toBeFalsy()
 })
