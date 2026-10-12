@@ -21,6 +21,7 @@ pr: https://github.com/alan-oliv/team8/pull/41 · session-cards: https://github.
 - decisions in round 3: one line, `team8 is running a {mode} session · total progress {done}/{total} ({pct}%) · see details here {console}`.
   - It shows in any mode and has no controls.
   - It is drawn before `next(e)`, and session-cards draws `next(e)` first, so the line sits first above the prompt.
+- round 4, at the third live check: the operator moved the line under session-cards' cards. team8 now draws `next(e)` first and its line after it, and session-cards draws `next(e)` after its cards (plan Tasks 7–8, list #6–#7, sonnet · low each, one review round each with no Blocking; session-cards' copied test helper folded into `cards.test.ts`).
 - spike, 2026-10-11 on Claude Code 2.1.296, with a throwaway `t8ui` mod in the session's dev-mods folder:
   - `/team8` registered beside the plugin's `/team8:*` commands.
   - The band drew digit Buttons and kept `next(e)`'s tree.
