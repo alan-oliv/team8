@@ -1,32 +1,21 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as registerWave } from './wave-notify.ts'
-import { bandDetail, consoleLink, members, taskCounts, type Health, type Member, type RosterAgent, type Task } from './team.ts'
+import { consoleLink, decidedMode, modeIn, progress, type Health, type Mode, type Task } from './team.ts'
 
-const ACCENT = '#9184d9'
-const FAIL = '#c98d8d'
-const GLYPH = { working: '●', idle: '○', blocked: '✕', failed: '✕' } as const
-
-// ponytail: module memory, so a reload draws nothing until its first refresh,
-// at most 5 s later; $.state if that ever shows.
+// ponytail: module memory; a reload re-reads the mode from the session's newest
+// 4096 messages, so a mode decided further back waits for the next run-log write.
 let sessionId = ''
-let roster: RosterAgent[] = []
+let mode: Mode | undefined
 let tasks: Task[] = []
 let health: Health | undefined
 let drawn = ''
 let refreshing = false
 let ticking = false
 
-function glyphColor(m: Member): string | undefined {
-  return m.state === 'working' ? ACCENT : m.state === 'idle' ? undefined : FAIL
-}
-
 async function refresh($: EngineInterface) {
   // /clear keeps the process under a new session id and fires no session.start.
   try {
     sessionId = await $.session.id()
-  } catch {}
-  try {
-    roster = await $.agent.list()
   } catch {}
   try {
     const list = await $.tool.call({ tool: 'TaskList' })
@@ -38,7 +27,7 @@ async function refresh($: EngineInterface) {
   } catch {
     health = undefined
   }
-  const key = JSON.stringify([sessionId, roster, tasks, health])
+  const key = JSON.stringify([sessionId, mode, tasks, health])
   if (key !== drawn) {
     drawn = key
     try {
@@ -47,7 +36,7 @@ async function refresh($: EngineInterface) {
   }
 }
 
-// At most once a second, trailing, so a burst of tool calls costs one read.
+// At most once a second, trailing, so a burst of task calls costs one read.
 function refreshSoon($: EngineInterface) {
   if (refreshing) return
   try {
@@ -59,12 +48,9 @@ function refreshSoon($: EngineInterface) {
   } catch {}
 }
 
-async function openInConsole($: EngineInterface, name?: string) {
-  const link = consoleLink(health, sessionId)
-  if (!link) return
-  const url = name ? `${link.href}?agent=${encodeURIComponent(name)}` : link.href
+async function readMode($: EngineInterface) {
   try {
-    await $.process.run(['open', url], { timeoutMs: 5000 })
+    mode = decidedMode(await $.session.messages()) ?? mode
   } catch {}
 }
 
@@ -79,13 +65,19 @@ export const register: Register = (on, options) => {
         ticking = true
       }
     } catch {}
+    await readMode($)
     await refresh($)
     return next(e)
   })
 
-  // A teammate's task and status changes ride on its tool calls and turn ends.
+  // A run-log write can decide the mode; a TaskCreate or TaskUpdate changes the
+  // count. Not TaskList: refresh calls it, and that would refresh forever.
   on('tool.call', async ($, e, next) => {
-    if (e.agentId) refreshSoon($)
+    try {
+      const found = modeIn(e)
+      if (found) mode = found
+      if (found || e.tool === 'TaskCreate' || e.tool === 'TaskUpdate') refreshSoon($)
+    } catch {}
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -96,32 +88,23 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Drawn before next(e), so whichever plugin is outermost the line comes first.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const rest = await next(e)
     try {
-      const list = members(roster, tasks)
-      if (e.props.hasSurvey || list.length === 0) return rest
-      const { Box, Text, Button, Link } = $.ui.resolve(e)
-      const counts = taskCounts(tasks)
+      if (e.props.hasSurvey || !mode || tasks.length === 0) return rest
+      const { Box, Text, Link } = $.ui.resolve(e)
+      const p = progress(tasks)
       const link = consoleLink(health, sessionId)
-      const shown = list.length > 9 ? list.slice(0, 8) : list
       return (
         <Box flexDirection="column">
-          <Box flexDirection="row" columnGap={3} flexWrap="wrap">
+          <Box flexDirection="row" flexWrap="wrap">
             <Text bold>team8</Text>
-            {shown.map((m, i) => (
-              <Button key={`agent-${m.name}`} hotkey={String(i + 1)} plain onPress={() => void openInConsole($, m.name)}>
-                <Text color={glyphColor(m)} dimColor={m.state === 'idle'}>{GLYPH[m.state]}</Text>
-                {` ${m.name} `}
-                <Text color={m.state === 'failed' ? FAIL : undefined} dimColor={m.state !== 'failed'}>{bandDetail(m)}</Text>
-              </Button>
-            ))}
-            {shown.length < list.length && (
-              <Button key="more" plain onPress={() => void openInConsole($)}>{`+${list.length - shown.length}`}</Button>
-            )}
-            <Text dimColor>{`tasks ${counts.completed}/${counts.total}`}</Text>
-            <Box flexGrow={1} />
+            <Text dimColor>{` is running a ${mode} session · `}</Text>
+            <Text>{`total progress ${p.completed}/${p.total} (${p.pct}%)`}</Text>
+            {link && <Text dimColor>{' · see details here '}</Text>}
             {link && <Link href={link.href} label={link.label} />}
+            {!link && <Text dimColor>{' · console off, /team8:console starts it'}</Text>}
           </Box>
           {rest}
         </Box>

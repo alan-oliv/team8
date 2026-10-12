@@ -1,61 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { bandDetail, consoleLink, members, taskCounts, type RosterAgent, type Task } from '../../plugin/hooks/team';
+import { consoleLink, decidedMode, modeIn, progress, type Task } from '../../plugin/hooks/team';
 
-const mate = (name: string, status: string): RosterAgent => ({
-  id: `a${name}-0000000000000001`,
-  name,
-  teammateId: `${name}@session-abcd1234`,
-  status,
-});
-const task = (id: string, status: string, owner?: string, blockedBy: string[] = []): Task => ({
-  id,
-  subject: `Task ${id}`,
-  status,
-  owner,
-  blockedBy,
-});
+const runLog = (content: string) => ({ file_path: '/repo/docs/team8/runs/2026-10-12-x.md', content });
 
-describe('members', () => {
-  it('maps each roster status to a state', () => {
-    const roster = ['running', 'pending', 'waiting', 'idle', 'failed'].map((s, i) => mate(`m${i}`, s));
-    expect(members(roster, []).map((m) => m.state)).toEqual(['working', 'working', 'working', 'idle', 'failed']);
+describe('modeIn', () => {
+  it('reads the mode the lead wrote into a run log, by Write or by Edit', () => {
+    expect(modeIn(runLog('- tasks: 3 · mode: subagents — one track'))).toBe('subagents');
+    expect(modeIn({ file_path: '/r/docs/team8/runs/a.md', old_string: 'x', new_string: '- mode: workflow — fan-out' })).toBe('workflow');
   });
 
-  it('leaves out ended agents and agents that are not teammates', () => {
-    const roster = [mate('done', 'completed'), mate('gone', 'killed'), { id: 'a1234', status: 'running' }, mate('live', 'running')];
-    expect(members(roster, []).map((m) => m.name)).toEqual(['live']);
+  it('takes the last mode line in one write', () => {
+    expect(modeIn(runLog('mode: solo — first\nmode: teammates — second'))).toBe('teammates');
   });
 
-  it('calls a working teammate with nothing claimed and a still-blocked task blocked', () => {
-    const [m] = members([mate('Tom', 'running')], [task('9', 'pending', 'Tom', ['4'])]);
-    expect(m).toMatchObject({ state: 'blocked', taskId: '9', needs: '4' });
-  });
-
-  it('keeps a teammate working while it has a claimed task beside a blocked one', () => {
-    const tasks = [task('9', 'pending', 'Vito', ['4']), task('5', 'in_progress', 'Vito')];
-    expect(members([mate('Vito', 'running')], tasks)[0]).toMatchObject({ state: 'working', taskId: '5' });
-  });
-
-  it('shows the in-progress task before a pending one and ignores completed ones', () => {
-    const tasks = [task('1', 'completed', 'Ana'), task('2', 'pending', 'Ana'), task('3', 'in_progress', 'Ana')];
-    expect(members([mate('Ana', 'idle')], tasks)[0].taskId).toBe('3');
+  it('ignores the template, other files, logs with no mode and non-objects', () => {
+    expect(modeIn(runLog('- tasks: <n> · mode: solo | subagents | teammates | workflow — <reason>'))).toBeUndefined();
+    expect(modeIn({ file_path: '/r/docs/team8/plans/p.md', content: 'mode: teammates — x' })).toBeUndefined();
+    expect(modeIn(runLog('## Brainstorm'))).toBeUndefined();
+    expect(modeIn('mode: solo — x')).toBeUndefined();
+    expect(modeIn(undefined)).toBeUndefined();
   });
 });
 
-describe('bandDetail', () => {
-  it('names the task of a working teammate and the state of any other', () => {
-    const list = members(
-      [mate('W', 'running'), mate('I', 'idle'), mate('B', 'running'), mate('F', 'failed'), mate('N', 'running')],
-      [task('4', 'in_progress', 'W'), task('9', 'pending', 'B', ['3'])],
-    );
-    expect(list.map(bandDetail)).toEqual(['#4', 'idle', 'needs #3', 'failed', 'working']);
+describe('decidedMode', () => {
+  it('takes the last decided mode across the messages', () => {
+    const messages = [
+      { role: 'assistant', toolUses: [{ input: runLog('mode: solo — first') }] },
+      { role: 'user' },
+      { role: 'assistant', toolUses: [{ input: { command: 'ls' } }, { input: runLog('mode: teammates — later') }] },
+    ];
+    expect(decidedMode(messages)).toBe('teammates');
+    expect(decidedMode([])).toBeUndefined();
   });
 });
 
-describe('taskCounts', () => {
-  it('counts completed and total', () => {
-    const tasks = [task('1', 'completed', 'A'), task('2', 'in_progress', 'A'), task('3', 'pending', 'B', ['2']), task('4', 'pending')];
-    expect(taskCounts(tasks)).toEqual({ completed: 1, total: 4 });
+describe('progress', () => {
+  const task = (id: string, status: string): Task => ({ id, status });
+
+  it('counts completed tasks against the total, with the percentage', () => {
+    const tasks = [task('1', 'completed'), task('2', 'completed'), task('3', 'completed'), task('4', 'in_progress'), task('5', 'pending')];
+    expect(progress(tasks)).toEqual({ completed: 3, total: 5, pct: 60 });
+  });
+
+  it('is zero with no tasks', () => {
+    expect(progress([])).toEqual({ completed: 0, total: 0, pct: 0 });
   });
 });
 

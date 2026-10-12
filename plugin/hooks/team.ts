@@ -2,41 +2,37 @@
 // typecheck can load them; team8.tsx is the module around them.
 // No relative imports either: Claude Code wants `./x.ts`, which tsc refuses.
 
-export type Task = { id: string; subject: string; status: string; owner?: string; blockedBy: readonly string[] };
-export type RosterAgent = { id: string; name?: string; teammateId?: string; status: string };
-export type MemberState = 'working' | 'idle' | 'blocked' | 'failed';
-export type Member = { id: string; name: string; state: MemberState; taskId?: string; needs?: string };
+export type Task = { id: string; status: string };
+export type Mode = 'solo' | 'subagents' | 'teammates' | 'workflow';
 
-const ENDED = new Set(['completed', 'killed']);
+const RUN_LOG = 'docs/team8/runs/';
+// The console's rule (src/server/index.ts, lastDecidedMode): the dash after the
+// word tells a filled run log from the template's `mode: solo | subagents …`.
+const DECIDED = /mode: (solo|subagents|teammates|workflow) —/g;
 
-export function members(roster: readonly RosterAgent[], tasks: readonly Task[]): Member[] {
-  const out: Member[] = [];
-  for (const a of roster) {
-    if (!a.teammateId || !a.name || ENDED.has(a.status)) continue;
-    const name = a.name;
-    const own = tasks.filter((t) => t.owner === name);
-    const claimed = own.find((t) => t.status === 'in_progress');
-    const next = own.find((t) => t.status === 'pending');
-    const blocked = own.find((t) => t.status === 'pending' && t.blockedBy.length > 0);
-    let state: MemberState = a.status === 'failed' ? 'failed' : a.status === 'idle' ? 'idle' : 'working';
-    // The console's rule (src/server/project.ts): working, nothing claimed, and
-    // a task of its own still waiting on another.
-    const needs = state === 'working' && !claimed ? blocked?.blockedBy[0] : undefined;
-    if (needs) state = 'blocked';
-    out.push({ id: a.id, name, state, taskId: (claimed ?? (needs ? blocked : next))?.id, needs });
-  }
-  return out;
+// Only a Write or Edit of a run log counts, so a plan or a spec that quotes a
+// mode line, or names the run-log folder, decides nothing.
+export function modeIn(input: unknown): Mode | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const { file_path, content, new_string } = input as Record<string, unknown>;
+  if (typeof file_path !== 'string' || !file_path.includes(RUN_LOG)) return undefined;
+  const text = typeof content === 'string' ? content : typeof new_string === 'string' ? new_string : '';
+  let found: Mode | undefined;
+  for (const m of text.matchAll(DECIDED)) found = m[1] as Mode;
+  return found;
 }
 
-export function bandDetail(m: Member): string {
-  if (m.state === 'working') return m.taskId ? `#${m.taskId}` : 'working';
-  return m.needs ? `needs #${m.needs}` : m.state;
+export function decidedMode(messages: readonly { toolUses?: readonly { input?: unknown }[] }[]): Mode | undefined {
+  let found: Mode | undefined;
+  for (const message of messages) for (const use of message.toolUses ?? []) found = modeIn(use.input) ?? found;
+  return found;
 }
 
-export type TaskCounts = { completed: number; total: number };
+export type Progress = { completed: number; total: number; pct: number };
 
-export function taskCounts(tasks: readonly Task[]): TaskCounts {
-  return { completed: tasks.filter((t) => t.status === 'completed').length, total: tasks.length };
+export function progress(tasks: readonly Task[]): Progress {
+  const completed = tasks.filter((t) => t.status === 'completed').length;
+  return { completed, total: tasks.length, pct: tasks.length ? Math.round((100 * completed) / tasks.length) : 0 };
 }
 
 export type Health = { ok?: boolean };
