@@ -4,8 +4,6 @@ Sub-project 1 of 5 from the 2026-09-27 improvement study: the console you see is
 the build you shipped, showing the session you asked for. Covers study items E1,
 E2, E3, E4, E5 and F3, plus the in-flight session-binding fix.
 
-## Problem
-
 - `/team8:console` binds the console to whatever the server guesses, not the
   session it was run from. Claude Code leaves team directories behind, so the
   guess was routinely a team whose lead exited days earlier.
@@ -53,15 +51,18 @@ When `/team8:console` runs in session S:
 `currentSession` keep recording what is shown:
 
 ```ts
-type Watching = { kind: 'session'; id: string } | { kind: 'team'; name: string } | { kind: 'auto' };
+type Watching =
+  | { kind: "session"; id: string }
+  | { kind: "team"; name: string }
+  | { kind: "auto" };
 ```
 
-| Set by | Value |
-|---|---|
-| `--session <id>` | session |
-| `--team <name>` | team |
-| neither flag | auto |
-| `selectTeam` (picker click) | team |
+| Set by                                        | Value   |
+| --------------------------------------------- | ------- |
+| `--session <id>`                              | session |
+| `--team <name>`                               | team    |
+| neither flag                                  | auto    |
+| `selectTeam` (picker click)                   | team    |
 | `selectSession` (`/s/<id>`, `/team8:console`) | session |
 
 What is **shown** is derived from the watch:
@@ -83,7 +84,10 @@ retargets at once; when the resolved target is already shown it returns
 A pure function over the walk:
 
 ```ts
-function teamOfSession(walk: TeamWalk, chain: string[]): TeamSummary | undefined
+function teamOfSession(
+  walk: TeamWalk,
+  chain: string[],
+): TeamSummary | undefined;
 ```
 
 `chain` is the session followed by its `/branch` ancestors, read from the

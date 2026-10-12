@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/nocturne-4bc22666-5c49-4c20-81d3-6a17ba2f206d/styles.css">
+<script src="_ds/nocturne-4bc22666-5c49-4c20-81d3-6a17ba2f206d/_ds_bundle.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>:root{--warn:#d99e5c;--fail:#c98d8d}body{margin:0;background:var(--color-neutral-900)}a{color:var(--color-accent-300);text-decoration:none}a:hover{color:var(--color-accent-200)}</style>
+</helmet>
+<section id="t12" style="padding:48px;display:flex;flex-direction:column;gap:28px;font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--color-text)">
+<div style="display:flex;gap:10px;align-items:baseline">
+<a href="#t12" style="font-size:10px;font-weight:600;padding:3px 7px;border:1px solid var(--color-accent-700);border-radius:4px;color:var(--color-accent-300)">12</a>
+<span style="font-size:15px">team8 as a Claude Code mod: what the terminal shows without opening the console</span>
+</div>
+<div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start">
+
+<div id="12a" style="display:flex;flex-direction:column;gap:12px;width:1180px;flex:none">
+<div style="display:flex;gap:10px;align-items:baseline;font-size:12px;line-height:1.6;color:var(--color-neutral-400);max-width:110ch;text-wrap:pretty">
+<a href="#12a" style="font-size:10px;font-weight:600;padding:2px 6px;border:1px solid var(--color-accent-700);border-radius:4px;color:var(--color-accent-300);flex:none">12a</a>
+<span><b style="color:var(--color-text);font-weight:500">The team pane.</b> A pane opened by <code>/team8</code> (<code>$.ui.open</code>, user-initiated, so it shows at any width). Two plain-button tabs. The console address is a <code>Link</code> at the top. <b style="color:var(--color-text);font-weight:500">Needs you</b> lists plan approvals waiting in the lead's inbox; each row has its own letter hotkey (<code>o</code>, <code>p</code>, …) that opens that teammate in the console. The input at the bottom sends a prompt to the lead through <code>$.prompt.submit</code>, so <code>@name</code> routing stays the lead's job. Click the tabs.</span>
+</div>
+<div style="height:640px;display:flex;flex-direction:column;background:var(--color-bg);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);overflow:hidden;font-size:12.5px;line-height:1.6">
+<div style="flex:1;min-height:0;display:flex">
+<div style="flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:12px;overflow:hidden">
+<div style="display:flex;gap:10px"><span style="color:var(--color-text)">●</span><span style="color:var(--color-neutral-200);text-wrap:pretty">Merged and released: <span style="color:var(--color-accent-300)">main</span> is at <span style="color:var(--color-accent-300)">b84615c chore(plugin): 1.0.51</span>. Both CI and the version bump passed, and the local <span style="color:var(--color-accent-300)">mods</span> branch is deleted.</span></div>
+<div style="display:flex;flex-direction:column"><div style="display:flex;gap:10px"><span style="color:var(--color-accent-500)">●</span><span><b style="font-weight:700">Bash</b><span style="color:var(--color-neutral-300)">(claude plugin update team8@grimoire 2&gt;&amp;1 | tail -5)</span></span></div>
+<div style="color:var(--color-neutral-400);padding-left:22px">⎿ ✔ Plugin "team8" updated from 1.0.50 to 1.0.51 for scope user.</div></div>
+<div style="display:flex;gap:10px"><span style="color:var(--color-text)">●</span><span style="color:var(--color-neutral-200);text-wrap:pretty">1.0.51 is installed and includes <span style="color:var(--color-accent-300)">hooks/wave-notify.ts</span> and <span style="color:var(--color-accent-300)">wave.ts</span>. It takes effect only after <span style="color:var(--color-accent-300)">/reload-plugins</span> or a restart.</span></div>
+<div style="display:flex;flex-direction:column;background:var(--color-neutral-900);margin:0 -20px;padding:2px 20px"><span><span style="color:var(--color-neutral-500)">❯</span> /team8</span></div>
+<span style="color:var(--color-neutral-500);padding-left:22px">⎿ opened the team8 pane</span>
+</div>
+<div style="width:400px;flex:none;border-left:1px solid var(--color-neutral-800);display:flex;flex-direction:column;padding:12px 16px;gap:12px;overflow:hidden">
+<div style="display:flex;gap:10px;align-items:baseline">
+<span style="color:var(--color-text);font-weight:700">team8</span>
+<span style="color:var(--color-neutral-500)">improvements2</span>
+<span style="flex:1"></span>
+<span style="color:var(--color-neutral-600);font-size:11px">esc close</span>
+</div>
+<div style="display:flex;gap:10px;align-items:baseline;font-size:11.5px">
+<span style="color:var(--color-neutral-600)">console</span>
+<span style="color:var(--color-accent-300);text-decoration:underline">localhost:8000/s/7f3a</span>
+<span style="color:var(--color-neutral-600);white-space:nowrap">· 2 watching</span>
+</div>
+<div style="display:flex;gap:20px">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+<span onClick="{{ t.on }}" style="cursor:pointer;color:{{ t.col }}">{{ t.label }}</span>
+</sc-for>
+</div>
+<sc-if value="{{ isTeam }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:4px">
+<span style="color:var(--warn);font-size:11px;letter-spacing:.12em">NEEDS YOU · 2</span>
+<div style="display:flex;gap:8px;align-items:baseline"><span style="color:var(--warn)">!</span><span style="width:46px;flex:none">Pia</span><span style="color:var(--color-neutral-400);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">plan for T-07 is waiting</span><span style="color:var(--color-accent-300)">o: open</span></div>
+<div style="display:flex;gap:8px;align-items:baseline"><span style="color:var(--warn)">!</span><span style="width:46px;flex:none">Ana</span><span style="color:var(--color-neutral-400);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">asked a question in T-11</span><span style="color:var(--color-accent-300)">p: open</span></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<span style="color:var(--color-neutral-600);font-size:11px;letter-spacing:.12em">TEAM · 4</span>
+<sc-for list="{{ team }}" as="m" hint-placeholder-count="4">
+<div style="display:flex;gap:8px;align-items:baseline">
+<span style="color:{{ m.col }}">{{ m.dot }}</span>
+<span style="width:46px;flex:none;color:var(--color-text)">{{ m.name }}</span>
+<span style="width:44px;flex:none;color:var(--color-neutral-500)">{{ m.task }}</span>
+<span style="color:var(--color-neutral-400);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.doing }}</span>
+<span style="color:var(--color-neutral-600);font-size:11px">{{ m.ago }}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ isTasks }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;gap:10px;align-items:baseline"><span style="color:var(--color-text)">9 of 29 completed</span><span style="color:var(--color-neutral-500)">· 3 claimed · 2 blocked</span></div>
+<div style="display:flex;gap:1px;height:6px"><span style="flex:9;background:var(--color-accent-500);border-radius:2px"></span><span style="flex:3;background:var(--color-accent-300);border-radius:2px"></span><span style="flex:2;background:var(--warn);border-radius:2px"></span><span style="flex:15;background:var(--color-neutral-800);border-radius:2px"></span></div>
+</div>
+<div style="display:flex;flex-direction:column;gap:4px">
+<span style="color:var(--color-neutral-600);font-size:11px;letter-spacing:.12em">CLAIMED AND BLOCKED</span>
+<sc-for list="{{ tasks }}" as="k" hint-placeholder-count="5">
+<div style="display:flex;gap:8px;align-items:baseline">
+<span style="color:{{ k.col }}">{{ k.dot }}</span>
+<span style="width:40px;flex:none;color:var(--color-neutral-500)">{{ k.id }}</span>
+<span style="color:var(--color-neutral-300);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ k.text }}</span>
+<span style="color:var(--color-neutral-500);font-size:11px">{{ k.who }}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+<span style="flex:1"></span>
+<div style="display:flex;gap:8px;align-items:baseline;border-top:1px solid var(--color-neutral-800);padding-top:10px">
+<span style="color:var(--color-neutral-400)">Lead:</span>
+<span style="color:var(--color-neutral-600);flex:1">@Vito take T-09 after T-04</span>
+<span style="color:var(--color-neutral-500)">⏎ send</span>
+</div>
+</div>
+</div>
+<div style="padding:8px 20px 10px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--color-neutral-800)">
+<span><span style="color:var(--color-neutral-500)">❯</span> <span style="background:var(--color-accent-300);color:var(--color-bg)"> </span></span>
+<span style="font-size:11.5px"><span style="color:var(--fail)">►► bypass permissions on</span> <span style="color:var(--color-neutral-500)">(shift+tab to cycle) · ← 3 agents</span></span>
+</div>
+</div>
+</div>
+
+<div id="12b" style="display:flex;flex-direction:column;gap:12px;width:1180px;flex:none">
+<div style="display:flex;gap:10px;align-items:baseline;font-size:12px;line-height:1.6;color:var(--color-neutral-400);max-width:110ch;text-wrap:pretty">
+<a href="#12b" style="font-size:10px;font-weight:600;padding:2px 6px;border:1px solid var(--color-accent-700);border-radius:4px;color:var(--color-accent-300);flex:none">12b</a>
+<span><b style="color:var(--color-text);font-weight:500">The band.</b> No pane: one line in the band above the prompt (<code>AbovePrompt</code>), always there and at any width. Each teammate gets a digit hotkey, which the band allows without focus. Pressing one opens the <a href="#12a">12a</a> pane on that teammate. When a plan approval arrives, a toast (<code>$.ui.toast</code>) names it, and the band entry turns warn until it's answered. It replaces the plain <code>← 3 agents</code> with the team itself.</span>
+</div>
+<div style="display:flex;flex-direction:column;background:var(--color-bg);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);overflow:hidden;font-size:12.5px;line-height:1.6;position:relative">
+<div style="position:absolute;top:12px;right:16px;padding:6px 12px;border:1px solid var(--color-neutral-700);border-radius:var(--radius-sm);background:var(--color-neutral-900);font-size:11.5px;display:flex;gap:8px"><span style="color:var(--warn)">!</span><span>Pia's plan for T-07 is waiting</span><span style="color:var(--color-neutral-500)">· 2 to open</span></div>
+<div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;gap:10px"><span style="color:var(--color-text)">●</span><span style="color:var(--color-neutral-200);text-wrap:pretty">Run <span style="color:var(--color-accent-300)">/reload-plugins</span> and say "check" if you want those three checks.</span></div>
+<span style="color:var(--color-neutral-500)">✻ Cogitated for 39s · done 6:21 PM</span>
+</div>
+<div style="padding:6px 20px;display:flex;gap:18px;align-items:baseline;border-top:1px solid var(--color-neutral-800);font-size:12px;flex-wrap:wrap">
+<span style="color:var(--color-text);font-weight:700">team8</span>
+<span><span style="color:var(--color-neutral-500)">1:</span> <span style="color:var(--color-accent-300)">●</span> Vito <span style="color:var(--color-neutral-500)">T-04</span></span>
+<span><span style="color:var(--color-neutral-500)">2:</span> <span style="color:var(--warn)">!</span> Pia <span style="color:var(--warn)">plan waiting</span></span>
+<span><span style="color:var(--color-neutral-500)">3:</span> <span style="color:var(--color-neutral-500)">○</span> Ana <span style="color:var(--color-neutral-500)">idle</span></span>
+<span><span style="color:var(--color-neutral-500)">4:</span> <span style="color:var(--fail)">✕</span> Tom <span style="color:var(--color-neutral-500)">needs T-04</span></span>
+<span style="color:var(--color-neutral-500)">tasks 9/29</span>
+<span style="flex:1"></span>
+<span style="color:var(--color-accent-300);text-decoration:underline">localhost:8000/s/7f3a</span>
+</div>
+<div style="padding:8px 20px 10px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--color-neutral-800)">
+<span><span style="color:var(--color-neutral-500)">❯</span> <span style="background:var(--color-accent-300);color:var(--color-bg)"> </span></span>
+<span style="font-size:11.5px"><span style="color:var(--fail)">►► bypass permissions on</span> <span style="color:var(--color-neutral-500)">(shift+tab to cycle)</span></span>
+</div>
+</div>
+</div>
+
+</div>
+<div style="max-width:110ch;font-size:12px;line-height:1.7;color:var(--color-neutral-500);text-wrap:pretty;display:flex;flex-direction:column;gap:4px">
+<span style="color:var(--color-neutral-400);font-size:11px;letter-spacing:.12em">LIMITS BOTH OPTIONS RESPECT</span>
+<span>The pane sits beside the transcript only in a wide fullscreen terminal; otherwise it's a framed region above the prompt. A pane the mod opens by itself waits for 144 columns, so neither option opens one unasked. The mod can't change the permission prompt, so "needs you" covers only plan approvals and questions in the lead's inbox. Tab and the arrow keys can't be rebound, so every action is a letter or digit hotkey.</span>
+</div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { tab: 'team' };
+  renderVals() {
+    const t = this.state.tab;
+    return {
+      tabs: [['team', '1: team'], ['tasks', '2: tasks']].map(([k, l]) => ({
+        label: l, on: () => this.setState({ tab: k }),
+        col: k === t ? 'var(--color-text)' : 'var(--color-neutral-600)',
+      })),
+      isTeam: t === 'team',
+      isTasks: t === 'tasks',
+      team: [
+        { dot: '●', col: 'var(--color-accent-300)', name: 'Vito', task: 'T-04', doing: 'Edit src/web/chrome/TeamSelect.tsx', ago: 'now' },
+        { dot: '!', col: 'var(--warn)', name: 'Pia', task: 'T-07', doing: 'waiting on plan approval', ago: '3m' },
+        { dot: '○', col: 'var(--color-neutral-500)', name: 'Ana', task: 'T-11', doing: 'idle after a question', ago: '6m' },
+        { dot: '✕', col: 'var(--fail)', name: 'Tom', task: 'T-09', doing: 'blocked, needs T-04', ago: '12m' },
+      ],
+      tasks: [
+        { dot: '●', col: 'var(--color-accent-300)', id: 'T-04', text: 'Folder filter in the session picker', who: 'Vito' },
+        { dot: '!', col: 'var(--warn)', id: 'T-07', text: 'Rows · board toggle for tasks', who: 'Pia' },
+        { dot: '●', col: 'var(--color-accent-300)', id: 'T-11', text: 'Run progress strip above 9a', who: 'Ana' },
+        { dot: '✕', col: 'var(--fail)', id: 'T-09', text: 'Empty state for the picker', who: 'needs T-04' },
+        { dot: '✕', col: 'var(--fail)', id: 'T-12', text: 'Persist folder scope per operator', who: 'needs T-04' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
