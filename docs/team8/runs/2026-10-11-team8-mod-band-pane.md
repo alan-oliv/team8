@@ -13,7 +13,7 @@ pr: <url, at close>
 
 ## Plan
 - plan: written by the lead · self-review fixes: 2 (the spec's console Link drawn "in accent", though `Link` takes no colour; the close section added to the plan)
-- tasks: 3 (#3–#5) · tracks: 1 · waves: 1 · peak: 1 at once · mode: subagents — Task 3's one file is disjoint from Tasks 1–2, but its few minutes don't pay for a second teammate and a second track review
+- tasks: 3 planned (#3–#5), then 3 more after the live check, each on the operator's call: plan Task 4, band only (#1 of a cleared list); Task 5, the one-line band (#3); Task 6, session-cards in `~/code/claude-mods` (#4) · tracks: 1, then 2 in separate repos · waves: 1 · peak: 1 at once · mode: subagents — every track is one serial line of small tasks, and #4's few minutes in another repo don't pay for a second teammate
 - checks: tracks disjoint · blockers complete (#4 after #3)
 - estimate: ≈$2.25 (#3 ≈$0.25 · #4 ≈$1.75 · #5 ≈$0.25; lead and reviewers not included). Both mechanical tasks priced on sonnet · low, not haiku: haiku ran ≈$0.5 per verbatim task in the mods batch
 
