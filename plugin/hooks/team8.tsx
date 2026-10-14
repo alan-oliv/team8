@@ -13,10 +13,11 @@ let refreshing = false
 let ticking = false
 
 async function refresh($: EngineInterface) {
+  let cleared = false
   // /clear keeps the process under a new session id and fires no session.start.
   try {
     const id = await $.session.id()
-    const cleared = sessionId !== '' && id !== sessionId
+    cleared = sessionId !== '' && id !== sessionId
     sessionId = id
     if (cleared) {
       mode = undefined
@@ -25,7 +26,9 @@ async function refresh($: EngineInterface) {
   } catch {}
   try {
     const list = await $.tool.call({ tool: 'TaskList' })
-    tasks = (list.result as { tasks?: Task[] } | undefined)?.tasks ?? []
+    const listed = (list.result as { tasks?: Task[] } | undefined)?.tasks ?? []
+    // Claude Code empties the list once every task is done; keep the last one so a finished run reads 100%.
+    if (listed.length > 0 || cleared) tasks = listed
   } catch {}
   try {
     const r = await $.http.fetch('http://127.0.0.1:4823/health')
