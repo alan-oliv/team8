@@ -46,18 +46,19 @@ for (const surface of ['terminal', 'desktop'] as const) {
   })
 }
 
-test('the band passes through with no decided mode', async ($, on) => {
+test('the band shows the progress without a mode when none is decided', async ($, on) => {
   stub(on, { messages: [] })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+  expect(await band.find({ type: 'Text', text: /total progress/ })).toBeTruthy()
 })
 
-test('the band passes through with no tasks', async ($, on) => {
+test('the band shows with no tasks', async ($, on) => {
   stub(on, { tasks: [] })
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
-  expect(await band.find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+  expect(await band.find({ type: 'Text', text: /total progress 0\/0/ })).toBeTruthy()
 })
 
 test('the band says how to start the console while it is down', async ($, on) => {
@@ -85,7 +86,9 @@ test('the band forgets the mode when /clear starts a new session', async ($, on)
   live.id = 'ffff0000-0000-0000-0000-000000000000'
   live.messages = []
   await clock.advance(5000)
-  expect(await (await mount()).find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+  const band = await mount()
+  expect(await band.find({ type: 'Text', text: /is running a/ })).toBeFalsy()
+  expect(await band.find({ type: 'Text', text: /total progress/ })).toBeTruthy()
 })
 
 test('the line sits under the bands beneath it', async ($, on) => {

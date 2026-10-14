@@ -99,16 +99,16 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const rest = await next(e)
     try {
-      if (e.props.hasSurvey || !mode || tasks.length === 0) return rest
+      if (e.props.hasSurvey) return rest
       const { Box, Text, Link } = $.ui.resolve(e)
       const p = progress(tasks)
       const link = consoleLink(health, sessionId)
       return (
         <Box flexDirection="column">
           {rest}
-          <Box flexDirection="row" flexWrap="wrap">
+          <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
             <Text bold>team8</Text>
-            <Text dimColor>{` is running a ${mode} session · `}</Text>
+            <Text dimColor>{mode ? ` is running a ${mode} session · ` : ' · '}</Text>
             <Text>{`total progress ${p.completed}/${p.total} (${p.pct}%)`}</Text>
             {link && <Text dimColor>{' · see details here '}</Text>}
             {link && <Link href={link.href} label={link.label} />}
