@@ -418,9 +418,9 @@ export interface TeamSummary {
   leadSessionId: string;
   leadAlive: boolean;        // a running pid in sessions/*.json carries this session id
   lastActivityAt: number;    // epoch ms — max mtime over config.json and inboxes/*.json
-  // leadAlive, or adopted through a live session in its folder. A team read
-  // from config.json alone is live within IDLE_GRACE_MS of its config's mtime,
-  // for boot discovery only: the picker lists on leadAlive.
+  // leadAlive (adoption included), or within IDLE_GRACE_MS of lastActivityAt —
+  // for boot discovery and the follower's hold only: the picker lists on
+  // leadAlive.
   live: boolean;
   // The row for the session on screen — matched by team directory, config lead
   // id, or live driver, so a `/s/<uuid>` frame still marks its team's row.

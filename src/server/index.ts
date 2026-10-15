@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { openStore, type Store, type EventKind, type StoredEvent } from './store';
 import { project, transcriptHistory, transcriptLineText } from './project';
-import { startFileIngest, type TailState } from './ingest/files';
+import { startFileIngest, type FileIngest } from './ingest/files';
 import { createHookHandlers } from './ingest/hooks';
 import { createPermits } from './control/permits';
 import { setTeamsRoot } from './control/mailbox';
@@ -1013,7 +1013,7 @@ export async function walkTeams(
       leadSessionId,
       leadAlive,
       lastActivityAt,
-      live: leadAlive,
+      live: leadAlive || now - lastActivityAt < IDLE_GRACE_MS,
       current: false,
       branch: leadTranscript.branch ?? (await branchOf(lead?.cwd)),
       // Named after the session actually driving the team. Keyed on
@@ -1297,16 +1297,17 @@ export async function main(argv: string[]): Promise<number> {
   // closures below bind that name to `readSessions()`.
   let liveRows: SessionRow[] | undefined;
   let liveRowsJson = '';
-  // Tail states per target, handed from the ingest that served a target to
-  // the next one opened for it: the store keeps the events, this keeps the
-  // offsets, and a switch back then pumps only what was appended since.
-  const tailsByTarget = new Map<string, Map<string, TailState>>();
+  // Tail states and usage ledger per target, handed from the ingest that
+  // served a target to the next one opened for it: the store keeps the
+  // events, this keeps the offsets and what they were already billed, and a
+  // switch back then pumps only what was appended since.
+  const carryByTarget = new Map<string, ReturnType<FileIngest['close']>>();
 
   const startIngest = (
     gen: number,
     team: string | undefined,
     lead: string | undefined,
-    tails?: Map<string, TailState>,
+    carry?: ReturnType<FileIngest['close']>,
   ) =>
     startFileIngest(fencedSink(live, gen, () => generation), {
       paths: {
@@ -1319,7 +1320,7 @@ export async function main(argv: string[]): Promise<number> {
       leadSessionId: lead,
       sessionOnly: team === undefined && lead !== undefined,
       adoptExistingTeams: false,
-      tails,
+      ...carry,
       onTeam: (info) => {
         if (gen !== generation) return;
         store.setTeam(info.teamName);
@@ -1373,7 +1374,7 @@ export async function main(argv: string[]): Promise<number> {
     // pick the select route would refuse.
     hub.publish();
     const gen = ++generation;
-    tailsByTarget.set(currentTeam || currentSession, ingest.close());
+    carryByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(team);
     leadSessionId = lead;
     currentTeam = team;
@@ -1383,7 +1384,7 @@ export async function main(argv: string[]): Promise<number> {
     // session you just left in the header of the one you switched to. Cleared
     // here so the worst case is a blank field for a moment, not a wrong one.
     leadFacts = {};
-    ingest = startIngest(gen, team, lead, tailsByTarget.get(team));
+    ingest = startIngest(gen, team, lead, carryByTarget.get(team));
     // Answering before the sweep lands would return a console with no team name
     // — which is also what http.ts's team() reads, so a control request racing
     // that window would throw inside sendToInbox's name guard.
@@ -1446,13 +1447,13 @@ export async function main(argv: string[]): Promise<number> {
   const retargetSession = async (sessionId: string): Promise<void> => {
     hub.publish();
     const gen = ++generation;
-    tailsByTarget.set(currentTeam || currentSession, ingest.close());
+    carryByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(sessionId);
     leadSessionId = sessionId;
     currentTeam = '';
     currentSession = sessionId;
     leadFacts = {};
-    ingest = startIngest(gen, undefined, sessionId, tailsByTarget.get(sessionId));
+    ingest = startIngest(gen, undefined, sessionId, carryByTarget.get(sessionId));
     await ingest.sweep();
     // Not left to the follower's next tick: the header would name the session
     // by its id for up to FOLLOW_INTERVAL_MS after every switch.
