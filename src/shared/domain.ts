@@ -395,6 +395,12 @@ export interface TeamState {
   build?: BuildInfo;
   /** See {@link TeamSummary.mode}: the batch's decided mode, for the trigger's badge. */
   decidedMode?: DecidedMode;
+  /**
+   * Every live session on the machine, for the picker. Stamped on at the
+   * publish boundary from the follower's last `listLive`; absent only on a
+   * frame built before the first tick.
+   */
+  sessions?: SessionRow[];
 }
 
 /** The four ways `team8:tasks` can decide a batch runs — the console's four pills. */
@@ -511,6 +517,38 @@ export interface TeamsResponse {
   folder?: string;
   /** Every folder with sessions in it, newest first — the folder menu's rows. */
   folders?: FolderSummary[];
+}
+
+/**
+ * One picker row — a session whose Claude process is running right now. Built
+ * by the server's `listLive` on every follower tick and carried on
+ * `TeamState.sessions`, so the picker never fetches. There is no "ended" row:
+ * a past session is reached by resuming it from the terminal, which makes it
+ * live and therefore listed.
+ */
+export interface SessionRow {
+  /** The session uuid — what `POST /api/select-session/<id>` and `/s/<id>` take. */
+  id: string;
+  /** `teams/<dir>` when this session drives a team; absent on a bare session. */
+  team?: string;
+  /** The sidecar name (`/branch` writes it), else the transcript's title, else `session-<8>`. */
+  title: string;
+  /** 1 for a bare session. */
+  members: number;
+  /** The absolute path the transcript last recorded working in, else the sidecar's cwd. */
+  folder: string;
+  branch?: string;
+  /** Sidecar `status !== 'idle'` — mid-turn. */
+  busy: boolean;
+  /** The row for the session on screen. */
+  current: boolean;
+  /** See {@link TeamSummary.mode}. */
+  mode?: DecidedMode;
+  workflow?: { runId: string; name?: string; live: boolean };
+  /** Absent, never zero. */
+  subagents?: number;
+  /** Uncommitted work in the tree, against HEAD. Absent on a clean tree. */
+  diffstat?: { added: number; removed: number };
 }
 
 /**
