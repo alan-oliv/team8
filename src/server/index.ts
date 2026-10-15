@@ -444,8 +444,8 @@ async function branchOf(cwd: string | undefined): Promise<string | undefined> {
  * nobody else's — so the listing pays for it once per DIRECTORY rather than
  * once per team, since several sessions open on one repo is ordinary.
  *
- * The timeout is not decoration: this runs on the same await chain that answers
- * `GET /api/teams`, and a git that never returns is a picker that never opens.
+ * The timeout is not decoration: this runs on every follower tick, and a git
+ * that never returns is a frame whose rows never refresh.
  */
 const GIT_TIMEOUT_MS = 2000;
 
