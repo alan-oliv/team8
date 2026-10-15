@@ -515,6 +515,20 @@ describe('listLive', () => {
   const roots = () => [path.join(dir, 'teams'), path.join(dir, 'sessions'), path.join(dir, 'projects')] as const;
   const user = (extra: object = {}) => ({ type: 'user', entrypoint: 'cli', gitBranch: 'main', message: 'hi', ...extra });
 
+  it('lists a session that drives its own team once, even with a fresh lead-only directory in its folder', async () => {
+    // A resume from the terminal leaves a lead-only team directory behind,
+    // keyed to an id that never ran, in the folder the live session works in.
+    await writeTeamDir(dir, 'session-aaaaaaaa', { leadSessionId: A, members: 1, cwd: APP });
+    await writeTeamDir(dir, 'session-bbbbbbbb', { leadSessionId: B, members: 1, cwd: APP });
+    await writeSidecar(dir, process.pid, A, { status: 'busy', cwd: APP, name: 'forensics' });
+    await writeTranscript(dir, APP, A, [user()]);
+    const [teams, sessions, projects] = roots();
+
+    const { rows, walk } = await listLive(teams, sessions, projects, A);
+    expect(rows.map((r) => r.id)).toEqual([A]);
+    expect(walk.adopted.has(A)).toBe(false);
+  });
+
   it('lists a live session with its name, folder, branch and busy flag, and nothing for a dead one', async () => {
     await writeSidecar(dir, process.pid, A, { status: 'busy', cwd: APP, name: 'fixing the picker' });
     await writeSidecar(dir, await deadPid(), B, { status: 'busy', cwd: LIB });

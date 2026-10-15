@@ -1082,7 +1082,12 @@ function adoptByCwd(
   if (byCwd.size === 0) return adopted;
 
   const claimed = new Set(teams.filter((t) => t.leadAlive).map((t) => t.name));
+  // A session already driving a team is represented by that team's row. A
+  // resume leaves a fresh lead-only directory in its folder, and adopting it
+  // too listed the same session twice.
+  const driving = new Set([...claimed].map((name) => leadSessions.get(name)));
   for (const [cwd, sessionId] of byCwd) {
+    if (driving.has(sessionId)) continue;
     const best = teams
       .filter(
         (t) =>
