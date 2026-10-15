@@ -7114,7 +7114,9 @@ function adoptByCwd(teams, leadCwds, leadSessions, sessions, now) {
   for (const cwd of ambiguous) byCwd.delete(cwd);
   if (byCwd.size === 0) return adopted;
   const claimed = new Set(teams.filter((t) => t.leadAlive).map((t) => t.name));
+  const driving = new Set([...claimed].map((name) => leadSessions.get(name)));
   for (const [cwd, sessionId] of byCwd) {
+    if (driving.has(sessionId)) continue;
     const best = teams.filter(
       (t) => !claimed.has(t.name) && leadCwds.get(t.name) === cwd && // Bounded, and this bound is the whole point. Sharing a working
       // directory is weak evidence — two sessions open on the same repo is
