@@ -3,7 +3,7 @@
 spec: docs/team8/specs/2026-10-15-session-picker-live-only-design.md
 plan: docs/team8/plans/2026-10-15-session-picker-live-only.md
 branch: session-picker-live-only
-pr: <url, at close>
+pr: https://github.com/alan-oliv/team8/pull/45
 
 ## Brainstorm
 - path: architectural
@@ -15,9 +15,13 @@ pr: <url, at close>
 - estimate: ≈$24.60 (per task in the plan's table)
 
 ## Run
-- executors: <name> · <model> · <effort> · track <X> · wave <n>, one line each · peak <n> at once
-- track reviews: <X> <n>/3 rounds, one entry each · residuals: <n>
-- actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
-- estimate vs actual: <one line>
-- went wrong / change next time: <one line each, or "nothing">
+- executors: server · opus · high · track A · waves 1–3 (tasks 9–15, 18) · 27.2 min wall, 119 calls; picker · opus · high · track B · wave 2 (tasks 16, 17) · 13.0 min wall, 64 calls · peak 2 at once
+- track reviews: B 2/3 rounds (review-picker · opus): 1 Blocking — auto-resume picked `rows[0]` by title with no recency, could move a bare open off an equally active session; ruled: move only to a strictly busier row, never between equals — fixed in `4501935` · residuals 5, run-log only: `TeamSelectProps.now` unused; three test names claim more than they assert; no test for a throwing `pushState`; nothing-live and stored-folder auto-resume cases uncovered; `NoSessions.others` is always `[]` from App (plan's interface). A stored folder with no current row still auto-switches there, even to an idle row — pre-existing, kept.
+  A 2/3 rounds (review-server · opus): 2 Blocking — (1) a seeded ingest under-reported spend, its usage ledger started empty, workflow runs likewise; (2) files in `deferred`/`pending` at close exported an offset past lines never stored — fixed in `7034f50`: `close()` returns `{ tails, usage }`, workflow-agent transcripts and deferred/pending files re-read from 0; plus Minor 1 (`live` on full-read teams back to `leadAlive || recent`) · residuals 6, run-log only: cheap records' recency is config.json mtime only (narrower than before); `TeamSummary.diffstat` now unset; stale folder-menu comment at index.test.ts:722; a team row can carry `folder: ''`; no windowed-then-incremental `transcriptMeta` test; `needsDiffstat` misnamed.
+- rulings during the run: #13 — a config-only team record keeps `live: now - configMtimeMs < IDLE_GRACE_MS` for boot discovery (`autoTeam`/`discoverTeam` unchanged); it never becomes a row (`listLive` filters on `leadAlive`). Switch-back lands at 0.31–0.49 s against the plan's 0.3 s — accepted as a follow-up: 4–5× faster than before, and the remainder is per-switch fixed cost (select's `walkTeams` over 119 teams, the sweep's walk), not re-parsing.
+- actual: ≈$15.28 for the four agents — server ≈$8.05, picker ≈$3.49, review-picker ≈$1.29, review-server ≈$2.45 — plus the lead's whole transcript ≈$24.54 (which includes the pre-plan investigation and measurements, not just the run) · measure: 12/12 messages delivered, lag median 0.0 min, p90 0.0, max 0.1 · review tails none · idle with work waiting 0.0 min · opus·high 252 calls, median 3.5 s, p90 13.8 s
+- estimate vs actual: ≈$24.60 estimated for the ten tasks; agents came in at ≈$15.28 (38% under) — the four sonnet-sized tasks ran on opus inside the one `server` teammate and still cost less than their rows.
+- full gate by the lead at `7034f50`: `npx tsc --noEmit` clean · `npx vitest run` 104 files, 2251 tests passed (106 s)
+- client half of the manual check, static (no browser tools in this session): built bundle at `7034f50` has 0 occurrences of `reading teams`, `folder=*`, `location.assign`, `skipNext`, `api/teams?`, `show-hidden-rows`, `team-search`, and carries `select-session`, `pushState`, `LIVE SESSIONS`, `resume a session`. The branch build on :4899 served this session's own row (`team`, `members: 5`, `busy`, `current`, `subagents: 4`) on the frame with `GET /api/teams` → 404. Visual ⌘K check: on the next plugin update, by the operator.
+- went wrong / change next time: the plan's auto-resume had no recency rule — the row lost `lastActivityAt` and I wrote `rows[0]`; a reviewer caught it. The plan's tail hand-off carried offsets but not the usage ledger, nor the deferred/pending files — a reviewer caught both. Next time a plan carries state across a rebuild, list every per-instance map the rebuilt thing owns before deciding what travels. Also: my first "66 s boot" measurement was a poll loop against a 404 route; confirm the probe route answers 200 before timing anything.
 - manual check: against the branch build (sha f23dbdd) on :4899, read-only, over the real projects/sessions/teams/tasks with a scratch team8 store — the :4823 console is the installed 1.0.55 build watching the lead's session, so measuring it would test the old code and moving it would move the lead's view. `GET /api/teams` 404; the frame carried 3 rows, every one with `busy` and `folder`, the session on screen `current`. Switches B,A,B,A,B: 1.575s (first visit) · 0.491s · 0.318s · 0.382s · 0.325s; six more returns 0.312–0.390s. Returns are 4–5× faster than the first visit and the old 1.5–1.9s, but miss the < 0.3s target by 10–30%: the frame build is ~2ms and a 1.2 MB log returns as fast as a 6.8 MB one, so the rest is per-switch fixed cost (select's `walkTeams` over 119 teams, the sweep's walk of projects/), not re-parsing. Browser half (⌘K no flash, no `all`, no reload) pending, lead's.
