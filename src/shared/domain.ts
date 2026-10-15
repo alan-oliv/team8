@@ -395,15 +395,21 @@ export interface TeamState {
   build?: BuildInfo;
   /** See {@link TeamSummary.mode}: the batch's decided mode, for the trigger's badge. */
   decidedMode?: DecidedMode;
+  /**
+   * Every live session on the machine, for the picker. Stamped on at the
+   * publish boundary from the follower's last `listLive`; absent only on a
+   * frame built before the first tick.
+   */
+  sessions?: SessionRow[];
 }
 
 /** The four ways `team8:tasks` can decide a batch runs — the console's four pills. */
 export type DecidedMode = 'solo' | 'subagents' | 'teammates' | 'workflow';
 
 /**
- * One entry of `GET /api/teams`. Deliberately metadata only: folding a team's
- * event log to report its cost measured 48x the cost of this whole listing per
- * team, and another team's spend is a fact you learn by switching to it.
+ * The server's own record of a team while it walks `teams/` — what
+ * `walkTeams`, `autoTeam` and `teamOfSession` read. Never sent to the client:
+ * the picker's row is {@link SessionRow}.
  */
 export interface TeamSummary {
   name: string;              // the teams/ DIRECTORY name — what /select takes
@@ -412,25 +418,22 @@ export interface TeamSummary {
   leadSessionId: string;
   leadAlive: boolean;        // a running pid in sessions/*.json carries this session id
   lastActivityAt: number;    // epoch ms — max mtime over config.json and inboxes/*.json
-  // `/branch` moves the live conversation to a new session id without touching
-  // config.json, so a genuinely live team can report leadAlive false. Recency
-  // covers that case; the pid covers a team idle longer than the grace window.
-  live: boolean;             // leadAlive || within IDLE_GRACE_MS of lastActivityAt
+  // leadAlive (adoption included), or within IDLE_GRACE_MS of lastActivityAt —
+  // for boot discovery and the follower's hold only: the picker lists on
+  // leadAlive.
+  live: boolean;
   // The row for the session on screen — matched by team directory, config lead
   // id, or live driver, so a `/s/<uuid>` frame still marks its team's row.
   current: boolean;
   // The dropdown's row. All three are best-effort: a team whose lead session
   // sidecar or working tree is gone still lists, just with less on the row.
   branch?: string;           // read from <cwd>/.git/HEAD, not the statusline hook
-  // The absolute PATH of the directory the session last wrote from, else the
-  // one it was listed under — the same kind of value `TeamState.folder`
-  // carries (project.ts), so the client keys on it and never on a basename two
-  // folders can share. Matched by prefix (`inFolder`): picking `~/code` lists
-  // what works anywhere under it.
+  // The absolute PATH of the directory the lead last wrote from — what its
+  // picker row's `folder` becomes.
   folder?: string;
   goal?: string;             // the lead session's name (`/branch` sets it)
   // live = process alive and mid-turn (sidecar status "busy"); idle = alive
-  // but parked at its prompt, or gone within IDLE_GRACE_MS; done = gone longer.
+  // but parked at its prompt; done = the lead is not running.
   state: 'live' | 'idle' | 'done';
   /**
    * The mode `team8:tasks` decided for this session's batch, read off the run
@@ -438,13 +441,6 @@ export interface TeamSummary {
    * comes from evidence (a roster, a subagent tree, a run) or is left blank.
    */
   mode?: DecidedMode;
-  /**
-   * A live session with no team of its own — a row the picker can still offer,
-   * but one that `/api/teams/<name>/select` knows nothing about: `name` is a
-   * session id, so it is selected through `/api/select-session/<id>`. Absent,
-   * never false, on a real team.
-   */
-  sessionOnly?: boolean;
   /**
    * The newest dynamic-workflow run in this session, when there is one.
    *
@@ -479,38 +475,35 @@ export interface TeamSummary {
 }
 
 /**
- * One working directory the machine has ever held a session in — a row in the
- * picker's folder menu.
- *
- * `path` is the real absolute directory, not the project slug: the slug maps
- * `/` and `.` and `_` all onto `-`, so it cannot be turned back into a path.
- * The path is read out of a transcript record instead, which carries it whole.
+ * One picker row — a session whose Claude process is running right now. Built
+ * by the server's `listLive` on every follower tick and carried on
+ * `TeamState.sessions`, so the picker never fetches. There is no "ended" row:
+ * a past session is reached by resuming it from the terminal, which makes it
+ * live and therefore listed.
  */
-export interface FolderSummary {
-  path: string;              // absolute; the client abbreviates it for display
-  name: string;              // its basename — what the chip shows first
-  // Sessions under its project dir, by either form (`<id>.jsonl` or `<id>/`) —
-  // the same rule `sessionProjectDir` selects by.
-  sessions: number;
-}
-
-/**
- * The folder scope that means every folder at once. A `*` can never be a real
- * absolute path, so it cannot collide with a folder the menu lists.
- */
-export const ALL_FOLDERS = '*';
-
-/** Whether `dir` is `folder` or sits under it — how a folder scope matches a row. */
-export const inFolder = (dir: string | undefined, folder: string): boolean =>
-  dir === folder || dir?.startsWith(`${folder}/`) === true;
-
-export interface TeamsResponse {
-  current: string;           // '' until resolved; a team name in team mode, the session id in session mode
-  teams: TeamSummary[];      // current first, then live, then lastActivityAt desc, then name
-  /** The folder the rows above are scoped to; '' when the listing is machine-wide. */
-  folder?: string;
-  /** Every folder with sessions in it, newest first — the folder menu's rows. */
-  folders?: FolderSummary[];
+export interface SessionRow {
+  /** The session uuid — what `POST /api/select-session/<id>` and `/s/<id>` take. */
+  id: string;
+  /** `teams/<dir>` when this session drives a team; absent on a bare session. */
+  team?: string;
+  /** The sidecar name (`/branch` writes it), else the transcript's title, else `session-<8>`. */
+  title: string;
+  /** 1 for a bare session. */
+  members: number;
+  /** The absolute path the transcript last recorded working in, else the sidecar's cwd. */
+  folder: string;
+  branch?: string;
+  /** Sidecar `status !== 'idle'` — mid-turn. */
+  busy: boolean;
+  /** The row for the session on screen. */
+  current: boolean;
+  /** See {@link TeamSummary.mode}. */
+  mode?: DecidedMode;
+  workflow?: { runId: string; name?: string; live: boolean };
+  /** Absent, never zero. */
+  subagents?: number;
+  /** Uncommitted work in the tree, against HEAD. Absent on a clean tree. */
+  diffstat?: { added: number; removed: number };
 }
 
 /**

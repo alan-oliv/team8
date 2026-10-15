@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { agentNameFrom } from './ingest/hooks';
 import { agentOfTranscript, TAIL_POLL_MS } from './ingest/files';
 import { FOLLOW_INTERVAL_MS } from './index';
-import type { TeamState, TeamsResponse } from '../shared/domain';
+import type { SessionRow, TeamState } from '../shared/domain';
 import type { Sidecar } from '../shared/roster';
 
 const FIXTURES = path.resolve(process.cwd(), 'fixtures');
@@ -16,10 +16,9 @@ const TSX = fileURLToPath(new URL('../../node_modules/.bin/tsx', import.meta.url
 
 const TEAM = 'session-98b0b4a7';
 const LEAD_SESSION = '98b0b4a7-3206-455b-aaf6-a5a81ad1e283';
-// Matches folderSessionIds' own transform (index.ts) of the spawned server's
-// cwd, which `boot()` inherits from this process — not a fixed string, or the
-// folder-scoping in `listTeamSummaries` drops every fixture team but the one
-// on screen anywhere this repo is not checked out at the author's own path.
+// Claude Code's slug of the spawned server's cwd, which `boot()` inherits from
+// this process — not a fixed string, so the fixture's project dir is where a
+// session started in this checkout would write, wherever it is checked out.
 const SLUG = process.cwd().replace(/[^a-zA-Z0-9]/g, '-');
 const AGENT = 'probe-alpha';
 const SPAWN_ID = `a${AGENT}-84fd551b27de6433`;
@@ -206,6 +205,24 @@ async function snapshot(url: string): Promise<TeamState> {
   }
   const start = buf.indexOf('data: ') + 'data: '.length;
   return JSON.parse(buf.slice(start, buf.indexOf('\n\n', start))) as TeamState;
+}
+
+/** The frame's rows, once the follower's first tick has put them there. */
+async function sessionsOf(url: string, timeoutMs = FOLLOW_INTERVAL_MS * 3): Promise<SessionRow[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const s = await snapshot(url);
+    if (s.sessions) return s.sessions;
+    if (Date.now() > deadline) throw new Error('the frame never carried sessions');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/** Two live sidecars: this process and its parent are the two pids that are certainly running. */
+async function writeLiveSidecars(home: string, cwd: string): Promise<void> {
+  await fs.mkdir(path.join(home, 'sessions'), { recursive: true });
+  await fs.writeFile(path.join(home, 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: LEAD_SESSION, status: 'busy', cwd }));
+  await fs.writeFile(path.join(home, 'sessions', `${process.ppid}.json`), JSON.stringify({ pid: process.ppid, sessionId: LEAD_SESSION_B, status: 'idle', cwd }));
 }
 
 function transcriptOf(state: TeamState, agent: string): string[] {
@@ -548,46 +565,60 @@ describe('push -> pull wiring', () => {
   );
 
   it(
-    'lists every team in this folder, and moves the current flag on a switch',
+    'carries the live rows on the frame, and moves the current flag on a switch',
     async () => {
       home = await layout();
+      await writeLiveSidecars(home, process.cwd());
       const url = await boot(home);
 
-      const listed = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
-      expect(listed.current).toBe(TEAM);
-      expect(listed.teams.map((t) => t.name).sort()).toEqual([TEAM, TEAM_B, TEAM_C].sort());
-      const byName = new Map(listed.teams.map((t) => [t.name, t]));
-      expect(byName.get(TEAM)!.members).toBe(4);
-      expect(byName.get(TEAM_B)!.members).toBe(2);
-      expect(byName.get(TEAM)!.current).toBe(true);
-      // The current team sorts first so the dropdown opens on it.
-      expect(listed.teams[0].name).toBe(TEAM);
+      const rows = await sessionsOf(url);
+      // TEAM_C has no running lead, so it is not a row — the picker is live sessions only.
+      expect(rows.map((r) => r.team).sort()).toEqual([TEAM, TEAM_B].sort());
+      const byTeam = new Map(rows.map((r) => [r.team, r]));
+      expect(byTeam.get(TEAM)).toMatchObject({ id: LEAD_SESSION, members: 4, busy: true, current: true });
+      expect(byTeam.get(TEAM_B)).toMatchObject({ id: LEAD_SESSION_B, members: 2, busy: false, current: false });
 
       expect((await selectTeam(url, TEAM_B)).status).toBe(200);
-      const again = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
-      expect(again.current).toBe(TEAM_B);
-      expect(again.teams.filter((t) => t.current).map((t) => t.name)).toEqual([TEAM_B]);
+      const moved = await (async () => {
+        const deadline = Date.now() + FOLLOW_INTERVAL_MS * 3;
+        for (;;) {
+          const again = await sessionsOf(url);
+          if (again.find((r) => r.current)?.team === TEAM_B) return again;
+          if (Date.now() > deadline) throw new Error('current never moved');
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      })();
+      expect(moved.filter((r) => r.current).map((r) => r.team)).toEqual([TEAM_B]);
     },
     20_000,
   );
 
-  // The scope reaches `<cwd>/.git/HEAD` and spawns `git diff` there, so a path
-  // the browser names must never become one: anything but `*` is answered for
-  // the console's own folder.
   it(
-    'answers a folder the browser names with the console\'s own listing, never reading the named path',
+    'switching back to a session re-reads none of its transcript',
     async () => {
       home = await layout();
+      await writeLiveSidecars(home, process.cwd());
+      // The teammate's transcript is a symlink to this file; give it a line so
+      // the first visit has something to read, and a re-read something to repeat.
+      await fs.writeFile(
+        path.join(home, 'outside', 'transcript.jsonl'),
+        assistantLine('55555555-5555-5555-5555-555555555555', 'read once'),
+      );
       const url = await boot(home);
+      await sessionsOf(url);
+      expect(await waitForLine(url, AGENT, 'read once', Date.now() + 5000)).toBe(true);
+      const log = path.join(home, 'team8', 'logs', `${TEAM}.jsonl`);
+      const transcriptEvents = async () =>
+        ((await fs.readFile(log, 'utf8')).match(/"kind":"transcript"/g) ?? []).length;
+      const before = await transcriptEvents();
+      expect(before).toBeGreaterThan(0);
 
-      const bare = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
-      for (const hostile of ['/etc', '../../etc']) {
-        const named = (await (
-          await fetch(`${url}/api/teams?folder=${encodeURIComponent(hostile)}`)
-        ).json()) as TeamsResponse;
-        expect(named.folder).toBe(bare.folder);
-        expect(named.teams.map((t) => t.name).sort()).toEqual(bare.teams.map((t) => t.name).sort());
-      }
+      expect((await selectTeam(url, TEAM_B)).status).toBe(200);
+      expect((await selectTeam(url, TEAM)).status).toBe(200);
+      await new Promise((r) => setTimeout(r, TAIL_POLL_MS + 200));
+      // The return seeded the new ingest with the old one's tail states, so
+      // nothing was appended to a log that already held every line.
+      expect(await transcriptEvents()).toBe(before);
     },
     20_000,
   );
@@ -880,7 +911,7 @@ describe('which team a console boots onto', () => {
     expect(await waitForTeamNamed(url, 'session-ffff0000', FOLLOW_INTERVAL_MS * 3)).toBe('session-ffff0000');
   }, 20_000);
 
-  it("a watched session that is a /branch of a lead shows that lead's team, marked current in the picker", async () => {
+  it("a watched session that is a /branch of a lead shows that lead's team", async () => {
     const dir = await emptyHome();
     const ANCESTOR = 'a1b2c3d4-0000-4000-8000-000000000001';
     await writeTeamConfig(dir, 'session-aaaa1111', ANCESTOR, 'probe-anc');
@@ -896,8 +927,9 @@ describe('which team a console boots onto', () => {
     const url = await boot(dir, ['--session', SOLO_SESSION], null);
 
     expect(await teamOf(url)).toBe('session-aaaa1111');
-    const listing = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
-    expect(listing.teams.filter((t) => t.current).map((t) => t.name)).toEqual(['session-aaaa1111']);
+    // Nothing in this fixture is running, so the picker has no rows; the team
+    // shows on the frame's own fields, which `teamOf` above already checked.
+    expect(await sessionsOf(url)).toEqual([]);
   }, 20_000);
 
   it('selecting the session already on screen changes nothing but the watch', async () => {

@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { App } from '../web/App';
 import { MockEventSource, installMockEventSource } from '../web/test/mockEventSource';
-import type { TeamState, TeamsResponse } from '../shared/domain';
+import type { SessionRow, TeamState } from '../shared/domain';
 
 /**
  * The one case every other fixture in this repo assumes away: a session with NO
@@ -215,13 +215,12 @@ it('takes a session with no team config at all from the picker to a populated tr
   home = await soloHome();
   const url = await boot(home);
 
-  // 1. discoverable: the picker's listing offers it, flagged as a session.
-  const listing = await until('the session to appear in the listing', async () => {
-    const teams = (await (await fetch(`${url}/api/teams`)).json()) as TeamsResponse;
-    return teams.teams.find((t) => t.name === SESSION);
-  });
-  expect(listing.sessionOnly).toBe(true);
-  expect(listing.subagents).toBe(2);
+  // 1. discoverable: the frame's rows offer it, as a bare session.
+  const row = await until('the session to appear on the frame', async () =>
+    (await snapshot(url)).sessions?.find((r: SessionRow) => r.id === SESSION),
+  );
+  expect(row.team).toBeUndefined();
+  expect(row.subagents).toBe(2);
 
   // 2. selectable: the route the picker row and the /s/ URL both post to.
   const select = await fetch(`${url}/api/select-session/${SESSION}`, {

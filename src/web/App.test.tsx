@@ -1,19 +1,18 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { Diff } from '../shared/domain';
+import type { Diff, SessionRow } from '../shared/domain';
 import { App } from './App';
 import { MockEventSource, installMockEventSource } from './test/mockEventSource';
-import { FIXTURE_NOW, sampleTeamState, sampleTeams } from './test/state-fixture';
+import { FIXTURE_NOW, sampleSessions, sampleTeamState } from './test/state-fixture';
 import { FOLDER_SETTINGS_KEY, SETTINGS_KEY } from './state/useSettings';
 import { THEMES } from './themes';
 
 beforeEach(() => {
   installMockEventSource();
   window.history.replaceState(null, '', '/');
-  // Hidden sessions and appearance both persist per browser, so without this a
-  // test that hides a session leaves it hidden for every test after it — which
-  // shows up as an empty picker several cases later, nowhere near the cause.
+  // The folder scope and appearance both persist per browser, so without this
+  // a test that picks one leaves it picked for every test after it.
   window.localStorage.clear();
   // The splash asks for a frame on mount; never granting one keeps it frozen at
   // t=0 so no case sees a re-render from an animation it is not testing.
@@ -239,22 +238,28 @@ it('costs the dock no per-agent renders on an identical frame or a clock tick', 
   }
 });
 
-function stubTeamsFetch() {
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams' || path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(JSON.stringify({ current: 'session-98b0b4a7', teams: sampleTeams() }), {
-            status: 200,
-          }),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
+function stubFetch() {
+  const fetchMock = vi.fn((_path: string, _init?: RequestInit) => Promise.resolve(new Response('{}', { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
 
+const POST = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' };
+const B5 = 'b5129c7b-a009-4de3-9a42-4664d1214f39';
+const C1 = 'c1a2b3c4-0000-4000-8000-000000000003';
+
+/** The fixture frame with the session on screen gone quiet and B5 busy beside it: a bare open would switch. */
+function quietCurrentState() {
+  const [current, b5, c1] = sampleSessions();
+  const sessions: SessionRow[] = [{ ...current, busy: false }, { ...b5, busy: true }, c1];
+  return { ...sampleTeamState(), sessions };
+}
+
+const selects = (fetchMock: ReturnType<typeof stubFetch>) =>
+  fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/api/select-session/'));
+
 it('t opens the team list over any view', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -271,15 +276,11 @@ it('switches to the team the launcher announced, once', () => {
   // The launcher announces a bare /?team= when a console is already running for
   // another team; that is the only case where the URL and the server disagree.
   window.history.replaceState(null, '', '/?team=session-b5129c7b');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-b5129c7b/select', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
-  });
+  expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-b5129c7b/select', POST);
 
   act(() => MockEventSource.last().emit('state', sampleTeamState()));
   expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -287,7 +288,7 @@ it('switches to the team the launcher announced, once', () => {
 
 it('does not switch when the announced team is already the one on screen', () => {
   window.history.replaceState(null, '', '/?team=session-98b0b4a7');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   expect(fetchMock).not.toHaveBeenCalled();
@@ -298,220 +299,77 @@ it('does not switch for a ?team= that came from a reload rather than the launche
   // view. Honouring it would let a background tab yank a console someone else
   // is watching, since the switch is server-global.
   window.history.replaceState(null, '', '/?view=wall&team=session-b5129c7b');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/teams/'))).toBe(false);
 });
 
-// ————— landing a bare open on the most recently active session (task #5) —————
+// ————— landing a bare open on the most active session, from the frame —————
 
-it('switches to the most recently live session on a bare open', async () => {
-  window.history.replaceState(null, '', '/');
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(
-            JSON.stringify({
-              current: 'session-98b0b4a7',
-              teams: [
-                // The row on screen, current but gone quiet — not the most recently active.
-                { ...sampleTeams()[0], state: 'done' as const, current: true },
-                // Live — this is the one a bare open should land on instead.
-                { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'live' as const, current: false },
-              ],
-            }),
-            { status: 200 },
-          ),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
+// The scope is the picker's: with nothing picked, the folder of the session on
+// screen — so a bare open lands inside it rather than on a busy session elsewhere.
+it('switches a bare open to the busy session in the folder on screen, not to one elsewhere', () => {
+  const fetchMock = stubFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', quietCurrentState()));
+
+  expect(fetchMock).toHaveBeenCalledWith(`/api/select-session/${B5}`, POST);
+  expect(fetchMock).not.toHaveBeenCalledWith(`/api/select-session/${C1}`, expect.anything());
+
+  // Ref-guarded like `announced`: a later frame must not fire it again.
+  act(() => MockEventSource.last().emit('state', quietCurrentState()));
+  expect(selects(fetchMock)).toHaveLength(1);
+});
+
+it('does not switch when the session on screen is already the most active in its folder', () => {
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-
-  await vi.waitFor(() =>
-    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    }),
-  );
-
-  // Ref-guarded like `announced`: a later state frame must not fire it again.
-  const callsAfterFirst = fetchMock.mock.calls.length;
-  act(() => MockEventSource.last().emit('state', sampleTeamState()));
-  expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
-it('falls back to the most recently idle session when nothing is live', async () => {
-  window.history.replaceState(null, '', '/');
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(
-            JSON.stringify({
-              current: 'session-98b0b4a7',
-              teams: [
-                { ...sampleTeams()[0], state: 'done' as const, current: true },
-                { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'idle' as const, current: false },
-              ],
-            }),
-            { status: 200 },
-          ),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
+it('never moves a bare open between two sessions just as busy as each other', () => {
+  const [current, b5] = sampleSessions();
+  const sessions: SessionRow[] = [{ ...current, title: 'zulu' }, { ...b5, busy: true }];
+  const fetchMock = stubFetch();
   render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState() }));
-
-  await vi.waitFor(() =>
-    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    }),
-  );
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), sessions }));
+  expect(selects(fetchMock)).toEqual([]);
 });
 
-// The listing is machine-wide, but the pick is not: with nothing picked the
-// picker scopes to the folder of the session on screen, and a bare open lands
-// inside that same folder rather than on a livelier session elsewhere.
-it('lands a bare open inside the folder of the session on screen, not on a livelier session elsewhere', async () => {
-  window.history.replaceState(null, '', '/');
-  const OCTO = '/Users/dev/code/octo';
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(
-            JSON.stringify({
-              current: 'session-98b0b4a7',
-              teams: [
-                { ...sampleTeams()[0], state: 'done' as const, current: true, folder: OCTO },
-                {
-                  ...sampleTeams()[1],
-                  name: 'session-c1a2b3c4',
-                  state: 'live' as const,
-                  current: false,
-                  folder: '/Users/dev/code/hatch',
-                },
-                { ...sampleTeams()[1], name: 'session-d4e5f6a7', state: 'idle' as const, current: false, folder: OCTO },
-              ],
-            }),
-            { status: 200 },
-          ),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
+it('waits for a frame that carries sessions before deciding', () => {
+  const fetchMock = stubFetch();
   render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), sessions: undefined }));
+  expect(fetchMock).not.toHaveBeenCalled();
 
-  await vi.waitFor(() =>
-    expect(fetchMock).toHaveBeenCalledWith('/api/teams/session-d4e5f6a7/select', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    }),
-  );
-  expect(fetchMock).not.toHaveBeenCalledWith('/api/teams/session-c1a2b3c4/select', expect.anything());
+  act(() => MockEventSource.last().emit('state', quietCurrentState()));
+  expect(fetchMock).toHaveBeenCalledWith(`/api/select-session/${B5}`, POST);
 });
 
-it('does not switch when the most recently live session is already on screen', async () => {
-  window.history.replaceState(null, '', '/');
-  const fetchMock = stubTeamsFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
-});
-
-it('does not switch on a bare open when every session is done', async () => {
-  window.history.replaceState(null, '', '/');
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(
-            JSON.stringify({
-              current: 'session-98b0b4a7',
-              teams: [{ ...sampleTeams()[0], state: 'done' as const, current: true }],
-            }),
-            { status: 200 },
-          ),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
-});
-
-it('does not fetch the listing when a ?team= announce is on the URL', () => {
+it('does not auto-switch when a ?team= announce is on the URL', () => {
   window.history.replaceState(null, '', '/?team=session-b5129c7b');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+  act(() => MockEventSource.last().emit('snapshot', quietCurrentState()));
 
-  expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
+  expect(selects(fetchMock)).toEqual([]);
 });
 
-it('does not fetch the listing when a /s/:sessionId route is on the URL', () => {
+it('does not auto-switch when a /s/:sessionId route is on the URL', () => {
   window.history.replaceState(null, '', '/s/abc12345');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+  act(() => MockEventSource.last().emit('snapshot', quietCurrentState()));
 
-  expect(fetchMock.mock.calls.some(([url]) => String(url) === '/api/teams?folder=*')).toBe(false);
+  expect(selects(fetchMock)).toEqual(['/api/select-session/abc12345']);
 });
 
-it('drops a listing fetch left pending by a switch that lands before it resolves', async () => {
-  // The app is never unmounted for a team switch — main.tsx renders it once,
-  // and a manual pick or an announce just pushes a new `state` frame into the
-  // same instance. So the race this guards against is that frame landing
-  // *before* the listing GET this effect kicked off has resolved.
-  window.history.replaceState(null, '', '/');
-  let resolveListing!: (res: Response) => void;
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams?folder=*'
-      ? new Promise<Response>((resolve) => {
-          resolveListing = resolve;
-        })
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
+it('shows the nothing-live screen when the frame has no sessions and no agents', () => {
   render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-
-  // The switch's own SSE update lands first, changing `state` — which reruns
-  // the effect: its cleanup must retire the pending fetch above, and the ref
-  // guard must stop it firing a second one.
-  act(() =>
-    MockEventSource.last().emit('snapshot', { ...sampleTeamState(), teamName: 'session-b5129c7b' }),
-  );
-  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/teams?folder=*')).toHaveLength(1);
-
-  // The stale GET now resolves, naming a third, still different team — this
-  // must not fire a select for it.
-  resolveListing(
-    new Response(
-      JSON.stringify({
-        current: 'session-98b0b4a7',
-        teams: [
-          { ...sampleTeams()[0], state: 'done' as const, current: true },
-          { ...sampleTeams()[1], name: 'session-c1a2b3c4', state: 'live' as const, current: false },
-        ],
-      }),
-      { status: 200 },
-    ),
-  );
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/select'))).toBe(false);
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), agents: [], sessions: [] }));
+  expect(screen.getByTestId('no-sessions')).toBeTruthy();
 });
 
 it('opens the comms view straight from the URL and keeps it there', () => {
@@ -597,7 +455,7 @@ const ALPHA = 1;
 const stopButtons = () => screen.getAllByTestId('stop-button');
 
 it('asks before stopping, and sends nothing until the operator confirms', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -612,7 +470,7 @@ it('asks before stopping, and sends nothing until the operator confirms', () => 
 });
 
 it('sends the stop only for the confirmed teammate', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -626,7 +484,7 @@ it('sends the stop only for the confirmed teammate', () => {
 });
 
 it('cancel closes the strip without sending anything', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -641,7 +499,7 @@ it('cancel closes the strip without sending anything', () => {
 // asked explicitly — an agent that never received a request has no reason to
 // wind down, and the strip promises they stop with it.
 it('ending the session asks every teammate to stop as well', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -661,7 +519,7 @@ it('ending the session asks every teammate to stop as well', () => {
 });
 
 it('x opens the same confirmation rather than stopping outright', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -677,7 +535,7 @@ it('x opens the same confirmation rather than stopping outright', () => {
 // The row must not claim the agent is stopped: the request is only in its
 // inbox until it reaches a turn boundary, and it may refuse.
 it('marks the row as requested, not stopped, once the request is sent', () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -691,7 +549,7 @@ it('marks the row as requested, not stopped, once the request is sent', () => {
 });
 
 it('a read-only console shows the control but will not arm it', () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), readOnly: true }));
 
@@ -745,7 +603,7 @@ async function openAndStopWatching() {
 }
 
 it('empties the body into the left-session screen and dashes the picker', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -760,7 +618,7 @@ it('empties the body into the left-session screen and dashes the picker', async 
 });
 
 it('cancelling the stop-watching confirmation leaves the wall exactly as it was', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
@@ -775,7 +633,7 @@ it('cancelling the stop-watching confirmation leaves the wall exactly as it was'
 });
 
 it('watch again returns to the normal view', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   await openAndStopWatching();
@@ -788,7 +646,7 @@ it('watch again returns to the normal view', async () => {
 });
 
 it('end it for real, from the left-session screen, reuses the existing destructive session-end flow', async () => {
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   await openAndStopWatching();
@@ -807,7 +665,7 @@ it('end it for real, from the left-session screen, reuses the existing destructi
 });
 
 it('clears the dismissal automatically once the console actually switches teams', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   await openAndStopWatching();
@@ -820,38 +678,19 @@ it('clears the dismissal automatically once the console actually switches teams'
 });
 
 it('lists the other live sessions on the machine and switches to one on click', async () => {
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams' || path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(
-            JSON.stringify({
-              current: 'session-98b0b4a7',
-              teams: [
-                sampleTeams()[0],
-                // A real team: the ELSEWHERE list offers only what the picker
-                // would let you switch to, and a hidden session is not that.
-                { ...sampleTeams()[1], members: 3, state: 'idle' as const, current: false },
-              ],
-            }),
-            { status: 200 },
-          ),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
+  const fetchMock = stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
   await openAndStopWatching();
 
-  const elsewhereRow = await screen.findByTestId('left-session-elsewhere-row');
-  expect(elsewhereRow.textContent).toContain('session-b5129c7b');
-  fireEvent.click(elsewhereRow);
+  const rows = await screen.findAllByTestId('left-session-elsewhere-row');
+  expect(rows.map((r) => r.textContent ?? '')).toEqual([
+    expect.stringContaining('hatch api'),
+    expect.stringContaining('session-b5129c7b'),
+  ]);
+  fireEvent.click(rows[1]);
 
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams/session-b5129c7b/select', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
-  });
+  expect(fetchMock).toHaveBeenLastCalledWith(`/api/select-session/${B5}`, POST);
 });
 
 // Workflow mode replaces the whole shell, not the body: `RUN` in place of
@@ -978,120 +817,6 @@ it('opens the newest run from the team bar, and switches runs from the run bar',
   expect(window.location.search).toContain('run=wf_older');
 });
 
-async function openAndHideCurrent() {
-  fireEvent.keyDown(document.body, { key: 't' });
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(within(rows[0]).getByTestId('row-hide'));
-}
-
-it('empties the body into the no-sessions screen once the session on screen is hidden', async () => {
-  stubTeamsFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-
-  expect(screen.queryByTestId('no-sessions')).toBeNull();
-  await openAndHideCurrent();
-  expect(screen.getByTestId('no-sessions')).toBeTruthy();
-  // Chrome stays: hiding empties the body, it does not tear the console down.
-  expect(screen.getByTestId('team-trigger')).toBeTruthy();
-});
-
-// The whole point of the control is that it never touches the engine.
-it('hiding writes nothing to the server', async () => {
-  const fetchMock = stubTeamsFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndHideCurrent();
-
-  // Reading the listing is the only traffic hiding may cause. Anything else —
-  // a select, a stop — would mean it had reached into the engine. The bare-open
-  // listing fetch (task #5) is background traffic of its own, not hiding's.
-  const paths = fetchMock.mock.calls.map((c) => c[0] as string).filter((p) => p !== '/api/teams?folder=*');
-  expect([...new Set(paths)]).toEqual(['/api/teams']);
-});
-
-it('offers the way back on the empty screen and restores the session', async () => {
-  stubTeamsFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndHideCurrent();
-
-  fireEvent.click(screen.getByTestId('show-hidden'));
-  expect(screen.queryByTestId('no-sessions')).toBeNull();
-  expect(screen.getByTestId('wall')).toBeTruthy();
-});
-
-it('remembers hidden sessions across a reload, per browser', async () => {
-  stubTeamsFetch();
-  const first = render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndHideCurrent();
-  first.unmount();
-
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  expect(screen.getByTestId('no-sessions')).toBeTruthy();
-});
-
-/** current + one real team, one bare session, one finished team. */
-function stubMixedFetch() {
-  const [current, other] = sampleTeams();
-  const teams = [
-    current,
-    { ...other, name: 'session-real0002', members: 3, state: 'live' as const, live: true },
-    { ...other, name: 'session-solo0003', members: 1, state: 'live' as const, live: true },
-    { ...other, name: 'session-done0004', members: 3, state: 'done' as const, live: false },
-  ];
-  const fetchMock = vi.fn((path: string) =>
-    path === '/api/teams' || path === '/api/teams?folder=*'
-      ? Promise.resolve(
-          new Response(JSON.stringify({ current: 'session-98b0b4a7', teams }), { status: 200 }),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  return fetchMock;
-}
-
-// Hiding the last row must never be a one-way door, so the count is the way
-// back and it counts the only rows there are to drop: the ✕-hidden ones.
-it('counts the hidden session as not shown', async () => {
-  stubTeamsFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndHideCurrent();
-
-  expect(await screen.findByText('1 not shown')).toBeTruthy();
-});
-
-// One rule, or the two screens contradict each other: a hidden session was a
-// one-click destination on one and absent on the other.
-it('offers the same sessions on both empty screens, bare ones included', async () => {
-  stubMixedFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndStopWatching();
-
-  const rows = await screen.findAllByTestId('left-session-elsewhere-row');
-  const named = rows.map((r) => r.textContent ?? '');
-  expect(named.some((t) => t.includes('session-solo0003'))).toBe(true);
-  expect(named.some((t) => t.includes('session-real0002'))).toBe(true);
-});
-
-// Paging back into a session that has finished is what the picker is for, so
-// the screens that list sessions must not quietly drop the finished ones.
-it('keeps a finished session in the list you can page back into', async () => {
-  stubMixedFetch();
-  render(<App />);
-  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
-  await openAndStopWatching();
-
-  const rows = await screen.findAllByTestId('left-session-elsewhere-row');
-  expect(rows.map((r) => r.textContent ?? '').some((t) => t.includes('session-done0004'))).toBe(
-    true,
-  );
-});
-
 // ————— the solo-session mode (decisions 23/24, old-batch #28) —————
 
 function soloState() {
@@ -1132,7 +857,7 @@ function bareState() {
 }
 
 it('draws a bare session as its own stream rather than the empty screen', async () => {
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', bareState()));
 
@@ -1193,7 +918,7 @@ it('mounts the trace view over the session’s own tree when its pill is picked'
 // `solo` kind pill over a wall of four columns.
 it('selects the session from a /s/:sessionId URL and takes its mode from the roster', async () => {
   window.history.replaceState(null, '', '/s/abc12345');
-  const fetchMock = stubTeamsFetch();
+  const fetchMock = stubFetch();
   render(<App />);
   // A team-mode fixture on purpose: several agents, not the one-agent roster
   // soloState() builds.
@@ -1216,7 +941,7 @@ it('selects the session from a /s/:sessionId URL and takes its mode from the ros
 
 it('opens a lone /s/:sessionId session on its trace, with the solo switcher', async () => {
   window.history.replaceState(null, '', '/s/abc12345');
-  stubTeamsFetch();
+  stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', soloState()));
 

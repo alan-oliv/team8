@@ -2486,3 +2486,105 @@ describe('deleted task files', () => {
     }
   });
 });
+
+describe('tail states across ingests', () => {
+  it('hands its tail states out on close and starts from them when given back', async () => {
+    await layout();
+    const projectDir = path.join(paths.projects, '-Users-dev-code-app');
+    await fs.mkdir(projectDir, { recursive: true });
+    const transcript = path.join(projectDir, `${LEAD_SESSION}.jsonl`);
+    const line = (text: string) =>
+      `${JSON.stringify({ type: 'user', sessionId: LEAD_SESSION, cwd: '/Users/dev/code/app', timestamp: '2026-10-15T09:00:00.000Z', message: { role: 'user', content: text } })}\n`;
+    await fs.writeFile(transcript, line('one'));
+
+    const first = startFileIngest(store, { paths, leadSessionId: LEAD_SESSION, sessionOnly: true, sweepIntervalMs: 0, tailPollMs: 0 });
+    await first.sweep();
+    const { tails } = first.close();
+    const after = (await fs.stat(transcript)).size;
+    expect(tails.get(transcript)?.offset).toBe(after);
+
+    await fs.appendFile(transcript, line('two'));
+    const second = startFileIngest(store, { paths, leadSessionId: LEAD_SESSION, sessionOnly: true, sweepIntervalMs: 0, tailPollMs: 0, tails });
+    await second.sweep();
+    const { tails: again } = second.close();
+    expect(again.get(transcript)?.offset).toBe((await fs.stat(transcript)).size);
+    // The seed was honoured: the second ingest never read from byte 0.
+    expect(again.get(transcript)?.inode).toBe(tails.get(transcript)?.inode);
+    expect((again.get(transcript)?.offset ?? 0) - (tails.get(transcript)?.offset ?? 0)).toBe(Buffer.byteLength(line('two')));
+  });
+
+  it('returns an empty map when it never read a transcript', async () => {
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 0, tailPollMs: 0 });
+    await ingest.sweep();
+    expect(ingest.close().tails.size).toBe(0);
+  });
+
+  const lead = () =>
+    ({ paths, teamName: TEAM, leadSessionId: LEAD_SESSION, leadName: 'team-lead', sweepIntervalMs: 0, tailPollMs: 0 }) as const;
+
+  it('totals spend over the bytes read before the hand-off as well as after it', async () => {
+    const transcript = path.join(paths.projects, SLUG, `${LEAD_SESSION}.jsonl`);
+    const assistant = (i: number) =>
+      `${JSON.stringify({
+        type: 'assistant',
+        uuid: `rec-${i}`,
+        timestamp: new Date(1787843400000 + i * 1000).toISOString(),
+        message: {
+          id: `msg_${i}`,
+          model: 'claude-sonnet-4-5-20250929',
+          role: 'assistant',
+          usage: { input_tokens: 500, output_tokens: 1000 },
+          content: [{ type: 'text', text: `turn ${i}` }],
+        },
+      })}\n`;
+    await fs.mkdir(path.dirname(transcript), { recursive: true });
+    await fs.writeFile(transcript, assistant(1) + assistant(2));
+
+    const first = startFileIngest(store, lead());
+    await first.sweep();
+    const carry = first.close();
+
+    await fs.appendFile(transcript, assistant(3));
+    const second = startFileIngest(store, { ...lead(), ...carry });
+    await second.sweep();
+    second.close();
+
+    const last = of(store.replay(), 'transcript')
+      .map((e) => e.payload as TranscriptPayload)
+      .filter((p) => p.totals)
+      .at(-1)!;
+    expect(last.records.map((r) => r.uuid)).toEqual(['rec-3']);
+    expect(last.totals!.tokens).toBe(4500);
+  });
+
+  it('hands back no offset for a file whose lines it could not store yet, so the next ingest reads it whole', async () => {
+    const agentDir = path.join(paths.projects, SLUG, LEAD_SESSION, 'subagents');
+    await fs.mkdir(agentDir, { recursive: true });
+    const jsonl = path.join(agentDir, 'agent-alater-1111111111111111.jsonl');
+    await fs.writeFile(jsonl, `${JSON.stringify({ type: 'user', uuid: 'u1', timestamp: new Date().toISOString() })}\n`);
+
+    // No sidecar yet: the lines sit in the pending buffer, which dies with the ingest.
+    const first = startFileIngest(store, lead());
+    await first.sweep();
+    const carry = first.close();
+    expect(carry.tails.has(jsonl)).toBe(false);
+    expect(of(store.replay(), 'transcript')).toHaveLength(0);
+
+    await fs.writeFile(
+      path.join(agentDir, 'agent-alater-1111111111111111.meta.json'),
+      JSON.stringify({
+        name: 'later',
+        agentType: 'later',
+        description: 'a teammate',
+        spawnDepth: 0,
+        model: 'claude-opus-5',
+        taskKind: 'in_process_teammate',
+        teamName: TEAM,
+      }),
+    );
+    const second = startFileIngest(store, { ...lead(), ...carry });
+    await second.sweep();
+    second.close();
+    expect(of(store.replay(), 'transcript').map((e) => e.agent)).toContain('later');
+  });
+});

@@ -19,7 +19,7 @@ import {
 } from './http';
 import { setTeamsRoot } from './control/mailbox';
 import type { InboxEntry } from '../shared/mailbox';
-import type { TeamState, TeamsResponse } from '../shared/domain';
+import type { TeamState } from '../shared/domain';
 
 const FIXTURES = path.resolve(process.cwd(), 'fixtures');
 const TEAM = 'session-98b0b4a7';
@@ -48,9 +48,6 @@ function emptyState(readOnly: boolean): TeamState {
 }
 
 let shutdowns: number;
-let listed: TeamsResponse;
-/** What `?folder=` handed the listing, `undefined` when it was absent. */
-let listFolderCalls: (string | undefined)[];
 let selectCalls: string[];
 let selectOutcome: (name: string) => SelectTeamOutcome;
 let sessionCalls: string[];
@@ -69,23 +66,6 @@ let planTasks: Record<number, string>;
 async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Server; url: string }> {
   state = emptyState(readOnly);
   shutdowns = 0;
-  listFolderCalls = [];
-  listed = {
-    current: TEAM,
-    teams: [
-      {
-        name: TEAM,
-        members: 4,
-        createdAt: 1787798107581,
-        leadSessionId: '98b0b4a7-3206-455b-aaf6-a5a81ad1e283',
-        leadAlive: true,
-        lastActivityAt: 1787798107581,
-        live: true,
-        current: true,
-        state: 'live',
-      },
-    ],
-  };
   selectCalls = [];
   selectOutcome = () => ({ ok: true, changed: true });
   sessionCalls = [];
@@ -108,10 +88,6 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
     workflowScript: (runId: string) => {
       scriptCalls.push(runId);
       return Promise.resolve(workflowScripts[runId] ?? null);
-    },
-    listTeams: (folder?: string) => {
-      listFolderCalls.push(folder);
-      return Promise.resolve(listed);
     },
     selectTeam: (name: string) => {
       selectCalls.push(name);
@@ -582,25 +558,10 @@ describe('POST /api/shutdown', () => {
 });
 
 describe('the team selector', () => {
-  it('lists the teams the console can switch to', async () => {
+  it('no longer serves a listing — the frame carries it', async () => {
     const { server, url } = await boot(false);
     try {
-      const res = await fetch(`${url}/api/teams`);
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual(listed);
-    } finally {
-      await shutdown(server);
-    }
-  });
-
-  // The folder menu asks for another folder's sessions on the same endpoint;
-  // the guard on what it may name lives in the listing, not the route.
-  it('hands the requested folder to the listing', async () => {
-    const { server, url } = await boot(false);
-    try {
-      await fetch(`${url}/api/teams`);
-      await fetch(`${url}/api/teams?folder=${encodeURIComponent('/Users/dev/code/hatch')}`);
-      expect(listFolderCalls).toEqual([undefined, '/Users/dev/code/hatch']);
+      expect((await fetch(`${url}/api/teams`)).status).toBe(404);
     } finally {
       await shutdown(server);
     }
@@ -760,13 +721,9 @@ describe('--read-only', () => {
     }
   });
 
-  it('still lists and still switches — a switch changes what is watched, not ~/.claude', async () => {
+  it('still switches — a switch changes what is watched, not ~/.claude', async () => {
     const { server, url } = await boot(true);
     try {
-      const list = await fetch(`${url}/api/teams`);
-      expect(list.status).toBe(200);
-      expect(await list.json()).toEqual(listed);
-
       const res = await post(`${url}/api/teams/session-b5129c7b/select`);
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true, team: 'session-b5129c7b', changed: true });

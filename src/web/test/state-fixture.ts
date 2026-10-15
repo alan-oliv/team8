@@ -6,8 +6,8 @@ import type {
   AgentStatus,
   MailMessage,
   Task,
+  SessionRow,
   TeamState,
-  TeamSummary,
 } from '../../shared/domain';
 import type { TokenSplit } from '../../shared/cost';
 
@@ -165,39 +165,44 @@ export function sampleTeamState(): TeamState {
     mail: sampleMail(),
     needsYou: [],
     readOnly: false,
+    sessions: sampleSessions(),
   };
 }
 
 /**
- * `GET /api/teams` for a machine holding the fixture team plus one that has
- * finished — the two-row case the selector was designed against.
+ * `TeamState.sessions` for a machine with three live sessions: the fixture
+ * team (current), a bare idle session in the same folder, and a busy one in
+ * another — the shapes the picker is designed against.
  */
-export function sampleTeams(): TeamSummary[] {
+export function sampleSessions(): SessionRow[] {
   return [
     {
-      name: config.name,
+      id: config.leadSessionId,
+      team: config.name,
+      title: 'agents-team-console-design',
       members: config.members.length,
-      createdAt: config.createdAt,
-      leadSessionId: config.leadSessionId,
-      leadAlive: true,
-      lastActivityAt: FIXTURE_NOW - 12_000,
-      live: true,
-      current: true,
+      folder: '/Users/dev/code/octo',
       branch: 'fix/engine-latency-and-frame-size',
-      goal: 'agents-team-console-design',
-      state: 'live',
+      busy: true,
+      current: true,
     },
     {
-      name: 'session-b5129c7b',
+      id: 'b5129c7b-a009-4de3-9a42-4664d1214f39',
+      title: 'session-b5129c7b',
       members: 1,
-      createdAt: config.createdAt - 86_400_000,
-      leadSessionId: 'b5129c7b-a009-4de3-9a42-4664d1214f39',
-      leadAlive: false,
-      lastActivityAt: FIXTURE_NOW - 15_120_000,
-      live: false,
+      folder: '/Users/dev/code/octo',
       branch: 'main',
-      state: 'done',
+      busy: false,
       current: false,
+    },
+    {
+      id: 'c1a2b3c4-0000-4000-8000-000000000003',
+      title: 'hatch api',
+      members: 1,
+      folder: '/Users/dev/code/hatch',
+      busy: true,
+      current: false,
+      subagents: 2,
     },
   ];
 }

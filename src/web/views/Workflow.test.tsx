@@ -74,6 +74,7 @@ function renderWorkflow(
       onTeamsOpenChange={onTeamsOpenChange}
       appearance={APPEARANCE}
       subagents={extra.subagents}
+      sessions={[]}
     />,
   );
   return { ...result, onTeamsOpenChange, onSelectRun };

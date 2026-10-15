@@ -1,51 +1,30 @@
 // @vitest-environment jsdom
-import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { FIXTURE_NOW, sampleTeams } from '../test/state-fixture';
+import '@testing-library/jest-dom/vitest';
+import { FIXTURE_NOW, sampleSessions } from '../test/state-fixture';
 import { WatchContext, type WatchState } from '../state/useWatch';
-import { buildCast } from '../../shared/cast';
-import { CastContext } from '../state/useCast';
-import { TeamSelect } from './TeamSelect';
-import type { TeamSummary } from '../../shared/domain';
+import { TeamSelect, type TeamSelectProps } from './TeamSelect';
 
 // This suite renders once per `it`; without explicit cleanup the un-unmounted
 // nodes from one test leak into the next and getByRole/getByText start
 // matching more than one element.
 afterEach(cleanup);
 
-// The main list is live sessions only now (README Screen 9), so the second
-// fixture team — `done` by default — is bumped to `live` here: these tests
-// are about rows and switching, not about the idle/ended fold.
-const HATCH = '/Users/dev/code/hatch';
-
-const LIST = {
-  current: 'session-98b0b4a7',
-  folder: '/Users/dev/code/octo',
-  folders: [
-    { path: '/Users/dev/code/octo', name: 'octo', sessions: 2 },
-    { path: '/Users/dev/code/hatch', name: 'hatch', sessions: 5 },
-  ],
-  teams: sampleTeams().map((t, i) =>
-    i === 1
-      ? { ...t, state: 'live' as const, live: true, members: 2, folder: '/Users/dev/code/octo' }
-      : { ...t, folder: '/Users/dev/code/octo' },
-  ),
-};
+const SESSIONS = sampleSessions();
+const B5 = 'b5129c7b-a009-4de3-9a42-4664d1214f39';
+const SELECT = (id: string) => [
+  `/api/select-session/${id}`,
+  { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+];
 
 let fetchMock: ReturnType<typeof vi.fn>;
-
-/** Routes on path so a test can fail the POST without also failing the GET. */
-function routed(post: () => Promise<Response>) {
-  return vi.fn((path: string) =>
-    path === '/api/teams' || path.startsWith('/api/teams?')
-      ? Promise.resolve(new Response(JSON.stringify(LIST), { status: 200 }))
-      : post(),
-  );
-}
+let pushState: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-  fetchMock = routed(() => Promise.resolve(new Response('{}', { status: 200 })));
+  fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
   vi.stubGlobal('fetch', fetchMock);
+  pushState = vi.spyOn(window.history, 'pushState');
   localStorage.clear();
 });
 
@@ -55,20 +34,13 @@ afterEach(() => {
   localStorage.clear();
 });
 
-function renderSelect(props: Partial<Parameters<typeof TeamSelect>[0]> = {}, watch: Partial<WatchState> = {}) {
+function renderSelect(props: Partial<TeamSelectProps> = {}, watch: Partial<WatchState> = {}) {
   const onOpenChange = vi.fn();
-  const all = { current: 'session-98b0b4a7', open: true, onOpenChange, now: FIXTURE_NOW, ...props };
-  const watchValue: WatchState = {
-    dismissed: false,
-    requestStopWatching: vi.fn(),
-    watchAgain: vi.fn(),
-    hidden: new Set(),
-    hideSession: vi.fn(),
-    unhideSession: vi.fn(),
-    showHidden: vi.fn(),
-    ...watch,
+  const all: TeamSelectProps = {
+    current: 'session-98b0b4a7', open: true, onOpenChange, now: FIXTURE_NOW, sessions: SESSIONS, ...props,
   };
-  function Harness({ extra }: { extra: Partial<typeof all> }) {
+  const watchValue: WatchState = { dismissed: false, requestStopWatching: vi.fn(), watchAgain: vi.fn(), ...watch };
+  function Harness({ extra }: { extra: Partial<TeamSelectProps> }) {
     return (
       <WatchContext.Provider value={watchValue}>
         <TeamSelect {...all} {...extra} />
@@ -76,1361 +48,135 @@ function renderSelect(props: Partial<Parameters<typeof TeamSelect>[0]> = {}, wat
     );
   }
   const view = render(<Harness extra={{}} />);
-  const rerender = (next: Partial<typeof all> = {}) => view.rerender(<Harness extra={next} />);
+  const rerender = (next: Partial<TeamSelectProps> = {}) => view.rerender(<Harness extra={next} />);
   return { onOpenChange, rerender, watch: watchValue };
 }
 
-const WATCH: WatchState = {
-  dismissed: false,
-  requestStopWatching: vi.fn(),
-  watchAgain: vi.fn(),
-  hidden: new Set(),
-  hideSession: vi.fn(),
-  unhideSession: vi.fn(),
-  showHidden: vi.fn(),
-};
-
-const SWITCH_TO_B5 = [
-  '/api/teams/session-b5129c7b/select',
-  { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
-];
-
-it('does not read the team list until it is opened', async () => {
-  const { rerender } = renderSelect({ open: false });
+it('never fetches: the rows come from the frame', () => {
+  renderSelect();
   expect(fetchMock).not.toHaveBeenCalled();
-
-  rerender({ open: true });
-  await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
+  expect(screen.getAllByRole('option')).toHaveLength(2); // the two rows in the current row's folder
 });
 
-// The trigger names the SESSION, not the directory it lives in. It comes off
-// the live frame rather than the listing, so it is right before the dropdown
-// has ever been opened — and costs no fetch.
-it('names the session on the trigger', () => {
-  renderSelect({ open: false, sessionName: 'agents-team-console-design' });
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console-design');
-  expect(fetchMock).not.toHaveBeenCalled();
-});
-
-it('falls back to the directory id when the session was never named', () => {
-  renderSelect({ open: false });
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('session-98b0b4a7');
-});
-
-it('names a solo session by its short id when it has no name', () => {
-  renderSelect({ open: false, current: 'a074e8eb-fd02-4eb7-ba0f-339f927088fa', sessionName: '' });
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('session-a074e8eb');
-});
-
-it('heads the list with the folder it is scoped to and the row count', async () => {
+it('scopes to the folder of the session on screen by default, and names it on the chip', () => {
   renderSelect();
-  expect(await screen.findByText('ACTIVE SESSIONS')).toBeTruthy();
-  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
-  // The home prefix is the operator's own and buys nothing at 10px.
-  expect(screen.getByTestId('folder-chip').textContent).toContain('~/code/octo');
-  expect(screen.getByTestId('session-count').textContent).toBe('2 running');
-  expect(screen.getByText('⏎ open')).toBeTruthy();
-  expect(screen.getByText('⌘⏎ new tab')).toBeTruthy();
+  expect(screen.getByTestId('folder-chip')).toHaveTextContent('octo');
+  const titles = screen.getAllByTestId('team-title').map((el) => el.textContent);
+  expect(titles).toEqual(['agents-team-console-design', 'session-b5129c7b']);
 });
 
-// The row leads with the name the operator gave the session; the directory id
-// is a secondary handle, beside the branch. A session never named falls back to
-// the id up top, so the row is never blank.
-it('leads with the session name and demotes the id to the second line', async () => {
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => within(r).getByTestId('team-title').textContent)).toEqual([
-    'agents-team-console-design',
-    'session-b5129c7b',
-  ]);
-  expect(within(rows[0]).getByTestId('team-id').textContent).toBe('session-98b0b4a7');
-  // Unnamed: the id is already the title, so it is not repeated below it.
-  expect(within(rows[1]).queryByTestId('team-id')).toBeNull();
-});
-
-// A `sessionOnly` row's `name` is the full session uuid (unlike a team's,
-// which is already a short directory id) — an unnamed one must still shorten
-// it, not spell out all 36 characters in the one row that never got a `goal`.
-it('shortens an unnamed session-only row instead of showing its full uuid', async () => {
-  const teams = [
-    ...LIST.teams,
-    {
-      ...LIST.teams[1],
-      name: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
-      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
-      goal: undefined,
-      sessionOnly: true,
-      subagents: 2,
-    },
+it('sorts busy rows first, then by title', () => {
+  const rows = [
+    { ...SESSIONS[1], title: 'alpha', busy: false },
+    { ...SESSIONS[0], title: 'zulu', busy: true, current: false },
+    { ...SESSIONS[2], folder: '/Users/dev/code/octo', title: 'bravo', busy: true },
   ];
-  fetchMock = vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  // Sorted A to Z by displayed name: goal, then "session-51a30a6b", then
-  // "session-b5129c7b" — the new row lands between the other two, not last.
-  expect(within(rows[1]).getByTestId('team-title').textContent).toBe('session-51a30a6b');
+  renderSelect({ sessions: rows, current: '' });
+  expect(screen.getAllByTestId('team-title').map((el) => el.textContent)).toEqual(['bravo', 'zulu', 'alpha']);
 });
 
-// The title shortens a session-only row's full uuid, but the id line under it
-// is a second, separate read of `team.name` — a goal on the row (a transcript
-// title) must not let that second read spell out all 36 characters either.
-it('shortens a session-only row id line to the short id even when the row has a goal', async () => {
-  const teams = [
-    ...LIST.teams,
-    {
-      ...LIST.teams[1],
-      name: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
-      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
-      goal: 'adding-folders',
-      sessionOnly: true,
-      subagents: 2,
-    },
-  ];
-  fetchMock = vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-
+it('lists only folders with a live session, with their counts, and no `all`', () => {
   renderSelect();
-  const rows = await screen.findAllByRole('option');
-  const row = rows.find((r) => within(r).getByTestId('team-title').textContent === 'adding-folders')!;
-  expect(within(row).getByTestId('team-id').textContent).toBe('session-51a30a6b');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  const menu = screen.getByTestId('folder-menu');
+  const options = within(menu).getAllByRole('option').map((el) => el.textContent);
+  expect(options).toHaveLength(2);
+  expect(options[0]).toContain('octo');
+  expect(options[0]).toContain('2 live');
+  expect(options[1]).toContain('hatch');
+  expect(options[1]).toContain('1 live');
+  expect(within(menu).queryByText('all')).toBeNull();
 });
 
-it('carries the agent count and state on the second line', async () => {
+it('switches folder on a pick, remembers it, and ignores a remembered folder with nothing live', () => {
   renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('4 agents');
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('live');
+  fireEvent.click(screen.getByTestId('folder-chip'));
+  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
+  expect(screen.getAllByTestId('team-title').map((el) => el.textContent)).toEqual(['hatch api']);
+  expect(localStorage.getItem('console.folder')).toBe('/Users/dev/code/hatch');
+  cleanup();
+
+  // Nothing lives in hatch any more: the default scope applies.
+  renderSelect({ sessions: SESSIONS.filter((r) => r.folder !== '/Users/dev/code/hatch') });
+  expect(screen.getByTestId('folder-chip')).toHaveTextContent('octo');
 });
 
-it('shows each session branch beside its name', async () => {
+it('switches any row through select-session and rewrites the URL on 200', async () => {
   renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('team-branch').textContent).toBe(
-    'fix/engine-latency-and-frame-size',
-  );
-  expect(within(rows[1]).getByTestId('team-branch').textContent).toBe('main');
+  fireEvent.click(screen.getByText('session-b5129c7b'));
+  expect(fetchMock).toHaveBeenCalledWith(...SELECT(B5));
+  const row = screen.getByText('session-b5129c7b').closest('[role="option"]') as HTMLElement;
+  expect(within(row).getByTestId('team-mark')).toHaveTextContent('switching…');
+  await vi.waitFor(() => expect(pushState).toHaveBeenCalledWith(null, '', `/s/${B5}`));
 });
 
-it('marks the team the console is actually showing', async () => {
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(rows[0].getAttribute('aria-selected')).toBe('true');
-  expect(rows[0].style.borderLeft).toBe('2px solid var(--color-accent-600)');
-  expect(within(rows[0]).getByTestId('team-mark').textContent).toBe('✓');
-  expect(rows[1].getAttribute('aria-selected')).toBe('false');
-  expect(rows[1].style.borderLeft).toBe('2px solid transparent');
-  expect(within(rows[1]).queryByTestId('team-mark')).toBeNull();
-});
-
-it('posts the switch for the row that was clicked', async () => {
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[1]);
-  expect(fetchMock).toHaveBeenLastCalledWith(...SWITCH_TO_B5);
-});
-
-// A `sessionOnly` row's `name` is a session id, not a team `/select` knows
-// about (task #7) — the click has to reach `/api/select-session/<id>`
-// through the `/s/:sessionId` route (task #4), never the team endpoint.
-it('routes a session-only row to /s/:sessionId instead of posting the team switch', async () => {
-  const teams = [
-    ...LIST.teams,
-    { ...LIST.teams[1], name: 'abc12345', leadSessionId: 'abc12345', sessionOnly: true, subagents: 2 },
-  ];
-  fetchMock = vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  // jsdom's `location.assign` cannot be spied on directly (not configurable),
-  // so the whole object is swapped for the duration of this test.
-  const realLocation = window.location;
-  const assign = vi.fn();
-  Object.defineProperty(window, 'location', { value: { ...realLocation, assign }, writable: true });
-
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  // Sorted A to Z by displayed name: goal, then "session-abc12345", then
-  // "session-b5129c7b" — the new row lands between the other two, not last.
-  fireEvent.click(rows[1]);
-
-  expect(assign).toHaveBeenCalledWith('/s/abc12345');
-  expect(fetchMock).not.toHaveBeenCalledWith('/api/teams/abc12345/select', expect.anything());
-
-  Object.defineProperty(window, 'location', { value: realLocation, writable: true });
-});
-
-it('routes a flag-on solo row to the full session uuid, not its team directory name', async () => {
-  const teams = [
-    ...LIST.teams,
-    {
-      ...LIST.teams[1],
-      name: 'session-51a30a6b',
-      leadSessionId: '51a30a6b-52a6-4c56-8fbd-7e69cb671667',
-      sessionOnly: true,
-      subagents: 2,
-    },
-  ];
-  fetchMock = vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify({ ...LIST, teams }), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  const realLocation = window.location;
-  const assign = vi.fn();
-  Object.defineProperty(window, 'location', { value: { ...realLocation, assign }, writable: true });
-
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[2]);
-
-  expect(assign).toHaveBeenCalledWith('/s/51a30a6b-52a6-4c56-8fbd-7e69cb671667');
-
-  Object.defineProperty(window, 'location', { value: realLocation, writable: true });
-});
-
-it('holds the popover open until the snapshot carries the new team', async () => {
+it('closes once the frame names the target: the session id for a bare row, the directory for a team', () => {
   const { onOpenChange, rerender } = renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[1]);
-
-  // The ack is not the screen changing: the switch lands on the next SSE frame.
-  expect(within(rows[1]).getByTestId('team-mark').textContent).toBe('switching…');
-  expect(screen.getByRole('listbox', { name: 'teams' }).getAttribute('aria-busy')).toBe('true');
+  fireEvent.click(screen.getByText('session-b5129c7b'));
   expect(onOpenChange).not.toHaveBeenCalled();
-
-  rerender({ current: 'session-b5129c7b' });
+  rerender({ current: B5 });
   expect(onOpenChange).toHaveBeenCalledWith(false);
+
+  cleanup();
+  const team = renderSelect({
+    current: B5,
+    sessions: [{ ...SESSIONS[0], current: false }, { ...SESSIONS[1], current: true }],
+  });
+  fireEvent.click(screen.getByText('agents-team-console-design'));
+  expect(team.onOpenChange).not.toHaveBeenCalled();
+  team.rerender({ current: 'session-98b0b4a7' });
+  expect(team.onOpenChange).toHaveBeenCalledWith(false);
 });
 
-it('closes without a request when the current team is selected', async () => {
-  const { onOpenChange } = renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[0]);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-  expect(onOpenChange).toHaveBeenCalledWith(false);
-});
-
-it('moves the cursor with the arrows and switches the cursor row on enter', async () => {
+it('marks a row gone on 404 and failed on any other error, and does not touch the URL', async () => {
+  fetchMock.mockImplementationOnce(() => Promise.resolve(new Response('{}', { status: 404 })));
   renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
-
-  fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-  fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-
-  fireEvent.keyDown(list, { key: 'Enter' });
-  expect(fetchMock).toHaveBeenLastCalledWith(...SWITCH_TO_B5);
+  fireEvent.click(screen.getByText('session-b5129c7b'));
+  expect(await screen.findByText('gone')).toBeTruthy();
+  expect(pushState).not.toHaveBeenCalled();
 });
 
-it('swallows escape so it closes the list instead of interrupting an agent', async () => {
-  const { onOpenChange } = renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-
-  const ev = createEvent.keyDown(list, { key: 'Escape' });
-  fireEvent(list, ev);
-  expect(ev.defaultPrevented).toBe(true);
-  expect(onOpenChange).toHaveBeenCalledWith(false);
-});
-
-it('closes when a pointer goes down outside it', async () => {
-  const { onOpenChange } = renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.pointerDown(document.body);
-  expect(onOpenChange).toHaveBeenCalledWith(false);
-});
-
-it('says it is reading while the listing is in flight', () => {
-  fetchMock.mockReturnValue(new Promise<Response>(() => {}));
-  renderSelect();
-  expect(screen.getByText('reading teams…')).toBeTruthy();
-});
-
-it('says so when the machine has no teams', async () => {
-  fetchMock.mockResolvedValue(new Response(JSON.stringify({ current: '', teams: [] }), { status: 200 }));
-  renderSelect();
-  expect(await screen.findByText('no sessions')).toBeTruthy();
-});
-
-it('says so when the listing cannot be read', async () => {
-  fetchMock.mockRejectedValue(new Error('offline'));
-  renderSelect();
-  const line = await screen.findByText('could not read teams');
-  expect(line.style.color).toBe('var(--fail)');
-});
-
-it('marks the row when the switch is refused', async () => {
-  vi.stubGlobal('fetch', routed(() => Promise.resolve(new Response('{}', { status: 500 }))));
-  const { onOpenChange } = renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[1]);
-
-  const mark = await within(rows[1]).findByText('switch failed');
-  expect(mark.style.color).toBe('var(--fail)');
-  expect(onOpenChange).not.toHaveBeenCalled();
-});
-
-it('shuts and disables the trigger while a session switch is loading', () => {
-  const { onOpenChange } = renderSelect({ switching: true });
-  expect(onOpenChange).toHaveBeenCalledWith(false);
-  expect((screen.getByTestId('team-trigger') as HTMLButtonElement).disabled).toBe(true);
-});
-
-it('marks the row gone when the team vanished before the click', async () => {
-  vi.stubGlobal('fetch', routed(() => Promise.resolve(new Response('{}', { status: 404 }))));
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[1]);
-
-  const mark = await within(rows[1]).findByText('gone');
-  expect(mark.style.color).toBe('var(--fail)');
-});
-
-
-it('goes dashed and reads "no session selected" on the trigger once dismissed', () => {
-  renderSelect({ open: false }, { dismissed: true });
-  const trigger = screen.getByTestId('team-trigger');
-  expect(trigger.style.border).toContain('dashed');
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('no session selected');
-});
-
-it('keeps the normal trigger label and solid border while watching', () => {
-  renderSelect({ open: false });
-  const trigger = screen.getByTestId('team-trigger');
-  expect(trigger.style.border).toContain('solid');
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('session-98b0b4a7');
-});
-
-it('marks the dismissed session running · not watching instead of live, and drops its checkmark', async () => {
-  renderSelect({}, { dismissed: true });
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('running · not watching');
-  expect(within(rows[0]).queryByTestId('team-mark')).toBeNull();
-});
-
-it('offers "stop watching" only on the current row, and only while still watching', async () => {
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('row-stop-watching')).toBeTruthy();
-  expect(within(rows[1]).queryByTestId('row-stop-watching')).toBeNull();
-});
-
-it('does not offer "stop watching" again once already dismissed', async () => {
-  renderSelect({}, { dismissed: true });
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).queryByTestId('row-stop-watching')).toBeNull();
-});
-
-it('requests the stop-watching confirmation without switching or closing', async () => {
-  const requestStopWatching = vi.fn();
-  const { onOpenChange } = renderSelect({}, { requestStopWatching });
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(within(rows[0]).getByTestId('row-stop-watching'));
-  expect(requestStopWatching).toHaveBeenCalled();
-  expect(onOpenChange).not.toHaveBeenCalled();
-});
-
-it('clicking the dismissed current row resumes watching it, instead of a no-op close', async () => {
+it('re-selecting the current session resumes watching and closes', () => {
   const watchAgain = vi.fn();
   const { onOpenChange } = renderSelect({}, { dismissed: true, watchAgain });
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(rows[0]);
+  fireEvent.click(screen.getByText('agents-team-console-design'));
   expect(watchAgain).toHaveBeenCalled();
   expect(onOpenChange).toHaveBeenCalledWith(false);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
-// Paging back into a finished session is what the picker is FOR, so it lists
-// them like anything else and says how long ago they ended.
-it('folds an ended session into the collapsed group, and says when it ended', async () => {
-  const done = { current: 'session-98b0b4a7', teams: sampleTeams() };
-  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(done), { status: 200 })));
-  vi.stubGlobal('fetch', fetchMock);
-
+it('walks the rows with the arrow keys, opens on Enter and a new tab on ⌘Enter', () => {
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null);
   renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(1);
-  expect(screen.getByTestId('session-count').textContent).toBe('1 running');
-
-  const toggle = screen.getByTestId('show-hidden-rows');
-  expect(toggle.textContent).toBe('▸ 1 ended');
-  fireEvent.click(toggle);
-  const expanded = screen.getAllByRole('option');
-  expect(expanded).toHaveLength(2);
-  expect(within(expanded[1]).getByTestId('team-meta').textContent).toContain('ended');
-  // Nothing to undo on a row the rule folded: it comes back on its own if the
-  // session goes live again.
-  expect(within(expanded[1]).queryByTestId('row-unhide')).toBeNull();
-  expect(within(expanded[1]).queryByTestId('row-hide')).toBeNull();
+  const list = screen.getByTestId('team-list');
+  fireEvent.keyDown(list, { key: 'ArrowDown' });
+  fireEvent.keyDown(list, { key: 'Enter', metaKey: true });
+  expect(open).toHaveBeenCalledWith(`/s/${B5}`, '_blank');
+  fireEvent.keyDown(list, { key: 'Enter' });
+  expect(fetchMock).toHaveBeenCalledWith(...SELECT(B5));
 });
 
-it('counts ended and hand-hidden rows apart in the group label', async () => {
-  const live = { ...sampleTeams()[1], name: 'session-cccc1111', live: true, state: 'live' as const };
-  const payload = { current: 'session-98b0b4a7', teams: [...sampleTeams(), live] };
-  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(payload), { status: 200 })));
-  vi.stubGlobal('fetch', fetchMock);
-
-  renderSelect({}, { hidden: new Set(['session-cccc1111']) });
-  expect((await screen.findByTestId('show-hidden-rows')).textContent).toBe('▸ 1 ended · 1 hidden');
+it('reads working / at prompt / N subagents in the state cell, with a live glyph for busy rows', () => {
+  renderSelect({ sessions: SESSIONS.map((r) => ({ ...r, folder: '/Users/dev/code/octo' })) });
+  const metas = screen.getAllByTestId('team-meta').map((el) => el.textContent);
+  expect(metas[0]).toContain('working');
+  expect(metas.some((m) => m?.includes('at prompt'))).toBe(true);
+  expect(metas.some((m) => m?.includes('2 subagents'))).toBe(true);
 });
 
-it('opens the sessions menu on ⌘K when it is closed', () => {
+it('says what to do when nothing is live anywhere', () => {
+  renderSelect({ sessions: [], current: '' });
+  expect(screen.getByText(/resume a session from your terminal/i)).toBeTruthy();
+  expect(screen.getByTestId('session-count')).toHaveTextContent('0 live');
+});
+
+it('⌘K opens the picker and, when it is open, focuses the list', () => {
   const { onOpenChange } = renderSelect({ open: false });
   fireEvent.keyDown(window, { key: 'k', metaKey: true });
   expect(onOpenChange).toHaveBeenCalledWith(true);
 });
 
-it('focuses the search input once the menu is open', async () => {
+it('shows the footer’s live-across-folders line for the scope', () => {
   renderSelect();
-  await screen.findAllByRole('option');
-  expect(document.activeElement).toBe(screen.getByTestId('team-search'));
-});
-
-it('refocuses the search input on ⌘K when the menu is already open', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  const search = screen.getByTestId('team-search');
-  search.blur();
-  expect(document.activeElement).not.toBe(search);
-
-  fireEvent.keyDown(window, { key: 'k', metaKey: true });
-  expect(document.activeElement).toBe(search);
-});
-
-it('filters rows by name, goal, and branch as the operator types', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  const search = screen.getByTestId('team-search');
-
-  fireEvent.change(search, { target: { value: 'main' } });
-  expect(screen.getAllByRole('option').map((r) => r.id)).toEqual(['team-option-session-b5129c7b']);
-
-  fireEvent.change(search, { target: { value: 'console' } });
-  expect(screen.getAllByRole('option').map((r) => r.id)).toEqual(['team-option-session-98b0b4a7']);
-
-  fireEvent.change(search, { target: { value: 'engine' } });
-  expect(screen.getAllByRole('option').map((r) => r.id)).toEqual(['team-option-session-98b0b4a7']);
-});
-
-it('moves the cursor within the filtered rows, not the full list', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  const search = screen.getByTestId('team-search');
-
-  fireEvent.change(search, { target: { value: 'session-b5' } });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-
-  // Only one row matches, so the cursor cannot move past it.
-  fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-});
-
-it('says so when the filter matches nothing', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.change(screen.getByTestId('team-search'), { target: { value: 'nonexistent-zzz' } });
-  expect(await screen.findByText('no matches')).toBeTruthy();
-});
-
-it('clears the filter on escape before closing the menu', async () => {
-  const { onOpenChange } = renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  const search = screen.getByTestId('team-search') as HTMLInputElement;
-
-  fireEvent.change(search, { target: { value: 'main' } });
-  expect(screen.getAllByRole('option')).toHaveLength(1);
-
-  fireEvent.keyDown(list, { key: 'Escape' });
-  expect(onOpenChange).not.toHaveBeenCalled();
-  expect(search.value).toBe('');
-  expect(await screen.findAllByRole('option')).toHaveLength(2);
-
-  fireEvent.keyDown(list, { key: 'Escape' });
-  expect(onOpenChange).toHaveBeenCalledWith(false);
-});
-
-// A TEAM that ended: those list even when
-// current, since the picker lists teams and the body says so.
-it('keeps the ended team that is being VIEWED, so the picker cannot contradict the wall', async () => {
-  const teams = sampleTeams().map((t, i) => ({ ...t, current: i === 1, members: 2 }));
-  const viewing = { current: 'session-b5129c7b', teams };
-  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(viewing), { status: 200 })));
-  vi.stubGlobal('fetch', fetchMock);
-
-  renderSelect({ current: 'session-b5129c7b' });
-  const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => r.getAttribute('id'))).toContain('team-option-session-b5129c7b');
-});
-
-// After `/s/<uuid>` the frame carries a session id, and the only row for that
-// session is its team's, named by directory — so the name never matches. The
-// server's flag is what says which row is on screen.
-it('marks, and keeps in the main list, the row the server says is on screen even when its name is not the id on the frame', async () => {
-  const [first, second] = sampleTeams();
-  listOf([{ ...first, current: false }, { ...second, current: true, state: 'done' as const }]);
-
-  renderSelect({ current: 'b5129c7b-a009-4de3-9a42-4664d1214f39' });
-  const rows = await screen.findAllByRole('option');
-  const row = rows.find((r) => r.getAttribute('id') === 'team-option-session-b5129c7b')!;
-  expect(row).toBeTruthy();
-  expect(row.getAttribute('aria-selected')).toBe('true');
-  expect(within(row).getByTestId('team-mark').textContent).toBe('✓');
-});
-
-it('offers the hide control on every row, current one included', async () => {
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('row-hide')).toBeTruthy();
-  expect(within(rows[1]).getByTestId('row-hide')).toBeTruthy();
-});
-
-it('hides without switching to the session or closing the menu', async () => {
-  const hideSession = vi.fn();
-  const { onOpenChange } = renderSelect({}, { hideSession });
-  const rows = await screen.findAllByRole('option');
-  fireEvent.click(within(rows[1]).getByTestId('row-hide'));
-  expect(hideSession).toHaveBeenCalledWith('session-b5129c7b');
-  expect(fetchMock).not.toHaveBeenCalledWith(
-    '/api/teams/session-b5129c7b/select',
-    expect.anything(),
-  );
-  expect(onOpenChange).not.toHaveBeenCalledWith(false);
-});
-
-it('drops hidden sessions from the list and from the header count', async () => {
-  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
-  const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => r.id)).not.toContain('team-option-session-b5129c7b');
-  expect(screen.getByTestId('session-count').textContent).toBe(`${rows.length} running`);
-});
-
-// Hiding the last row would otherwise be a one-way door: a group left in the
-// menu to undo the hiding from, collapsed so it does not reopen every time the
-// picker does.
-it('keeps a way back in the menu once anything is hidden, collapsed by default', async () => {
-  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
-  const toggle = await screen.findByTestId('show-hidden-rows');
-  expect(toggle.textContent).toBe('▸ 1 hidden');
-  expect(toggle.getAttribute('aria-expanded')).toBe('false');
-  expect(screen.queryByTestId('row-unhide')).toBeNull();
-});
-
-it('expands into the hidden rows A to Z, dimmed, on a click', async () => {
-  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']) });
-  const toggle = await screen.findByTestId('show-hidden-rows');
-  fireEvent.click(toggle);
-  expect(toggle.getAttribute('aria-expanded')).toBe('true');
-  expect(toggle.textContent).toBe('▾ 2 hidden');
-
-  // Both rows are hidden, so the main list is empty — every `team-title` left
-  // is one of these, in display-name order.
-  const titles = screen.getAllByTestId('team-title');
-  expect(titles.map((t) => t.textContent)).toEqual([
-    'agents-team-console-design',
-    'session-b5129c7b',
-  ]);
-  expect(titles[0].style.color).toBe('var(--color-neutral-600)');
-});
-
-it('unhides one row at a time, leaving the rest hidden', async () => {
-  const unhideSession = vi.fn();
-  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']), unhideSession });
-  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
-
-  const unhideButtons = screen.getAllByTestId('row-unhide');
-  expect(unhideButtons).toHaveLength(2);
-  fireEvent.click(unhideButtons[1]);
-  expect(unhideSession).toHaveBeenCalledWith('session-b5129c7b');
-  expect(unhideSession).not.toHaveBeenCalledWith('session-98b0b4a7');
-});
-
-it('still selects a hidden row on a click, once its group is expanded', async () => {
-  renderSelect({}, { hidden: new Set(['session-b5129c7b']) });
-  fireEvent.click(await screen.findByTestId('show-hidden-rows'));
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  fireEvent.click(rows[1]);
-  expect(fetchMock).toHaveBeenLastCalledWith(...SWITCH_TO_B5);
-});
-
-// Hiding every row is not the same as an empty machine: the collapsed group
-// still holds them, and the empty state says so instead of claiming there is
-// nothing here at all.
-it('says nothing is running, not that there are no sessions, when every row has been hidden', async () => {
-  renderSelect({}, { hidden: new Set(['session-98b0b4a7', 'session-b5129c7b']) });
-  expect(await screen.findByText(/Nothing running matches/)).toBeTruthy();
-  expect(screen.queryByText('no sessions')).toBeNull();
-});
-
-// Claude Code writes a teams/<session>/config.json for EVERY session, holding
-// just that session's own lead. Those bare windows used to be dropped as rows
-// with nowhere to go; they each render their own stream now, so they list and
-// switch like anything else.
-function soloList() {
-  const solo = {
-    current: 'session-98b0b4a7',
-    teams: sampleTeams().map((t) => ({ ...t, members: 1, state: 'live' as const })),
-  };
-  vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify(solo), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  ));
-}
-
-it('lists bare sessions as ordinary rows and switches to them', async () => {
-  soloList();
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(rows.every((r) => r.getAttribute('aria-disabled') === null)).toBe(true);
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('live');
-
-  fireEvent.click(rows[1]);
-  const posts = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
-    .map((c) => c[0] as string)
-    .filter((p) => p.includes('/select'));
-  expect(posts).toEqual(['/api/teams/session-b5129c7b/select']);
-});
-
-it('lets the keyboard cursor land on a bare session', async () => {
-  soloList();
-  renderSelect();
-  await screen.findAllByRole('option');
-
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-  fireEvent.keyDown(list, { key: 'Enter' });
-  const posts = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
-    .map((c) => c[0] as string)
-    .filter((p) => p.includes('/select'));
-  expect(posts).toEqual(['/api/teams/session-b5129c7b/select']);
-});
-
-it('counts every listed session in the header', async () => {
-  soloList();
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.getByTestId('session-count').textContent).toBe('2 running');
-});
-
-function listOf(teams: TeamSummary[]) {
-  vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(
-          new Response(JSON.stringify({ current: 'session-98b0b4a7', teams }), { status: 200 }),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  ));
-}
-
-const selectPosts = () =>
-  (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
-    .map((c) => c[0] as string)
-    .filter((p) => p.includes('/select'));
-
-// The server's order — current first, then live — is not the picker's order.
-// The picker re-sorts A to Z by what each row actually shows, case-insensitive,
-// and a goal governs that sort ahead of the directory name underneath it.
-// README Screen 9: "one fixed order" — newest activity first, not A to Z.
-// There is no longer a time-range control to make recency a question.
-it("sorts rows newest activity first, ignoring the server's order", async () => {
-  const [current, other] = sampleTeams();
-  listOf([
-    { ...current, goal: 'Bravo Goal', state: 'live' as const, lastActivityAt: FIXTURE_NOW - 30_000 },
-    {
-      ...other,
-      name: 'session-9999zzz',
-      goal: undefined,
-      current: false,
-      live: true,
-      state: 'live' as const,
-      lastActivityAt: FIXTURE_NOW - 10_000,
-    },
-    {
-      ...other,
-      name: 'session-11110000',
-      goal: 'alpha task',
-      current: false,
-      live: true,
-      state: 'live' as const,
-      lastActivityAt: FIXTURE_NOW - 20_000,
-    },
-  ]);
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => within(r).getByTestId('team-title').textContent)).toEqual([
-    'session-9999zzz',
-    'alpha task',
-    'Bravo Goal',
-  ]);
-});
-
-// Wherever the current row lands in the re-sorted list, the keyboard cursor
-// has to start there, not on the server's index for it.
-it('starts the cursor on the current row wherever it sorts', async () => {
-  const [current, other] = sampleTeams();
-  listOf([
-    { ...current, goal: 'Zulu Goal', state: 'live' as const },
-    { ...other, name: 'session-9999zzz', goal: undefined, current: false, live: true, state: 'live' as const },
-  ]);
-  renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
-});
-
-// The listing is machine-wide but the rows shown are one folder's, so the
-// cursor has to be found among the rows shown, not the rows fetched.
-it('starts the cursor on the current row under the default scope even when a livelier row elsewhere sorts first', async () => {
-  const [current, other] = sampleTeams();
-  listOf([
-    {
-      ...other,
-      name: 'session-octo0001',
-      current: false,
-      live: true,
-      state: 'live' as const,
-      folder: '/Users/dev/code/octo',
-      lastActivityAt: FIXTURE_NOW - 1_000,
-    },
-    { ...current, folder: HATCH, lastActivityAt: FIXTURE_NOW - 12_000 },
-    {
-      ...other,
-      name: 'session-hatch002',
-      current: false,
-      live: true,
-      state: 'live' as const,
-      folder: HATCH,
-      lastActivityAt: FIXTURE_NOW - 20_000,
-    },
-  ]);
-  renderSelect();
-  await screen.findAllByRole('option');
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-98b0b4a7');
-});
-
-// A workflow's agents never enter members[], so the session running one has a
-// roster of 1 and is indistinguishable from an empty window on every other
-// field. The run is the only thing that says otherwise — and switching to it is
-// what puts the console in workflow mode.
-it('offers a lead-only session running a workflow as an ordinary row', async () => {
-  listOf(
-    sampleTeams().map((t) => ({
-      ...t,
-      members: 1,
-      state: 'live' as const,
-      workflow: { runId: 'wf_abc123', live: true },
-    })),
-  );
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(rows[0].getAttribute('aria-disabled')).toBeNull();
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('running');
-  // No snapshot yet, so the run has no name and its id is what there is.
-  expect(within(rows[0]).getByTestId('team-run').textContent).toBe('wf_abc123');
-
-  fireEvent.click(rows[1]);
-  expect(selectPosts()).toEqual(['/api/teams/session-b5129c7b/select']);
-});
-
-// A Task subagent never enters members[], so the activity cell is the only
-// place a solo session says what is actually in it.
-it('says how many subagents a solo session is running', async () => {
-  listOf(
-    sampleTeams().map((t, i) => ({
-      ...t,
-      members: 1,
-      state: 'live' as const,
-      ...(i === 0 ? { subagents: 13 } : {}),
-    })),
-  );
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('13 subagents');
-  expect(within(rows[1]).getByTestId('team-meta').textContent).toContain('live');
-});
-
-// A team that also spawned subagents is still a team: `solo` is about the
-// roster, and reading `5 agents solo · 4 subagents` on a five-member wall is
-// the picker contradicting the view it switches to.
-it('never calls a multi-member session solo, however many subagents it spawned', async () => {
-  listOf(
-    sampleTeams().map((t) => ({ ...t, members: 5, state: 'live' as const, subagents: 4 })),
-  );
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  for (const row of rows) {
-    expect(within(row).getByTestId('team-meta').textContent).not.toContain('solo');
-  }
-});
-
-it('names the run and calls it ended once its snapshot has landed', async () => {
-  listOf(
-    sampleTeams().map((t) => ({
-      ...t,
-      members: 1,
-      state: 'idle' as const,
-      workflow: { runId: 'wf_def456', name: 'team8-plan', live: false },
-    })),
-  );
-  renderSelect();
-
-  const [row] = await screen.findAllByRole('option');
-  expect(within(row).getByTestId('team-run').textContent).toBe('team8-plan');
-  expect(within(row).getByTestId('team-meta').textContent).toContain('ended');
-});
-
-// Two rosters of one side by side. The KIND pill is what tells them apart now;
-// the activity cell says what each is doing, which for a bare live window is
-// just `live`.
-it('tells a workflow session apart from a bare one by its kind pill', async () => {
-  const [team, other] = sampleTeams();
-  listOf([
-    { ...team, members: 1, state: 'live' as const, workflow: { runId: 'wf_abc123', live: true } },
-    { ...other, members: 1, state: 'live' as const },
-  ]);
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows).toHaveLength(2);
-  expect(screen.getByTestId('session-count').textContent).toBe('2 running');
-  expect(within(rows[0]).getByTestId('team-kind').textContent).toBe('workflow');
-  expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
-  expect(within(rows[0]).getByTestId('team-meta').textContent).toContain('running');
-  expect(within(rows[1]).getByTestId('team-meta').textContent).toContain('live');
-});
-
-it('lets the keyboard land on a workflow row', async () => {
-  const [team, other] = sampleTeams();
-  listOf([
-    { ...team, members: 1, state: 'live' as const },
-    { ...other, members: 1, state: 'live' as const, workflow: { runId: 'wf_abc123', live: true } },
-  ]);
-  renderSelect();
-  await screen.findAllByRole('option');
-
-  const list = screen.getByRole('listbox', { name: 'teams' });
-  fireEvent.keyDown(list, { key: 'ArrowDown' });
-  expect(list.getAttribute('aria-activedescendant')).toBe('team-option-session-b5129c7b');
-  fireEvent.keyDown(list, { key: 'Enter' });
-  expect(selectPosts()).toEqual(['/api/teams/session-b5129c7b/select']);
-});
-
-// The design pairs a diffstat with the branch on every row. It says how much is
-// sitting UNCOMMITTED, which is not self-evident from `+14 −2` — so the row
-// carries the reading in its title rather than leaving it to be assumed.
-it('shows what is uncommitted in the tree, and says that is what it is', async () => {
-  const [team, other] = sampleTeams();
-  listOf([{ ...team, diffstat: { added: 14, removed: 2 } }, { ...other, members: 3 }]);
-  renderSelect();
-
-  const [row] = await screen.findAllByRole('option');
-  const stat = within(row).getByTestId('team-diffstat');
-  expect(stat.textContent).toBe('+14 −2');
-  expect(stat.getAttribute('title')).toBe('uncommitted in the working tree, against HEAD');
-});
-
-it('spends no row width on a team with nothing uncommitted', async () => {
-  listOf(sampleTeams().map((t) => ({ ...t, members: 3, state: 'live' as const })));
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).queryByTestId('team-diffstat')).toBeNull();
-});
-
-// Ruling 14: the row anatomy — two lines, name over id/branch/diffstat — was
-// sized for 520px; 432 predates the reconcile that made rows two lines.
-it('draws the menu at the width its rows were designed for, with an edge', async () => {
-  renderSelect();
-  const menu = await screen.findByTestId('team-list');
-  expect(menu.style.width).toBe('520px');
-  // A panel floating on the same ground as the bar behind it needs a boundary;
-  // the shadow alone leaves the top edge indistinguishable.
-  expect(menu.style.border).toBe('1px solid var(--color-neutral-800)');
-});
-
-// The in-world team name is decoration and no longer drawn anywhere: the
-// session id in the trigger, the URL and every call the picker makes stay real.
-it('wears no chip even with a cast theme active, and keeps the goal capped', () => {
-  render(
-    <CastContext.Provider value={buildCast([], 'lotr')}>
-      <WatchContext.Provider value={WATCH}>
-        <TeamSelect
-          current="session-98b0b4a7"
-          sessionName="agents-team-console"
-          open={false}
-          onOpenChange={vi.fn()}
-          now={FIXTURE_NOW}
-        />
-      </WatchContext.Provider>
-    </CastContext.Provider>,
-  );
-  expect(screen.queryByTestId('team-chip')).toBeNull();
-  expect(screen.getByTestId('team-trigger-name').textContent).toBe('agents-team-console');
-  expect(screen.getByTestId('team-trigger-name').style.maxWidth).toBe('146px');
-});
-
-// The canvas leads every picker row with its kind, in its own colour, so the
-// list tells the four shapes apart without reading the counts on the line below.
-it('leads each row with its kind, coloured per the canvas KIND table', async () => {
-  const [team, other] = sampleTeams();
-  listOf([
-    { ...team, members: 5, state: 'live' as const },
-    { ...other, members: 1, state: 'live' as const, workflow: { runId: 'wf_a', live: true } },
-  ]);
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  const kinds = rows.map((r) => within(r).getByTestId('team-kind'));
-  expect(kinds.map((k) => k.textContent)).toEqual(['teammates', 'workflow']);
-  expect(kinds[0].style.color).toBe('var(--color-accent-300)');
-  expect(kinds[1].style.color).toBe('var(--warn)');
-});
-
-// A bare window is not `solo` — solo is a mode a batch decides, and a session
-// with no subagents, no roster and no run has shown no evidence of any mode
-// yet. The row waits, as the trigger's badge does.
-it('calls a roster of one with a tree subagents, and gives a bare one no pill', async () => {
-  const [team, other] = sampleTeams();
-  listOf([
-    { ...team, members: 1, state: 'live' as const, subagents: 6 },
-    { ...other, members: 1, state: 'live' as const },
-  ]);
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(within(rows[0]).getByTestId('team-kind').textContent).toBe('subagents');
-  expect(within(rows[1]).queryByTestId('team-kind')).toBeNull();
-});
-
-// Once the batch has decided, the row says so — `solo` included, which is the
-// one kind no evidence could otherwise show — and the decision beats the
-// evidence a roster or tree would suggest.
-it('shows the decided mode as the pill, solo included', async () => {
-  const [team, other] = sampleTeams();
-  listOf([
-    { ...team, members: 1, state: 'done' as const, mode: 'solo' as const },
-    { ...other, members: 5, state: 'live' as const, mode: 'workflow' as const },
-  ]);
-  renderSelect();
-
-  const rows = await screen.findAllByRole('option');
-  expect(rows.map((r) => within(r).getByTestId('team-kind').textContent)).toEqual(['solo', 'workflow']);
-});
-
-// The folder menu — the chip in the header opens a second, narrower list of
-// every folder the machine has sessions in, and picking one rescopes the
-// session list under it.
-it('opens the folder menu from the chip and lists every folder with its count', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.queryByTestId('folder-menu')).toBeNull();
-
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  const menu = screen.getByTestId('folder-menu');
-  const rows = within(menu).getAllByRole('option');
-  expect(rows.map((r) => r.textContent)).toEqual([
-    '·allevery folder2 active · 2 folders',
-    '✓octo~/code/octo2 active',
-    '·hatch~/code/hatchnone active',
-  ]);
-  // The folder in scope is the marked one, so the menu says where you already are.
-  expect(rows[0].getAttribute('aria-selected')).toBe('false');
-  expect(rows[1].getAttribute('aria-selected')).toBe('true');
-  expect(rows[2].getAttribute('aria-selected')).toBe('false');
-});
-
-it('counts an idle live session as active in the folder menu', async () => {
-  const idle = { ...sampleTeams()[1], name: 'session-idle0001', state: 'idle' as const, live: true, folder: HATCH };
-  vi.stubGlobal('fetch', vi.fn(() =>
-    Promise.resolve(new Response(JSON.stringify({ ...LIST, teams: [...LIST.teams, idle] }), { status: 200 })),
-  ));
-  renderSelect();
-  await screen.findAllByRole('option');
-
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  const rows = within(screen.getByTestId('folder-menu')).getAllByRole('option');
-  expect(rows.map((r) => r.textContent)).toContain('·hatch~/code/hatch1 active');
-  expect(rows[0].textContent).toBe('·allevery folder3 active · 2 folders');
-});
-
-it('asks for every folder once a scope is picked, closing the folder menu but not the list', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
-
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
-  // The pick is the whole interaction, so the folder menu goes; the session
-  // list stays up behind it — picking a folder is how you get to a session
-  // inside it.
-  expect(screen.queryByTestId('folder-menu')).toBeNull();
-  expect(screen.getByTestId('team-list')).toBeTruthy();
-});
-
-// The wall view and a workflow view each mount their own TeamSelect, sharing
-// no React state between them — without persisting the pick, navigating
-// between the two reset the operator back to every folder.
-it('remembers the picked folder across a remount, the way navigating between views does', async () => {
-  const spread = { ...LIST, teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? t.folder : HATCH })) };
-  fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(spread), { status: 200 })));
-  vi.stubGlobal('fetch', fetchMock);
-
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[2]);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
-
-  cleanup();
-  fetchMock.mockClear();
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
-  expect(rows.map((r) => r.id)).toEqual(['team-option-session-b5129c7b']);
-});
-
-// Until the operator picks, the chip names the folder of the session on
-// screen — the one scope under which that session is always in the list.
-it('names the folder of the session on screen while nothing is picked', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-});
-
-it('offers all as the first folder, and asks the server for every folder at once', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[0]);
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
-});
-
-it('names the all scope, counts every folder, and says which folder each row is in', async () => {
-  localStorage.setItem('console.folder', '[]');
-  const all = { ...LIST, folder: '*', teams: LIST.teams.map((t, i) => ({ ...t, folder: i === 0 ? t.folder : HATCH })) };
-  vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path.startsWith('/api/teams')
-      ? Promise.resolve(new Response(JSON.stringify(all), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  ));
-  renderSelect();
-  const rows = await screen.findAllByRole('option');
-  expect(screen.getByTestId('folder-chip').textContent).toContain('all');
-  expect(screen.getByTestId('folder-chip').textContent).toContain('every folder');
-  expect(screen.getByTestId('folder-note').textContent).toBe('2 running across 2 folders · 2 open · 0 ended');
-  expect(within(rows[0]).getByTestId('team-folder').textContent).toBe('octo');
-  expect(within(rows[1]).getByTestId('team-folder').textContent).toBe('hatch');
-});
-
-it('states the running/open/ended split for the scope in the footer', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.getByTestId('folder-note').textContent).toBe(
-    '2 running across 1 folder · 2 open · 0 ended',
-  );
-});
-
-// The folder scope is one folder or every folder: the panel asks for every
-// folder once and narrows client-side.
-function servePayload(payload: unknown) {
-  fetchMock = vi.fn((path: string) =>
-    path.startsWith('/api/teams') && !path.includes('/select')
-      ? Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  );
-  vi.stubGlobal('fetch', fetchMock);
-}
-
-
-const FOLDERED = {
-  current: 'session-98b0b4a7',
-  folder: '*',
-  folders: [
-    { path: '/Users/dev/code/octo', name: 'octo', sessions: 2 },
-    { path: HATCH, name: 'hatch', sessions: 5 },
-    { path: '/Users/dev/code/zulu', name: 'zulu', sessions: 1 },
-  ],
-  teams: [
-    { ...sampleTeams()[0], folder: '/Users/dev/code/octo' },
-    { ...sampleTeams()[1], state: 'live' as const, live: true, folder: HATCH },
-    {
-      ...sampleTeams()[1],
-      name: 'session-zzzz1111',
-      goal: 'zulu work',
-      state: 'live' as const,
-      live: true,
-      folder: '/Users/dev/code/zulu',
-    },
-  ],
-};
-
-const titles = () => screen.getAllByTestId('team-title').map((t) => t.textContent);
-const folderRows = () => within(screen.getByTestId('folder-menu')).getAllByRole('option');
-
-it('narrows the list to the picked folder and closes the menu', async () => {
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[2]);
-
-  // One request for every folder; the narrowing happens here, not on the server.
-  expect(fetchMock).toHaveBeenLastCalledWith('/api/teams?folder=*');
-  expect(screen.queryByTestId('folder-menu')).toBeNull();
-  expect(titles()).toEqual(['session-b5129c7b']);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
-});
-
-it('marks the picked folder and leaves the rest with a quiet dot', async () => {
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[2]);
-  fireEvent.click(screen.getByTestId('folder-chip'));
-
-  const marks = folderRows().map((r) => within(r).getByTestId('folder-mark').textContent);
-  expect(marks).toEqual(['·', '·', '✓', '·']);
-});
-
-it('replaces the pick when another folder is chosen', async () => {
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[2]);
-  expect(titles()).toEqual(['session-b5129c7b']);
-
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[3]);
-  expect(titles()).toEqual(['zulu work']);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('zulu');
-});
-
-it('clears the selection and closes the menu when every folder is picked', async () => {
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[1]);
-  expect(titles()).toEqual(['agents-team-console-design']);
-
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[0]);
-  expect(screen.queryByTestId('folder-menu')).toBeNull();
-  expect(titles()).toEqual(['agents-team-console-design', 'session-b5129c7b', 'zulu work']);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('all');
-});
-
-// A pick saved while the menu was a multi-select reads as its first folder.
-it('keeps only the first folder of a stored multi-folder pick', async () => {
-  localStorage.setItem('console.folder', JSON.stringify([HATCH, '/Users/dev/code/zulu']));
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(titles()).toEqual(['session-b5129c7b']);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
-});
-
-// Rows carry their folder's path, not its basename: two folders named alike
-// used to pool their counts and show each other's sessions.
-it('keeps two folders with the same basename apart', async () => {
-  const WORK = '/Users/dev/work/octo';
-  servePayload({
-    ...FOLDERED,
-    folders: [
-      { path: '/Users/dev/code/octo', name: 'octo', sessions: 2 },
-      { path: WORK, name: 'octo', sessions: 1 },
-    ],
-    teams: [
-      { ...sampleTeams()[0], folder: '/Users/dev/code/octo' },
-      { ...sampleTeams()[1], state: 'live' as const, live: true, folder: WORK },
-    ],
-  });
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  expect(folderRows().slice(1).map((r) => r.textContent)).toEqual([
-    '✓octo~/code/octo1 active',
-    '·octo~/work/octo1 active',
-  ]);
-
-  fireEvent.click(folderRows()[1]);
-  expect(titles()).toEqual(['agents-team-console-design']);
-});
-
-// Folders match by prefix: a session that `cd`'d from `code` into `code/arco`
-// lists under either, and its pill says which.
-it('picking a parent folder lists the sessions working anywhere under it', async () => {
-  const CODE = '/Users/dev/code';
-  servePayload({
-    ...FOLDERED,
-    folders: [
-      { path: CODE, name: 'code', sessions: 3 },
-      { path: `${CODE}/arco`, name: 'arco', sessions: 1 },
-    ],
-    teams: [{ ...sampleTeams()[1], state: 'live' as const, live: true, folder: `${CODE}/arco` }],
-  });
-  renderSelect();
-  await screen.findAllByRole('option');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  fireEvent.click(folderRows()[1]);
-
-  expect(titles()).toEqual(['session-b5129c7b']);
-  expect(screen.getByTestId('team-folder').textContent).toBe('arco');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  expect(folderRows()[1].textContent).toBe('✓code~/code1 active');
-});
-
-// The wall may be showing a session from a folder the console was not started
-// in; with nothing picked the list opens on that folder, so the row on screen
-// is in it and the chip names where it is.
-it('defaults the scope to the folder of the session on screen, so the wall and the chip agree', async () => {
-  servePayload({
-    ...FOLDERED,
-    teams: [
-      { ...FOLDERED.teams[0], current: false },
-      { ...FOLDERED.teams[1], current: true },
-      FOLDERED.teams[2],
-    ],
-  });
-  renderSelect();
-  await screen.findAllByRole('option');
-
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-  expect(titles()).toEqual(['session-b5129c7b']);
-  expect(screen.getByTestId('folder-chip').textContent).toContain('hatch');
-});
-
-// A folder path was stored bare in this key before it held JSON; reading it as
-// an explicit single pick is what keeps the operator's scope across the change.
-it('reads a folder path stored before the key held JSON as one explicit pick', async () => {
-  localStorage.setItem('console.folder', HATCH);
-  servePayload(FOLDERED);
-  renderSelect();
-  await screen.findAllByRole('option');
-
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-  expect(titles()).toEqual(['session-b5129c7b']);
-});
-
-it('treats a legacy every-folder marker as no preference at all', async () => {
-  localStorage.setItem('console.folder', '*');
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(fetchMock).toHaveBeenCalledWith('/api/teams?folder=*');
-  // No preference scopes to the session on screen, not to every folder.
-  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
-});
-
-// README Screen 9: "deliberately no time-range control" — a range picker can
-// hide the session the operator came for, and recency is a sort, not a
-// question. Idle and ended sessions fold into the collapsed group however
-// recently they were active, and there is nothing here to widen a window on.
-const AGED = [
-  { ...sampleTeams()[0], goal: 'live one', lastActivityAt: FIXTURE_NOW - 40 * 86_400_000 },
-  {
-    ...sampleTeams()[1],
-    name: 'session-aaaa1111',
-    goal: 'two hours',
-    state: 'idle' as const,
-    lastActivityAt: FIXTURE_NOW - 2 * 3_600_000,
-  },
-  {
-    ...sampleTeams()[1],
-    name: 'session-bbbb2222',
-    goal: 'three days',
-    state: 'done' as const,
-    lastActivityAt: FIXTURE_NOW - 3 * 86_400_000,
-  },
-];
-
-it('offers no time-range control', async () => {
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.queryByText('ACTIVE IN')).toBeNull();
-  expect(screen.queryByTestId('range-live')).toBeNull();
-  expect(screen.queryByTestId('range-24h')).toBeNull();
-});
-
-it('folds idle and ended sessions into the collapsed group however recently they were active', async () => {
-  servePayload({ current: 'session-98b0b4a7', teams: AGED });
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(titles()).toEqual(['live one']);
-
-  const toggle = screen.getByTestId('show-hidden-rows');
-  expect(toggle.textContent).toBe('▸ 1 idle · 1 ended');
-});
-
-// A process parked at its prompt is still one you can switch to and message,
-// so it stays in the main list; only a session whose process is gone folds.
-it('keeps a session whose process is alive but idle in the main list', async () => {
-  const parked = { ...AGED[1], name: 'session-cccc3333', goal: 'at its prompt', leadAlive: true, live: true };
-  servePayload({ current: 'session-98b0b4a7', teams: [...AGED, parked] });
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(titles()).toEqual(['at its prompt', 'live one']);
-  expect(screen.getByTestId('show-hidden-rows').textContent).toBe('▸ 1 idle · 1 ended');
-  expect(screen.getByTestId('folder-note').textContent).toBe('1 running · 3 open · 1 ended');
-});
-
-it('counts only the running rows in the header, ignoring the search box entirely for scope', async () => {
-  servePayload({ current: 'session-98b0b4a7', teams: AGED });
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.getByTestId('session-count').textContent).toBe('1 running');
-
-  fireEvent.change(screen.getByTestId('team-search'), { target: { value: 'nonexistent' } });
-  expect(screen.getByTestId('session-count').textContent).toBe('0 running');
-});
-
-// A listing with no folder menu to offer still names the folder of the session
-// on screen off its row, and the footer's running/open/ended split still says
-// something about the rows.
-it('offers no folder menu when the listing is not scoped to a folder', async () => {
-  vi.stubGlobal('fetch', vi.fn((path: string) =>
-    path.startsWith('/api/teams')
-      ? Promise.resolve(
-          new Response(JSON.stringify({ current: LIST.current, teams: LIST.teams }), { status: 200 }),
-        )
-      : Promise.resolve(new Response('{}', { status: 200 })),
-  ));
-  renderSelect();
-  await screen.findAllByRole('option');
-  expect(screen.getByTestId('folder-chip').textContent).toContain('octo');
-  fireEvent.click(screen.getByTestId('folder-chip'));
-  expect(within(screen.getByTestId('folder-menu')).queryAllByRole('option')).toHaveLength(0);
+  expect(screen.getByTestId('folder-note')).toHaveTextContent('2 live across 1 folder');
 });

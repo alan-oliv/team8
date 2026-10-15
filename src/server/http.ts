@@ -6,7 +6,7 @@ import type { Permits } from './control/permits';
 import type { HookHandlers } from './ingest/hooks';
 import type { StreamHub } from './stream';
 import { sendToInbox } from './control/mailbox';
-import type { Brief, TeamState, TeamsResponse , TranscriptLine } from '../shared/domain';
+import type { Brief, TeamState, TranscriptLine } from '../shared/domain';
 import { PLUGIN_DIR } from './lifecycle';
 
 // Who the operator is when they speak through the console. Not a team member,
@@ -111,12 +111,6 @@ export interface HttpDeps {
   state: () => TeamState;
   readOnly: boolean;
   leadName?: string;
-  /**
-   * The picker's options — every session in one folder, live and dead. `folder`
-   * is the operator switching scope from the folder menu; absent means the one
-   * the console was started in.
-   */
-  listTeams?: (folder?: string) => Promise<TeamsResponse>;
   /** Older transcript lines for one agent — the wall's scrollback. */
   history?: (agent: string) => TranscriptLine[];
   lineText?: (agent: string, id: string) => string | undefined;
@@ -289,13 +283,6 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
             watching: s.watching,
             tabs: deps.stream.clients,
           });
-          return;
-        }
-
-        // Beside /health rather than below: every other non-API GET is the SPA
-        // bundle, and a `/api/` path reaching that branch falls through to 404.
-        if (method === 'GET' && route === '/api/teams' && deps.listTeams) {
-          json(res, 200, await deps.listTeams(url.searchParams.get('folder') ?? undefined));
           return;
         }
 

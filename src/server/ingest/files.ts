@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { watchAppendOnly } from '../watch/tail';
+import { watchAppendOnly, type TailState } from '../watch/tail';
+export type { TailState };
 import { readJsonSafe, watchJsonTree } from '../watch/jsonfile';
 import type { Store, StoredEvent } from '../store';
 import type { AgentUsageTotals, SubagentPayload, TaskPayload, TaskRemovedPayload, TranscriptPayload } from '../project';
@@ -101,7 +102,23 @@ export interface IngestConfig {
    * first, mostly directories Claude Code left behind when their sessions ended.
    */
   adoptExistingTeams?: boolean;
+  /**
+   * Tail states a previous ingest for this same target handed out on close.
+   * The store already holds that target's events; seeding the watcher is what
+   * stops a switch back to a session from re-parsing its transcript from byte 0.
+   */
+  tails?: ReadonlyMap<string, TailState>;
+  /**
+   * The usage ledger that same ingest handed out with its tails. A transcript
+   * snapshot totals everything the ingest has read and the fold keeps only the
+   * newest, so an ingest that starts mid-file must also start from what was
+   * already counted, or its first snapshot would drop the earlier spend.
+   */
+  usage?: UsageLedger;
 }
+
+/** Per transcript file, the best usage record seen for each message id. */
+export type UsageLedger = Map<string, Map<string, UsageRecord>>;
 
 export interface FileIngest {
   sweep(): Promise<void>;
@@ -111,7 +128,8 @@ export interface FileIngest {
    * thing hooks never carry. Unknown agent: a no-op.
    */
   drainAgent(agent: string): Promise<void>;
-  close(): void;
+  /** Stops the timers and watchers and hands back what the next ingest of this target starts from. */
+  close(): { tails: Map<string, TailState>; usage: UsageLedger };
 }
 
 const WORKFLOW_SEGMENT = `${path.sep}workflows${path.sep}`;
@@ -499,7 +517,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
    * after a restart. Measured at ~21% of record count, which is ~100x cheaper
    * than holding the records themselves, but it does grow with the session.
    */
-  const usageLedger = new Map<string, Map<string, UsageRecord>>();
+  const usageLedger: UsageLedger = new Map(config.usage ?? []);
   // The transcript files this run has read for each agent. A CANDIDATE set:
   // which of them actually count is re-decided in totalsFor against the
   // leadSessionId of the moment, because a file read before config.json landed
@@ -1092,7 +1110,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       (st) => marks.set(file, st.mtimeMs),
       () => undefined,
     );
-  });
+  }, config.tails);
 
   const sweepTranscript = async (file: string) => {
     if (isWorkflowPath(file)) {
@@ -1291,7 +1309,15 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       closed = true;
       if (timer) clearInterval(timer);
       if (poll) clearInterval(poll);
+      // Taken before the watchers close: `transcripts` is one of them.
+      const tails = transcripts.states();
+      // Read from 0 next time: a deferred file's bytes were dropped and a
+      // pending one's records die with this ingest, so neither is in the store;
+      // a workflow agent's spend is folded per ingest and is not carried over.
+      for (const f of [...deferred, ...pending.keys()]) tails.delete(f);
+      for (const f of tails.keys()) if (workflowAgentClaimOf(f)) tails.delete(f);
       for (const w of watchers) w.close();
+      return { tails, usage: usageLedger };
     },
   };
 }

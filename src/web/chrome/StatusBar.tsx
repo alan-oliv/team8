@@ -179,6 +179,7 @@ export function StatusBar({
             open={teamsOpen}
             onOpenChange={onTeamsOpenChange}
             now={now}
+            sessions={state.sessions ?? []}
           />
           {runs.length > 0 && (
             <button

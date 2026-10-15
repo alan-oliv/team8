@@ -2,13 +2,13 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { formatCost, formatElapsed } from '../format';
-import { FIXTURE_NOW, sampleTeamState, sampleTeams } from '../test/state-fixture';
+import { FIXTURE_NOW, sampleSessions, sampleTeamState } from '../test/state-fixture';
 import { LeftSession } from './LeftSession';
 
 afterEach(cleanup);
 
 const state = sampleTeamState();
-const elsewhere = sampleTeams().slice(1);
+const elsewhere = sampleSessions().filter((r) => !r.current);
 
 function renderScreen(props: Partial<Parameters<typeof LeftSession>[0]> = {}) {
   const onWatchAgain = vi.fn();
@@ -124,5 +124,5 @@ it('lists the other sessions on the machine, each one click away', () => {
   const rows = screen.getAllByTestId('left-session-elsewhere-row');
   expect(rows).toHaveLength(elsewhere.length);
   fireEvent.click(rows[0]);
-  expect(onSwitchTo).toHaveBeenCalledWith(elsewhere[0].name);
+  expect(onSwitchTo).toHaveBeenCalledWith('b5129c7b-a009-4de3-9a42-4664d1214f39');
 });
