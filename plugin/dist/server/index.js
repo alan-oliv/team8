@@ -2658,7 +2658,6 @@ function buildRoster(config, sidecars) {
 var DIFF_LINES_CAP = 300;
 var DIFF_LINE_TEXT_CAP = 200;
 var CONSOLE_SENDER = "console";
-var ALL_FOLDERS = "*";
 var WORKFLOW_BURN_SAMPLES = 60;
 
 // src/shared/mailbox.ts
@@ -3509,8 +3508,8 @@ async function drain(filePath, state) {
     mtimeMs
   };
 }
-function watchAppendOnly(root, onLines) {
-  const states = /* @__PURE__ */ new Map();
+function watchAppendOnly(root, onLines, seed) {
+  const states = new Map(seed ?? []);
   const queues = /* @__PURE__ */ new Map();
   const queued = /* @__PURE__ */ new Set();
   let closed = false;
@@ -3542,6 +3541,7 @@ function watchAppendOnly(root, onLines) {
   return {
     pump,
     forget,
+    states: () => new Map(states),
     close() {
       closed = true;
       watcher.close();
@@ -4110,7 +4110,7 @@ function startFileIngest(store, config) {
       dropPending(oldest.value);
     }
   };
-  const usageLedger = /* @__PURE__ */ new Map();
+  const usageLedger = new Map(config.usage ?? []);
   const ledgerFiles = /* @__PURE__ */ new Map();
   const noteUsage = (file, agent, records) => {
     const ledger = usageLedger.get(file) ?? /* @__PURE__ */ new Map();
@@ -4445,7 +4445,7 @@ function startFileIngest(store, config) {
       (st) => marks.set(file, st.mtimeMs),
       () => void 0
     );
-  });
+  }, config.tails);
   const sweepTranscript = async (file) => {
     if (isWorkflowPath(file)) {
       await handleWorkflowFile(file);
@@ -4585,7 +4585,11 @@ function startFileIngest(store, config) {
       closed = true;
       if (timer) clearInterval(timer);
       if (poll) clearInterval(poll);
+      const tails = transcripts.states();
+      for (const f of [...deferred, ...pending.keys()]) tails.delete(f);
+      for (const f of tails.keys()) if (workflowAgentClaimOf(f)) tails.delete(f);
       for (const w of watchers) w.close();
+      return { tails, usage: usageLedger };
     }
   };
 }
@@ -5307,10 +5311,6 @@ function createHttpHandler(deps) {
             watching: s.watching,
             tabs: deps.stream.clients
           });
-          return;
-        }
-        if (method === "GET" && route === "/api/teams" && deps.listTeams) {
-          json(res, 200, await deps.listTeams(url.searchParams.get("folder") ?? void 0));
           return;
         }
         if (method === "GET" && route === "/api/history" && deps.history) {
@@ -6668,6 +6668,8 @@ function lastDecidedMode(buf) {
   }
   return void 0;
 }
+var TAIL_WINDOW = 256 * 1024;
+var HEAD_WINDOW = 64 * 1024;
 async function transcriptMeta(file) {
   let size;
   try {
@@ -6676,13 +6678,24 @@ async function transcriptMeta(file) {
     return {};
   }
   const known = transcriptFacts.get(file);
-  const offset = known && known.offset <= size ? known.offset : 0;
-  const facts = known && offset > 0 ? { ...known.facts } : {};
+  const first = !known || known.offset > size;
+  let offset = first ? Math.max(0, size - TAIL_WINDOW) : known.offset;
+  const facts = first ? {} : { ...known.facts };
   if (size > offset) {
     const handle = await fs10.open(file, "r");
     try {
-      const read = Buffer.alloc(size - offset);
+      if (first && offset > 0) {
+        const head = Buffer.alloc(Math.min(HEAD_WINDOW, size));
+        await handle.read(head, 0, head.length, 0);
+        facts.entrypoint = firstEntrypoint(head);
+      }
+      let read = Buffer.alloc(size - offset);
       await handle.read(read, 0, read.length, offset);
+      if (first && offset > 0) {
+        const cut = read.indexOf(10) + 1;
+        offset += cut;
+        read = read.subarray(cut);
+      }
       const whole = read.subarray(0, read.lastIndexOf(10) + 1);
       facts.customTitle = lastRecordField(whole, "custom-title", "customTitle") ?? facts.customTitle;
       facts.aiTitle = lastRecordField(whole, "ai-title", "aiTitle") ?? facts.aiTitle;
@@ -6692,7 +6705,7 @@ async function transcriptMeta(file) {
       const cwds = lastCwds(whole, path13.basename(path13.dirname(file)));
       facts.cwd = cwds.filedUnder ?? facts.cwd;
       facts.lastCwd = cwds.last ?? facts.lastCwd;
-      if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
+      if (first && offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
     } finally {
       await handle.close();
@@ -6924,152 +6937,76 @@ async function forkChainOf(projectsRoot, sessionId) {
   }
   return chain;
 }
-async function sessionRows(projectsRoot, sessionIds, folderCwd, sessions, covered, diffstats, now, current) {
+function toSessionRow(team, driver, facts) {
+  return {
+    id: driver || team.leadSessionId,
+    team: team.name,
+    title: team.goal ?? team.name,
+    members: team.members,
+    folder: facts.folder,
+    busy: facts.busy,
+    current: team.current,
+    ...team.branch ? { branch: team.branch } : {},
+    ...team.mode ? { mode: team.mode } : {},
+    ...team.workflow ? { workflow: team.workflow } : {},
+    ...team.subagents ? { subagents: team.subagents } : {},
+    ...facts.diffstat ? { diffstat: facts.diffstat } : {}
+  };
+}
+async function listLive(teamsRoot2, sessionsRoot, projectsRoot, current) {
+  const walk2 = await walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot);
+  const { sessions, now, leadSessions, adopted } = walk2;
+  const diffstats = /* @__PURE__ */ new Map();
+  const diffstatOfCached = async (folder) => {
+    if (!diffstats.has(folder)) diffstats.set(folder, await diffstatOf(folder));
+    return diffstats.get(folder);
+  };
   const rows = [];
-  for (const sessionId of sessionIds) {
+  for (const team of walk2.teams) {
+    if (!team.leadAlive) continue;
+    const driver = leadSessions.get(team.name) ?? team.leadSessionId;
+    const folder = team.folder ?? sessions.cwds.get(driver) ?? walk2.needsDiffstat.get(team.name) ?? "";
+    rows.push(
+      toSessionRow(team, driver, {
+        busy: sessions.busy.has(driver),
+        folder,
+        diffstat: folder ? await diffstatOfCached(folder) : void 0
+      })
+    );
+  }
+  const covered = /* @__PURE__ */ new Set([
+    ...walk2.teams.map((t) => t.leadSessionId),
+    ...walk2.teams.flatMap((t) => leadSessions.get(t.name) ?? []),
+    ...adopted
+  ]);
+  for (const sessionId of sessions.live) {
     if (covered.has(sessionId)) continue;
-    const cwd = sessions.cwds.get(sessionId) ?? folderCwd;
-    const dir = await sessionProjectDir(projectsRoot, sessionId, folderCwd || sessions.cwds.get(sessionId));
+    const cwd = sessions.cwds.get(sessionId);
+    const dir = await sessionProjectDir(projectsRoot, sessionId, cwd);
     if (!dir) continue;
-    const subagents = await subagentCountOf(dir);
-    const workflow = await workflowOf(dir, now);
-    let lastActivityAt = 0;
-    try {
-      lastActivityAt = (await fs10.stat(`${dir}.jsonl`)).mtimeMs;
-    } catch {
-      try {
-        lastActivityAt = (await fs10.stat(path13.join(dir, "subagents"))).mtimeMs;
-      } catch {
-        lastActivityAt = now;
-      }
-    }
     const transcript = await transcriptMeta(`${dir}.jsonl`);
     if (transcript.entrypoint === "sdk-cli") continue;
-    const leadAlive = sessions.live.has(sessionId);
-    const recent = now - lastActivityAt < IDLE_GRACE_MS;
-    const state = leadAlive && sessions.busy.has(sessionId) ? "live" : leadAlive || recent ? "idle" : "done";
-    if (state !== "done" && !diffstats.has(cwd)) diffstats.set(cwd, await diffstatOf(cwd));
+    const folder = transcript.lastCwd ?? cwd;
+    if (!folder) continue;
+    const workflow = await workflowOf(dir, now);
+    const subagents = await subagentCountOf(dir);
+    const diffstat = await diffstatOfCached(folder);
+    const branch = transcript.branch ?? await branchOf(folder);
     rows.push({
-      // The SESSION id, not a team directory: `sessionOnly` below is what tells
-      // the client to send it to /api/select-session rather than /select.
-      name: sessionId,
-      sessionOnly: true,
+      id: sessionId,
+      title: sessions.names.get(sessionId) ?? transcript.title ?? `session-${sessionId.slice(0, 8)}`,
       members: 1,
-      createdAt: 0,
-      leadSessionId: sessionId,
-      leadAlive,
-      lastActivityAt,
-      live: leadAlive || recent,
+      folder,
+      busy: sessions.busy.has(sessionId),
       current: sessionId === current,
-      branch: transcript.branch ?? await branchOf(cwd),
-      goal: sessions.names.get(sessionId) ?? transcript.title,
-      state,
-      // Where the session last worked — never the sidecar's started-in cwd,
-      // which is what filed moved sessions under the wrong folder for good.
-      ...transcript.lastCwd ? { folder: transcript.lastCwd } : {},
+      ...branch ? { branch } : {},
       ...transcript.mode ? { mode: transcript.mode } : {},
       ...workflow ? { workflow } : {},
       ...subagents > 0 ? { subagents } : {},
-      ...state !== "done" && diffstats.get(cwd) ? { diffstat: diffstats.get(cwd) } : {}
+      ...diffstat ? { diffstat } : {}
     });
   }
-  return rows;
-}
-async function sessionIdsIn(dir) {
-  let entries;
-  try {
-    entries = await fs10.readdir(dir);
-  } catch {
-    return [];
-  }
-  const ids = /* @__PURE__ */ new Set();
-  for (const entry of entries) {
-    const id = entry.endsWith(".jsonl") ? entry.slice(0, -".jsonl".length) : entry;
-    if (/^[0-9a-f]{8}-[0-9a-f-]+$/i.test(id)) ids.add(id);
-  }
-  return [...ids];
-}
-async function folderSessionIds(projectsRoot, cwd) {
-  return sessionIdsIn(path13.join(projectsRoot, cwd.replace(/[^a-zA-Z0-9]/g, "-")));
-}
-async function folderPathOf(dir, sessionIds) {
-  for (const id of sessionIds) {
-    const { cwd } = await transcriptMeta(path13.join(dir, `${id}.jsonl`));
-    if (cwd) return cwd;
-  }
-  return void 0;
-}
-async function listFolders(projectsRoot) {
-  let entries;
-  try {
-    entries = await fs10.readdir(projectsRoot);
-  } catch {
-    return [];
-  }
-  const folders = [];
-  for (const entry of entries) {
-    const dir = path13.join(projectsRoot, entry);
-    const ids = await sessionIdsIn(dir);
-    if (ids.length === 0) continue;
-    const cwd = await folderPathOf(dir, ids);
-    if (!cwd) continue;
-    let at = 0;
-    try {
-      at = (await fs10.stat(dir)).mtimeMs;
-    } catch {
-    }
-    folders.push({ path: cwd, name: path13.basename(cwd), sessions: ids.length, at });
-  }
-  folders.sort((a, b) => b.at - a.at);
-  return folders.map(({ at: _at, ...folder }) => folder);
-}
-async function listAllFolders(teamsRoot2, sessionsRoot, current, projectsRoot) {
-  const folders = await listFolders(projectsRoot);
-  const walk2 = await walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot);
-  const listings = await Promise.all(
-    folders.map(
-      (f) => listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, f.path, { folders, walk: walk2 })
-    )
-  );
-  const teams = listings.flatMap((one, i) => one.teams.map((t) => ({ folder: folders[i].path, ...t })));
-  return { current, teams, folder: ALL_FOLDERS, folders };
-}
-async function listTeamSummaries(teamsRoot2, sessionsRoot, current, projectsRoot, cwd, shared) {
-  const walk2 = shared?.walk ?? await walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot);
-  const { sessions, now, leadSessions, needsDiffstat, adopted } = walk2;
-  const teams = [...walk2.teams];
-  const diffstats = /* @__PURE__ */ new Map();
-  const scoped = projectsRoot && cwd ? await folderSessionIds(projectsRoot, cwd) : void 0;
-  if (scoped) {
-    const here = new Set(scoped);
-    for (let i = teams.length - 1; i >= 0; i--) {
-      const driver = leadSessions.get(teams[i].name) ?? teams[i].leadSessionId;
-      if (!here.has(driver)) teams.splice(i, 1);
-    }
-  }
-  for (let i = 0; i < teams.length; i++) {
-    const tree = needsDiffstat.get(teams[i].name);
-    if (tree === void 0) continue;
-    if (!diffstats.has(tree)) diffstats.set(tree, await diffstatOf(tree));
-    const diffstat = diffstats.get(tree);
-    if (diffstat) teams[i] = { ...teams[i], diffstat };
-  }
-  if (projectsRoot) {
-    const covered = /* @__PURE__ */ new Set([
-      ...teams.map((t) => t.leadSessionId),
-      ...teams.flatMap((t) => leadSessions.get(t.name) ?? []),
-      ...adopted
-    ]);
-    const ids = scoped ?? [...sessions.live].filter((id) => sessions.cwds.has(id));
-    teams.push(
-      ...await sessionRows(projectsRoot, ids, cwd ?? "", sessions, covered, diffstats, now, current)
-    );
-  }
-  teams.sort(
-    (a, b) => Number(b.current) - Number(a.current) || Number(b.live) - Number(a.live) || b.lastActivityAt - a.lastActivityAt || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-  );
-  const folders = projectsRoot && cwd ? shared?.folders ?? await listFolders(projectsRoot) : void 0;
-  return { current, teams, ...folders ? { folder: cwd, folders } : {} };
+  return { rows, walk: walk2 };
 }
 async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   let entries = [];
@@ -7079,6 +7016,9 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   }
   const sessions = await readSessions(sessionsRoot);
   const liveTeams = projectsRoot ? await teamsOfLiveSessions(projectsRoot, sessions) : /* @__PURE__ */ new Map();
+  const liveCwds = new Set(
+    [...sessions.live].map((id) => sessions.cwds.get(id)).filter((c) => Boolean(c))
+  );
   const now = Date.now();
   const teams = [];
   const leadCwds = /* @__PURE__ */ new Map();
@@ -7099,17 +7039,34 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
     const leadSessionId = typeof config.leadSessionId === "string" ? config.leadSessionId : "";
     const leadSession = liveTeams.get(name) ?? leadSessionId;
     const leadAlive = liveTeams.has(name) || leadSessionId !== "" && sessions.live.has(leadSessionId);
-    const lastActivityAt = await lastActivityOf(teamDir, configMtimeMs);
-    const recent = now - lastActivityAt < IDLE_GRACE_MS;
     const lead = config.members.find((m) => m.agentId === config.leadAgentId) ?? config.members[0];
-    leadCwds.set(name, lead?.cwd ?? "");
+    const leadCwd = lead?.cwd ?? "";
+    if (!leadAlive && !liveCwds.has(leadCwd)) {
+      leadSessions.set(name, leadSession);
+      teams.push({
+        name,
+        members: config.members.length,
+        createdAt: typeof config.createdAt === "number" ? config.createdAt : 0,
+        leadSessionId,
+        leadAlive: false,
+        lastActivityAt: configMtimeMs,
+        // For boot discovery only, never a row: recency off the stat already
+        // taken lets `autoTeam` pick a just-written team before its lead's
+        // sidecar exists. `listLive` filters on `leadAlive`, which stays false.
+        live: now - configMtimeMs < IDLE_GRACE_MS,
+        current: false,
+        state: "done"
+      });
+      continue;
+    }
+    const lastActivityAt = await lastActivityOf(teamDir, configMtimeMs);
+    leadCwds.set(name, leadCwd);
     leadSessions.set(name, leadSession);
     const leadDir = projectsRoot && leadSession ? await sessionProjectDir(projectsRoot, leadSession, sessions.cwds.get(leadSession) ?? lead?.cwd) : null;
     const workflow = await workflowOf(leadDir, now);
     const subagents = await subagentCountOf(leadDir);
-    const leadCwd = lead?.cwd ?? "";
-    const state = leadAlive && sessions.busy.has(leadSession) ? "live" : leadAlive || recent ? "idle" : "done";
-    if (state !== "done") needsDiffstat.set(name, leadCwd);
+    const state = !leadAlive ? "done" : sessions.busy.has(leadSession) ? "live" : "idle";
+    needsDiffstat.set(name, leadCwd);
     const leadTranscript = leadDir ? await transcriptMeta(`${leadDir}.jsonl`) : {};
     teams.push({
       // The DIRECTORY name, not config.name: the ingest gates its own team's
@@ -7121,15 +7078,13 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
       leadSessionId,
       leadAlive,
       lastActivityAt,
-      live: leadAlive || recent,
+      live: leadAlive || now - lastActivityAt < IDLE_GRACE_MS,
       current: false,
       branch: leadTranscript.branch ?? await branchOf(lead?.cwd),
       // Named after the session actually driving the team. Keyed on
       // config.leadSessionId this was blank for every re-keyed team — the live
       // one showed no name while a four-hour-dead one showed its own.
       goal: sessions.names.get(leadSession) ?? leadTranscript.title,
-      // `idle` is a team whose lead process is gone but whose files moved
-      // recently — it can still be paged back into; `done` is finished.
       state,
       // Where the lead last worked — never members[].cwd, which a re-keyed
       // team leaves naming the folder its stale lead joined from.
@@ -7269,6 +7224,7 @@ async function main(argv) {
       leadSessionId: team.leadSessionId || (leadSessionId ?? ""),
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
+      ...liveRows ? { sessions: liveRows } : {},
       switching,
       watching,
       build,
@@ -7293,7 +7249,10 @@ async function main(argv) {
   let generation = 0;
   let currentTeam = teamName ?? "";
   let currentSession = teamName ? "" : leadSessionId ?? "";
-  const startIngest = (gen, team, lead) => startFileIngest(fencedSink(live, gen, () => generation), {
+  let liveRows;
+  let liveRowsJson = "";
+  const carryByTarget = /* @__PURE__ */ new Map();
+  const startIngest = (gen, team, lead, carry) => startFileIngest(fencedSink(live, gen, () => generation), {
     paths: {
       projects: path13.join(cli.claudeHome, "projects"),
       teams: teamsRoot2,
@@ -7304,6 +7263,7 @@ async function main(argv) {
     leadSessionId: lead,
     sessionOnly: team === void 0 && lead !== void 0,
     adoptExistingTeams: false,
+    ...carry,
     onTeam: (info) => {
       if (gen !== generation) return;
       store.setTeam(info.teamName);
@@ -7327,13 +7287,13 @@ async function main(argv) {
   const retarget = async (team, lead) => {
     hub.publish();
     const gen = ++generation;
-    ingest.close();
+    carryByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(team);
     leadSessionId = lead;
     currentTeam = team;
     currentSession = "";
     leadFacts = {};
-    ingest = startIngest(gen, team, lead);
+    ingest = startIngest(gen, team, lead, carryByTarget.get(team));
     await ingest.sweep();
     hub.publish();
   };
@@ -7373,13 +7333,13 @@ async function main(argv) {
   const retargetSession = async (sessionId) => {
     hub.publish();
     const gen = ++generation;
-    ingest.close();
+    carryByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(sessionId);
     leadSessionId = sessionId;
     currentTeam = "";
     currentSession = sessionId;
     leadFacts = {};
-    ingest = startIngest(gen, void 0, sessionId);
+    ingest = startIngest(gen, void 0, sessionId, carryByTarget.get(sessionId));
     await ingest.sweep();
     leadFacts = await leadFactsOf(sessionId);
     hub.publish();
@@ -7446,7 +7406,6 @@ async function main(argv) {
     stream: hub,
     state: publish,
     readOnly: cli.readOnly,
-    listTeams: async (folder) => folder === ALL_FOLDERS ? listAllFolders(teamsRoot2, sessionsRoot, currentTeam || currentSession, projectsRoot) : listTeamSummaries(teamsRoot2, sessionsRoot, currentTeam || currentSession, projectsRoot, cli.cwd),
     history: (agent) => transcriptHistory(store.replay(), agent),
     lineText: (agent, id) => transcriptLineText(store.replay(), agent, id),
     planTask: (n) => plans.task(n),
@@ -7475,20 +7434,18 @@ async function main(argv) {
   const followRealTeam = async () => {
     if (switching) return;
     const gen = generation;
-    const walk2 = await walkTeams(teamsRoot2, sessionsRoot, currentTeam || currentSession, projectsRoot);
-    const { teams } = await listTeamSummaries(
-      teamsRoot2,
-      sessionsRoot,
-      currentTeam || currentSession,
-      projectsRoot,
-      cli.cwd,
-      { walk: walk2 }
-    );
+    const { rows, walk: walk2 } = await listLive(teamsRoot2, sessionsRoot, projectsRoot, currentTeam || currentSession);
     build = withInstalled(build, await installedVersion(cli.claudeHome));
-    const mine = teams.find((t) => t.current);
-    const facts = mine ? { sessionName: mine.goal, branch: mine.branch, mode: mine.mode } : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
+    const mine = rows.find((r) => r.current);
+    const facts = mine ? { sessionName: mine.title, branch: mine.branch, mode: mine.mode } : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
     if (gen !== generation) return;
     leadFacts = facts;
+    const json2 = JSON.stringify(rows);
+    if (json2 !== liveRowsJson) {
+      liveRows = rows;
+      liveRowsJson = json2;
+      hub.publish();
+    }
     const asked = watching;
     const target = await targetOf(walk2);
     if (switching || gen !== generation || watching !== asked || !target || shows(target)) return;
@@ -7521,16 +7478,19 @@ if (process.argv[1] && import.meta.url.endsWith(path13.basename(process.argv[1])
 export {
   DEFAULT_PORT,
   FOLLOW_INTERVAL_MS,
+  HEAD_WINDOW,
   IDLE_GRACE_MS,
+  TAIL_WINDOW,
   discoverTeam,
   fencedSink,
   forkChainOf,
-  listAllFolders,
-  listFolders,
-  listTeamSummaries,
+  listLive,
   main,
   parseArgs,
   parseShortstat,
   sessionProjectDir,
+  toSessionRow,
+  transcriptMeta,
+  walkTeams,
   workflowScriptOf
 };
