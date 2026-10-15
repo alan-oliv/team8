@@ -391,3 +391,61 @@ describe('pump', () => {
     }
   });
 });
+
+describe('watchAppendOnly seeded with another watcher’s states', () => {
+  it('reads only the bytes appended after the seed', async () => {
+    const file = path.join(dir, 'a.jsonl');
+    await fs.writeFile(file, '{"i":1}\n{"i":2}\n');
+    const first = watchAppendOnly(dir, () => {});
+    await first.pump(file);
+    const seed = first.states();
+    first.close();
+    expect(seed.get(file)?.offset).toBe(16);
+
+    await fs.appendFile(file, '{"i":3}\n');
+    const seen: { lines: string[]; fromStart: boolean }[] = [];
+    const second = watchAppendOnly(dir, (_f, lines, fromStart) => seen.push({ lines, fromStart }), seed);
+    try {
+      await second.pump(file);
+      expect(seen).toEqual([{ lines: ['{"i":3}'], fromStart: false }]);
+    } finally {
+      second.close();
+    }
+  });
+
+  it('starts over when the file disagrees with its seed', async () => {
+    const file = path.join(dir, 'a.jsonl');
+    await fs.writeFile(file, '{"i":1}\n{"i":2}\n');
+    const first = watchAppendOnly(dir, () => {});
+    await first.pump(file);
+    const seed = first.states();
+    first.close();
+
+    // Truncated below the seeded offset: a rewrite, not an append.
+    await fs.writeFile(file, '{"i":9}\n');
+    const seen: { lines: string[]; fromStart: boolean }[] = [];
+    const second = watchAppendOnly(dir, (_f, lines, fromStart) => seen.push({ lines, fromStart }), seed);
+    try {
+      await second.pump(file);
+      expect(seen).toEqual([{ lines: ['{"i":9}'], fromStart: true }]);
+    } finally {
+      second.close();
+    }
+  });
+
+  it('hands out a copy, so a later pump does not move the caller’s map', async () => {
+    const file = path.join(dir, 'a.jsonl');
+    await fs.writeFile(file, '{"i":1}\n');
+    const w = watchAppendOnly(dir, () => {});
+    try {
+      await w.pump(file);
+      const snap = w.states();
+      await fs.appendFile(file, '{"i":2}\n');
+      await w.pump(file);
+      expect(snap.get(file)?.offset).toBe(8);
+      expect(w.states().get(file)?.offset).toBe(16);
+    } finally {
+      w.close();
+    }
+  });
+});

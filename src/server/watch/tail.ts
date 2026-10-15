@@ -115,14 +115,21 @@ export interface AppendOnlyWatcher {
    * cannot write its advanced state back on top of the reset.
    */
   forget(file: string): Promise<void>;
+  /**
+   * Every file's tail state, copied. A closing ingest hands this to the one
+   * that replaces it for the same target, so a switch back to a session pumps
+   * only what was appended since — the store already holds the events.
+   */
+  states(): Map<string, TailState>;
   close(): void;
 }
 
 export function watchAppendOnly(
   root: string,
   onLines: (path: string, lines: string[], fromStart: boolean, mtimeMs?: number) => void,
+  seed?: ReadonlyMap<string, TailState>,
 ): AppendOnlyWatcher {
-  const states = new Map<string, TailState>();
+  const states = new Map<string, TailState>(seed ?? []);
   const queues = new Map<string, Promise<void>>();
   const queued = new Set<string>();
   let closed = false;
@@ -165,6 +172,7 @@ export function watchAppendOnly(
   return {
     pump,
     forget,
+    states: () => new Map(states),
     close() {
       closed = true;
       watcher.close();
