@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './theme.css';
 import { buildCast } from '../shared/cast';
-import type { Agent, TeamsResponse, TeamSummary } from '../shared/domain';
+import type { Agent } from '../shared/domain';
 import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
 import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
-import { Splash, prefersReducedMotion, splashSkipped } from './chrome/Splash';
+import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
-import { readStoredFolders, scopedRows } from './chrome/TeamSelect';
+import { byRow, readStoredFolder, scopeOf } from './chrome/TeamSelect';
 import { DiffModal } from './components/DiffModal';
 import { StopContext } from './components/StopButton';
 import { CastContext } from './state/useCast';
-import { useHiddenSessions } from './state/useHiddenSessions';
 import { useKeyboard } from './state/useKeyboard';
 import { SettingsContext, useSettings } from './state/useSettings';
 import { useSpendSamples } from './state/useSpendSamples';
@@ -39,7 +38,7 @@ export function App() {
   const [teamsOpen, setTeamsOpen] = useState(false);
   // The entry splash plays once per app load over whichever shell renders
   // underneath, and is unmounted the moment it reports done.
-  const [splashDone, setSplashDone] = useState(splashSkipped);
+  const [splashDone, setSplashDone] = useState(false);
 
   // The theme lives on the console root, but the page behind it is the body's,
   // and an overscroll on a light theme would otherwise flash the dark default.
@@ -114,7 +113,6 @@ export function App() {
   const [dismissed, setDismissed] = useState(false);
   const [pendingDismiss, setPendingDismiss] = useState(false);
   const [awaySince, setAwaySince] = useState<{ at: number; cost: number } | null>(null);
-  const [elsewhere, setElsewhere] = useState<TeamSummary[]>([]);
 
   // The console actually switching teams is what "watching" means — dismissal
   // never survives past that, whichever way the switch happened.
@@ -122,48 +120,13 @@ export function App() {
     setDismissed(false);
   }, [state?.teamName]);
 
-  const { hidden, hide, unhide, showAll } = useHiddenSessions();
-  /**
-   * Nothing worth drawing in the body: the session on screen was hidden with
-   * the picker's `✕`. That is the only way to get here now — a session with no
-   * team in it draws its own stream (supersedes decision 23), so "no team
-   * anywhere" is no longer a reason to draw nothing.
-   */
-  const currentHidden = state ? hidden.has(state.teamName) : false;
-  const bodyEmpty = currentHidden;
-
-  // ONE rule for both empty screens. They disagreed: LeftSession got the raw
-  // list, so hidden sessions were one-click destinations there and absent from
-  // NoSessions. What is offered is what the picker would let you switch to,
-  // nothing more.
-  const switchable = elsewhere.filter((t) => !hidden.has(t.name));
-  // Everything the picker is dropping, plus the session on screen when hiding it
-  // is how we got here — `elsewhere` excludes it, and without it the way back
-  // disappears exactly when it is needed.
-  const notShownCount =
-    elsewhere.filter((t) => hidden.has(t.name)).length + (currentHidden ? 1 : 0);
-
-  // Fetched only once there's something to show — the same "on open" rule the
-  // picker's own listing follows.
-  useEffect(() => {
-    if ((!dismissed && !currentHidden) || !state) return;
-    let live = true;
-    fetch('/api/teams')
-      .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
-      .then((payload) => {
-        if (!live) return;
-        // Finished sessions stay: the design makes paging back into "a running
-        // or finished session" the picker's whole point, and dropping them here
-        // left the ✓ treatment on both screens as dead code.
-        setElsewhere(payload.teams.filter((t) => !t.current));
-      })
-      .catch(() => {
-        if (live) setElsewhere([]);
-      });
-    return () => {
-      live = false;
-    };
-  }, [dismissed, currentHidden, state?.teamName, state?.agents.length]);
+  // What the picker would let you switch to, straight off the frame.
+  const elsewhere = useMemo(
+    () => (state?.sessions ?? []).filter((r) => !r.current).sort(byRow),
+    [state?.sessions],
+  );
+  // Nothing live, nothing on screen: the frame has rows and none, and no roster.
+  const nothingLive = state !== null && state.sessions !== undefined && state.sessions.length === 0 && state.agents.length === 0;
 
   const watchAgain = useCallback(() => {
     setDismissed(false);
@@ -171,16 +134,8 @@ export function App() {
   }, []);
 
   const watchState = useMemo(
-    () => ({
-      dismissed,
-      requestStopWatching: () => setPendingDismiss(true),
-      watchAgain,
-      hidden,
-      hideSession: hide,
-      unhideSession: unhide,
-      showHidden: showAll,
-    }),
-    [dismissed, watchAgain, hidden, hide, unhide, showAll],
+    () => ({ dismissed, requestStopWatching: () => setPendingDismiss(true), watchAgain }),
+    [dismissed, watchAgain],
   );
 
   // The launcher announces a new team at a console that is already running for
@@ -208,39 +163,21 @@ export function App() {
 
   // A bare open — no `?team=` announce, no `/s/` route — otherwise lands on
   // whatever the server happened to be showing at boot. The operator wants it
-  // to land on the most recently ACTIVE session instead: the first `live` row,
-  // else the first `idle` one, off the same listing and under the same folder
-  // scope the picker uses, so a bare open stays inside the operator's folder.
-  // Ref-guarded like the two effects above, so it runs once per page load and
-  // never fights a later manual switch; an announce or a route still wins
-  // outright.
+  // to land on the most active session instead, read off the frame's own
+  // `sessions`. Ref-guarded like the two effects above, so it runs once per
+  // page load and never fights a later manual switch; an announce or a route
+  // still wins outright.
   const autoResumed = useRef(false);
   useEffect(() => {
-    if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state) return;
+    if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state?.sessions) return;
     autoResumed.current = true;
-    // Guards the async continuation, not just re-invocation: without it, a
-    // manual pick or a late announce that lands while this GET is in flight
-    // would still get clobbered by a stale POST once it resolves — the same
-    // problem the `elsewhere` effect above solves with the same pattern.
-    let live = true;
-    fetch('/api/teams?folder=*')
-      .then((res) => (res.ok ? (res.json() as Promise<TeamsResponse>) : Promise.reject(res.status)))
-      .then((payload) => {
-        if (!live) return;
-        const rows = scopedRows(payload.teams, readStoredFolders(), payload.folders ?? []);
-        const target = rows.find((t) => t.state === 'live') ?? rows.find((t) => t.state === 'idle');
-        // Same flag TeamSelect's own `isCurrent` reads.
-        if (!target || target.current) return;
-        void postJson(
-          target.sessionOnly
-            ? `/api/select-session/${encodeURIComponent(target.leadSessionId ?? target.name)}`
-            : `/api/teams/${encodeURIComponent(target.name)}/select`,
-        );
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
+    // Most recently active, inside the operator's folder — the same scope the
+    // picker opens on — so a bare open stays where the operator works.
+    const scope = scopeOf(state.sessions, readStoredFolder());
+    const rows = state.sessions.filter((r) => scope === null || r.folder === scope).sort(byRow);
+    const target = rows[0];
+    if (!target || target.current) return;
+    void postJson(`/api/select-session/${encodeURIComponent(target.id)}`);
   }, [state, store.announcedTeam, store.sessionRoute]);
 
   // The wall pins the lead leftmost then departed last, so column navigation
@@ -421,25 +358,20 @@ export function App() {
         hasSubagents={hasSubagents}
       />
       <main className="console-body">
-        {/* Hiding wins over dismissal: a session taken out of the picker has no
-            row left to page back into, so LeftSession's "watch again" would
-            point at nothing. */}
-        {bodyEmpty ? (
+        {nothingLive ? (
           <NoSessions
-            remaining={switchable}
-            notShownCount={notShownCount}
-            onShowHidden={showAll}
-            onSwitchTo={(name) => void postJson(`/api/teams/${encodeURIComponent(name)}/select`)}
+            others={elsewhere}
+            onSwitchTo={(id) => void postJson(`/api/select-session/${encodeURIComponent(id)}`)}
           />
         ) : dismissed ? (
           <LeftSession
             state={state}
             now={now}
             awaySince={awaySince}
-            elsewhere={switchable}
+            elsewhere={elsewhere}
             onWatchAgain={watchState.watchAgain}
             onEndForReal={endForReal}
-            onSwitchTo={(name) => void postJson(`/api/teams/${encodeURIComponent(name)}/select`)}
+            onSwitchTo={(id) => void postJson(`/api/select-session/${encodeURIComponent(id)}`)}
           />
         ) : (
         <>

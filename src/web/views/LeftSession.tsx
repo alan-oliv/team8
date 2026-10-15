@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { TeamState, TeamSummary } from '../../shared/domain';
+import type { SessionRow, TeamState } from '../../shared/domain';
 import { TerminalSprite } from '../components/Portrait';
 import { formatCost, formatElapsed } from '../format';
 
@@ -10,14 +10,6 @@ const ELLIPSIS: CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-// Same three states the picker draws, for the sessions listed below the card.
-const DOT = { live: '●', idle: '○', done: '✓' } as const;
-const DOT_COLOR = {
-  live: 'var(--color-accent-400)',
-  idle: 'var(--color-neutral-600)',
-  done: 'var(--color-neutral-700)',
-} as const;
-
 export interface LeftSessionProps {
   /** The session the operator dismissed — still the one this tab's SSE stream carries. */
   state: TeamState;
@@ -25,10 +17,10 @@ export interface LeftSessionProps {
   /** Set the moment "stop watching" was confirmed, so the card can show what changed since. */
   awaySince: { at: number; cost: number } | null;
   /** Other sessions on the machine, one click away. */
-  elsewhere: TeamSummary[];
+  elsewhere: SessionRow[];
   onWatchAgain(): void;
   onEndForReal(): void;
-  onSwitchTo(name: string): void;
+  onSwitchTo(id: string): void;
 }
 
 /**
@@ -154,37 +146,37 @@ export function LeftSession({ state, now, awaySince, elsewhere, onWatchAgain, on
               <span style={{ color: 'var(--color-neutral-600)', fontSize: 10, letterSpacing: '.12em' }}>
                 ELSEWHERE ON THIS MACHINE
               </span>
-              {elsewhere.map((s) => {
-                const dotState = s.state ?? (s.live ? 'live' : 'done');
-                return (
-                  <div
-                    key={s.name}
-                    data-testid="left-session-elsewhere-row"
-                    onClick={() => onSwitchTo(s.name)}
-                    style={{
-                      display: 'flex',
-                      gap: 9,
-                      alignItems: 'baseline',
-                      padding: '7px 9px',
-                      margin: '0 -9px',
-                      borderRadius: 'var(--radius-sm)',
-                      cursor: 'pointer',
-                    }}
+              {elsewhere.map((s) => (
+                <div
+                  key={s.id}
+                  data-testid="left-session-elsewhere-row"
+                  onClick={() => onSwitchTo(s.id)}
+                  style={{
+                    display: 'flex',
+                    gap: 9,
+                    alignItems: 'baseline',
+                    padding: '7px 9px',
+                    margin: '0 -9px',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{ fontSize: 10, color: s.busy ? 'var(--color-accent-400)' : 'var(--color-neutral-600)' }}
                   >
-                    <span aria-hidden="true" style={{ fontSize: 10, color: DOT_COLOR[dotState] }}>
-                      {DOT[dotState]}
-                    </span>
-                    <span style={{ color: 'var(--color-neutral-300)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                      {s.goal ?? s.name}
-                    </span>
-                    <span style={{ color: 'var(--color-neutral-600)', fontSize: 11, ...ELLIPSIS }}>{s.branch}</span>
-                    <span style={{ flex: 1 }} />
-                    <span style={{ color: 'var(--color-neutral-600)', fontSize: 10, whiteSpace: 'nowrap' }}>
-                      {s.members} agent{s.members === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                );
-              })}
+                    {s.busy ? '●' : '○'}
+                  </span>
+                  <span style={{ color: 'var(--color-neutral-300)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
+                    {s.title}
+                  </span>
+                  <span style={{ color: 'var(--color-neutral-600)', fontSize: 11, ...ELLIPSIS }}>{s.branch}</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ color: 'var(--color-neutral-600)', fontSize: 10, whiteSpace: 'nowrap' }}>
+                    {s.members} agent{s.members === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
