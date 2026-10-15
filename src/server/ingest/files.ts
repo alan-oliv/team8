@@ -1,6 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import { watchAppendOnly } from '../watch/tail';
+import { watchAppendOnly, type TailState } from '../watch/tail';
+export type { TailState };
 import { readJsonSafe, watchJsonTree } from '../watch/jsonfile';
 import type { Store, StoredEvent } from '../store';
 import type { AgentUsageTotals, SubagentPayload, TaskPayload, TaskRemovedPayload, TranscriptPayload } from '../project';
@@ -101,6 +102,12 @@ export interface IngestConfig {
    * first, mostly directories Claude Code left behind when their sessions ended.
    */
   adoptExistingTeams?: boolean;
+  /**
+   * Tail states a previous ingest for this same target handed out on close.
+   * The store already holds that target's events; seeding the watcher is what
+   * stops a switch back to a session from re-parsing its transcript from byte 0.
+   */
+  tails?: ReadonlyMap<string, TailState>;
 }
 
 export interface FileIngest {
@@ -111,7 +118,8 @@ export interface FileIngest {
    * thing hooks never carry. Unknown agent: a no-op.
    */
   drainAgent(agent: string): Promise<void>;
-  close(): void;
+  /** Stops the timers and watchers and hands back every tail state, for the next ingest of this target. */
+  close(): Map<string, TailState>;
 }
 
 const WORKFLOW_SEGMENT = `${path.sep}workflows${path.sep}`;
@@ -1092,7 +1100,7 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       (st) => marks.set(file, st.mtimeMs),
       () => undefined,
     );
-  });
+  }, config.tails);
 
   const sweepTranscript = async (file: string) => {
     if (isWorkflowPath(file)) {
@@ -1291,7 +1299,10 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       closed = true;
       if (timer) clearInterval(timer);
       if (poll) clearInterval(poll);
+      // Taken before the watchers close: `transcripts` is one of them.
+      const tails = transcripts.states();
       for (const w of watchers) w.close();
+      return tails;
     },
   };
 }

@@ -2486,3 +2486,36 @@ describe('deleted task files', () => {
     }
   });
 });
+
+describe('tail states across ingests', () => {
+  it('hands its tail states out on close and starts from them when given back', async () => {
+    await layout();
+    const projectDir = path.join(paths.projects, '-Users-dev-code-app');
+    await fs.mkdir(projectDir, { recursive: true });
+    const transcript = path.join(projectDir, `${LEAD_SESSION}.jsonl`);
+    const line = (text: string) =>
+      `${JSON.stringify({ type: 'user', sessionId: LEAD_SESSION, cwd: '/Users/dev/code/app', timestamp: '2026-10-15T09:00:00.000Z', message: { role: 'user', content: text } })}\n`;
+    await fs.writeFile(transcript, line('one'));
+
+    const first = startFileIngest(store, { paths, leadSessionId: LEAD_SESSION, sessionOnly: true, sweepIntervalMs: 0, tailPollMs: 0 });
+    await first.sweep();
+    const tails = first.close();
+    const after = (await fs.stat(transcript)).size;
+    expect(tails.get(transcript)?.offset).toBe(after);
+
+    await fs.appendFile(transcript, line('two'));
+    const second = startFileIngest(store, { paths, leadSessionId: LEAD_SESSION, sessionOnly: true, sweepIntervalMs: 0, tailPollMs: 0, tails });
+    await second.sweep();
+    const again = second.close();
+    expect(again.get(transcript)?.offset).toBe((await fs.stat(transcript)).size);
+    // The seed was honoured: the second ingest never read from byte 0.
+    expect(again.get(transcript)?.inode).toBe(tails.get(transcript)?.inode);
+    expect((again.get(transcript)?.offset ?? 0) - (tails.get(transcript)?.offset ?? 0)).toBe(Buffer.byteLength(line('two')));
+  });
+
+  it('returns an empty map when it never read a transcript', async () => {
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 0, tailPollMs: 0 });
+    await ingest.sweep();
+    expect(ingest.close().size).toBe(0);
+  });
+});
