@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BuildInfo, SubagentTree, WorkflowRun as Run } from '../../shared/domain';
+import type { BuildInfo, SessionRow, SubagentTree, WorkflowRun as Run } from '../../shared/domain';
 import { Bar, METRIC } from '../chrome/Bar';
 import { RunSelect } from '../chrome/RunSelect';
 import { TeamSelect } from '../chrome/TeamSelect';
@@ -55,6 +55,7 @@ export interface WorkflowProps {
   /** The session's Task-subagent tree — the bar carries it in both modes. */
   subagents?: SubagentTree;
   build?: BuildInfo;
+  sessions: SessionRow[];
 }
 
 /**
@@ -65,7 +66,7 @@ export interface WorkflowProps {
  */
 export function Workflow({
   run, runs, onSelectRun, backToTeam, now, teamName, sessionName, switching, teamsOpen, onTeamsOpenChange,
-  appearance, subagents, build,
+  appearance, subagents, build, sessions,
 }: WorkflowProps) {
   const allSubagents = Object.values(subagents ?? {}).flatMap(flattenSubagents);
   const subagentTokens = allSubagents.reduce((n, s) => n + (s.tokens ?? 0), 0);
@@ -104,6 +105,7 @@ export function Workflow({
               open={teamsOpen}
               onOpenChange={onTeamsOpenChange}
               now={now}
+              sessions={sessions}
             />
             <RunSelect
               run={run}

@@ -386,6 +386,7 @@ export function App() {
           appearance={appearance}
           subagents={state.subagents}
           build={state.build}
+          sessions={state.sessions ?? []}
         />
       </div>
       </WatchContext.Provider>
