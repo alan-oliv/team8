@@ -329,6 +329,15 @@ it('does not switch when the session on screen is already the most active in its
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+it('never moves a bare open between two sessions just as busy as each other', () => {
+  const [current, b5] = sampleSessions();
+  const sessions: SessionRow[] = [{ ...current, title: 'zulu' }, { ...b5, busy: true }];
+  const fetchMock = stubFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), sessions }));
+  expect(selects(fetchMock)).toEqual([]);
+});
+
 it('waits for a frame that carries sessions before deciding', () => {
   const fetchMock = stubFetch();
   render(<App />);

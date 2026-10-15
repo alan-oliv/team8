@@ -162,21 +162,24 @@ export function App() {
   }, [store.sessionRoute]);
 
   // A bare open — no `?team=` announce, no `/s/` route — otherwise lands on
-  // whatever the server happened to be showing at boot. The operator wants it
-  // to land on the most active session instead, read off the frame's own
-  // `sessions`. Ref-guarded like the two effects above, so it runs once per
+  // whatever the server happened to be showing at boot. When a session in the
+  // same folder is busy and the one on screen is not, it lands there instead,
+  // read off the frame's own `sessions`. Ref-guarded like the two effects above, so it runs once per
   // page load and never fights a later manual switch; an announce or a route
   // still wins outright.
   const autoResumed = useRef(false);
   useEffect(() => {
     if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state?.sessions) return;
     autoResumed.current = true;
-    // Most recently active, inside the operator's folder — the same scope the
-    // picker opens on — so a bare open stays where the operator works.
+    // Inside the operator's folder — the same scope the picker opens on — so a
+    // bare open stays where the operator works. The switch is server-wide, so it
+    // only moves to a row strictly more active (busy over idle), never between
+    // equals: the frame carries no recency to break that tie on.
     const scope = scopeOf(state.sessions, readStoredFolder());
     const rows = state.sessions.filter((r) => scope === null || r.folder === scope).sort(byRow);
     const target = rows[0];
-    if (!target || target.current) return;
+    const here = rows.find((r) => r.current);
+    if (!target || target.current || (here && here.busy === target.busy)) return;
     void postJson(`/api/select-session/${encodeURIComponent(target.id)}`);
   }, [state, store.announcedTeam, store.sessionRoute]);
 

@@ -13,7 +13,6 @@ afterEach(cleanup);
 
 const SESSIONS = sampleSessions();
 const B5 = 'b5129c7b-a009-4de3-9a42-4664d1214f39';
-const C1 = 'c1a2b3c4-0000-4000-8000-000000000003';
 const SELECT = (id: string) => [
   `/api/select-session/${id}`,
   { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
@@ -90,7 +89,7 @@ it('lists only folders with a live session, with their counts, and no `all`', ()
 });
 
 it('switches folder on a pick, remembers it, and ignores a remembered folder with nothing live', () => {
-  const first = renderSelect();
+  renderSelect();
   fireEvent.click(screen.getByTestId('folder-chip'));
   fireEvent.click(within(screen.getByTestId('folder-menu')).getAllByRole('option')[1]);
   expect(screen.getAllByTestId('team-title').map((el) => el.textContent)).toEqual(['hatch api']);

@@ -60,7 +60,7 @@ export function NoSessions({ others, onSwitchTo }: NoSessionsProps) {
                   same reason the stop glyph and the in-flight badge refuse
                   to overstate. */}
               The picker lists sessions whose Claude process is running. Resume a session
-              from your terminal — session-deck, or `claude --resume` — and it appears
+              from your terminal — session-deck, or <code>claude --resume</code> — and it appears
               here within a few seconds. Nothing was stopped and nothing was deleted.
             </p>
           </div>
