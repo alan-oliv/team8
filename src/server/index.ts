@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { openStore, type Store, type EventKind, type StoredEvent } from './store';
 import { project, transcriptHistory, transcriptLineText } from './project';
-import { startFileIngest } from './ingest/files';
+import { startFileIngest, type TailState } from './ingest/files';
 import { createHookHandlers } from './ingest/hooks';
 import { createPermits } from './control/permits';
 import { setTeamsRoot } from './control/mailbox';
@@ -1255,6 +1255,7 @@ export async function main(argv: string[]): Promise<number> {
       leadSessionId: team.leadSessionId || (leadSessionId ?? ''),
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
+      ...(liveRows ? { sessions: liveRows } : {}),
       switching,
       watching,
       build,
@@ -1291,8 +1292,22 @@ export async function main(argv: string[]): Promise<number> {
   // boot by `--session`, and by selectSession below. Kept apart from
   // `currentTeam` so neither mode's no-op check can answer for the other.
   let currentSession = teamName ? '' : (leadSessionId ?? '');
+  // The picker's rows, as of the follower's last tick, and their JSON so a
+  // tick that changed nothing publishes nothing. Not `sessions`: several
+  // closures below bind that name to `readSessions()`.
+  let liveRows: SessionRow[] | undefined;
+  let liveRowsJson = '';
+  // Tail states per target, handed from the ingest that served a target to
+  // the next one opened for it: the store keeps the events, this keeps the
+  // offsets, and a switch back then pumps only what was appended since.
+  const tailsByTarget = new Map<string, Map<string, TailState>>();
 
-  const startIngest = (gen: number, team: string | undefined, lead: string | undefined) =>
+  const startIngest = (
+    gen: number,
+    team: string | undefined,
+    lead: string | undefined,
+    tails?: Map<string, TailState>,
+  ) =>
     startFileIngest(fencedSink(live, gen, () => generation), {
       paths: {
         projects: path.join(cli.claudeHome, 'projects'),
@@ -1304,6 +1319,7 @@ export async function main(argv: string[]): Promise<number> {
       leadSessionId: lead,
       sessionOnly: team === undefined && lead !== undefined,
       adoptExistingTeams: false,
+      tails,
       onTeam: (info) => {
         if (gen !== generation) return;
         store.setTeam(info.teamName);
@@ -1331,8 +1347,8 @@ export async function main(argv: string[]): Promise<number> {
 
   /**
    * The same facts a picker row carries, read off the session's own transcript
-   * and sidecar — for a session the scoped listing in `followRealTeam` has no
-   * row for, because it lives in a folder other than the console's own.
+   * and sidecar — for a target `followRealTeam`'s listing has no row for,
+   * because its process is not running.
    */
   const leadFactsOf = async (id: string | undefined): Promise<typeof leadFacts> => {
     if (!id) return {};
@@ -1357,7 +1373,7 @@ export async function main(argv: string[]): Promise<number> {
     // pick the select route would refuse.
     hub.publish();
     const gen = ++generation;
-    ingest.close();
+    tailsByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(team);
     leadSessionId = lead;
     currentTeam = team;
@@ -1367,7 +1383,7 @@ export async function main(argv: string[]): Promise<number> {
     // session you just left in the header of the one you switched to. Cleared
     // here so the worst case is a blank field for a moment, not a wrong one.
     leadFacts = {};
-    ingest = startIngest(gen, team, lead);
+    ingest = startIngest(gen, team, lead, tailsByTarget.get(team));
     // Answering before the sweep lands would return a console with no team name
     // — which is also what http.ts's team() reads, so a control request racing
     // that window would throw inside sendToInbox's name guard.
@@ -1430,13 +1446,13 @@ export async function main(argv: string[]): Promise<number> {
   const retargetSession = async (sessionId: string): Promise<void> => {
     hub.publish();
     const gen = ++generation;
-    ingest.close();
+    tailsByTarget.set(currentTeam || currentSession, ingest.close());
     store.setTeam(sessionId);
     leadSessionId = sessionId;
     currentTeam = '';
     currentSession = sessionId;
     leadFacts = {};
-    ingest = startIngest(gen, undefined, sessionId);
+    ingest = startIngest(gen, undefined, sessionId, tailsByTarget.get(sessionId));
     await ingest.sweep();
     // Not left to the follower's next tick: the header would name the session
     // by its id for up to FOLLOW_INTERVAL_MS after every switch.
@@ -1517,7 +1533,6 @@ export async function main(argv: string[]): Promise<number> {
     stream: hub,
     state: publish,
     readOnly: cli.readOnly,
-    listTeams: undefined,
     history: (agent: string) => transcriptHistory(store.replay(), agent),
     lineText: (agent: string, id: string) => transcriptLineText(store.replay(), agent, id),
     planTask: (n: number) => plans.task(n),
@@ -1567,21 +1582,27 @@ export async function main(argv: string[]): Promise<number> {
     // `claude plugin update` can land a newer build while this one serves.
     build = withInstalled(build, await installedVersion(cli.claudeHome));
 
-    // The listing already resolved both of these off disk for every row, so
-    // caching the current team's costs nothing. The frame's own copies come
+    // The listing already resolved both of these off disk for every live row,
+    // so caching the current one's costs nothing. The frame's own copies come
     // from the `statusline` hook, which only fires when the console owns the
     // `statusLine` key — an optional install step — so on most machines the
     // header fell back to the directory id while the picker row two lines
-    // below it showed the real name. A session picked from another folder has
-    // no row in this listing at all, so its facts come off its own transcript.
+    // below it showed the real name. A target that is not live has no row, so
+    // its facts come off its own transcript.
     const mine = rows.find((r) => r.current);
     const facts = mine
       ? { sessionName: mine.title, branch: mine.branch, mode: mine.mode }
       : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
     // A switch that landed while the reads above awaited has set its own facts;
-    // these are the previous target's.
+    // these are the previous target's, and the rows' `current` flags with them.
     if (gen !== generation) return;
     leadFacts = facts;
+    const json = JSON.stringify(rows);
+    if (json !== liveRowsJson) {
+      liveRows = rows;
+      liveRowsJson = json;
+      hub.publish();
+    }
 
     // A select can claim `switching` and move the watch while the reads above
     // await, before its retarget bumps `generation`; moving now would race it.
