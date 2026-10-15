@@ -1099,7 +1099,7 @@ interface TeamWalk {
   adopted: Set<string>;
 }
 
-async function walkTeams(
+export async function walkTeams(
   teamsRoot: string,
   sessionsRoot: string,
   current: string,
@@ -1119,6 +1119,12 @@ async function walkTeams(
   const liveTeams = projectsRoot
     ? await teamsOfLiveSessions(projectsRoot, sessions)
     : new Map<string, string>();
+  // The folders live sessions started in: the one piece of folder evidence
+  // adoptByCwd accepts, and the only reason to read further into a team whose
+  // config names a dead lead.
+  const liveCwds = new Set(
+    [...sessions.live].map((id) => sessions.cwds.get(id)).filter((c): c is string => Boolean(c)),
+  );
   const now = Date.now();
   const teams: TeamSummary[] = [];
   // Team directory -> the cwd its lead sits in, kept for the cwd pass below.
@@ -1151,10 +1157,35 @@ async function walkTeams(
     // that is still running (a team that has never been re-keyed).
     const leadSession = liveTeams.get(name) ?? leadSessionId;
     const leadAlive = liveTeams.has(name) || (leadSessionId !== '' && sessions.live.has(leadSessionId));
-    const lastActivityAt = await lastActivityOf(teamDir, configMtimeMs);
-    const recent = now - lastActivityAt < IDLE_GRACE_MS;
     const lead = config.members.find((m) => m.agentId === config.leadAgentId) ?? config.members[0];
-    leadCwds.set(name, lead?.cwd ?? '');
+    const leadCwd = lead?.cwd ?? '';
+    // Decided on config.json alone. A team with no live lead and no live
+    // session in its folder is recorded from its config and nothing else —
+    // enough for `teamOfSession` to still match a `/branch` ancestor's team,
+    // and for `autoTeam` and the picker to skip it — before its inboxes, its
+    // lead's transcript or its tree are read. That was most of the walk's
+    // time on a machine with a hundred finished teams.
+    if (!leadAlive && !liveCwds.has(leadCwd)) {
+      leadSessions.set(name, leadSession);
+      teams.push({
+        name,
+        members: config.members.length,
+        createdAt: typeof config.createdAt === 'number' ? config.createdAt : 0,
+        leadSessionId,
+        leadAlive: false,
+        lastActivityAt: configMtimeMs,
+        // For boot discovery only, never a row: recency off the stat already
+        // taken lets `autoTeam` pick a just-written team before its lead's
+        // sidecar exists. `listLive` filters on `leadAlive`, which stays false.
+        live: now - configMtimeMs < IDLE_GRACE_MS,
+        current: false,
+        state: 'done',
+      });
+      continue;
+    }
+
+    const lastActivityAt = await lastActivityOf(teamDir, configMtimeMs);
+    leadCwds.set(name, leadCwd);
     leadSessions.set(name, leadSession);
     // Where the lead's files actually are: the sidecar cwd is the started-in
     // directory and a re-keyed team's members[] can name another one, so both
@@ -1166,14 +1197,10 @@ async function walkTeams(
         : null;
     const workflow = await workflowOf(leadDir, now);
     const subagents = await subagentCountOf(leadDir);
-    const leadCwd = lead?.cwd ?? '';
-    // A finished team's own uncommitted work is gone by the time anyone is
-    // looking at the row — this is just whatever the folder's tree holds
-    // right now, which is not what that session did. Only a live or idle
-    // row, whose tree the session might still touch, earns the read.
-    const state: TeamSummary['state'] =
-      leadAlive && sessions.busy.has(leadSession) ? 'live' : leadAlive || recent ? 'idle' : 'done';
-    if (state !== 'done') needsDiffstat.set(name, leadCwd);
+    // A folder candidate adoption passes over below keeps `done`; adoptByCwd
+    // rewrites the one it takes.
+    const state: TeamSummary['state'] = !leadAlive ? 'done' : sessions.busy.has(leadSession) ? 'live' : 'idle';
+    needsDiffstat.set(name, leadCwd);
     const leadTranscript = leadDir ? await transcriptMeta(`${leadDir}.jsonl`) : {};
     teams.push({
       // The DIRECTORY name, not config.name: the ingest gates its own team's
@@ -1185,15 +1212,13 @@ async function walkTeams(
       leadSessionId,
       leadAlive,
       lastActivityAt,
-      live: leadAlive || recent,
+      live: leadAlive,
       current: false,
       branch: leadTranscript.branch ?? (await branchOf(lead?.cwd)),
       // Named after the session actually driving the team. Keyed on
       // config.leadSessionId this was blank for every re-keyed team — the live
       // one showed no name while a four-hour-dead one showed its own.
       goal: sessions.names.get(leadSession) ?? leadTranscript.title,
-      // `idle` is a team whose lead process is gone but whose files moved
-      // recently — it can still be paged back into; `done` is finished.
       state,
       // Where the lead last worked — never members[].cwd, which a re-keyed
       // team leaves naming the folder its stale lead joined from.

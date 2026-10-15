@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { promisify } from 'node:util';
 import os from 'node:os';
@@ -15,6 +15,7 @@ import {
   sessionProjectDir,
   workflowScriptOf,
   transcriptMeta,
+  walkTeams,
   DEFAULT_PORT,
   IDLE_GRACE_MS,
   TAIL_WINDOW,
@@ -33,6 +34,57 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   await fs.rm(dir, { recursive: true, force: true });
 });
+
+/** A pid that answered once and never will again. */
+async function deadPid(): Promise<number> {
+  const child = spawn('true', [], { stdio: 'ignore' });
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  return child.pid!;
+}
+
+/** `teams/<name>/config.json`, with every member in `cwd`. */
+async function writeTeamDir(
+  root: string,
+  name: string,
+  opts: { leadSessionId: string; members: number; cwd: string; createdAt?: number },
+): Promise<void> {
+  const teamDir = path.join(root, 'teams', name);
+  await fs.mkdir(teamDir, { recursive: true });
+  await fs.writeFile(
+    path.join(teamDir, 'config.json'),
+    JSON.stringify({
+      name,
+      createdAt: opts.createdAt ?? 1,
+      leadAgentId: 'team-lead',
+      leadSessionId: opts.leadSessionId,
+      members: Array.from({ length: opts.members }, (_, i) => ({
+        agentId: i === 0 ? 'team-lead' : `agent-${i}`,
+        name: i === 0 ? 'team-lead' : `agent-${i}`,
+        cwd: opts.cwd,
+      })),
+    }),
+  );
+}
+
+/** `sessions/<pid>.json` — the file is named for the pid and carries the session id inside. */
+async function writeSidecar(
+  root: string,
+  pid: number,
+  sessionId: string,
+  opts: { status?: 'busy' | 'idle'; cwd?: string; name?: string } = {},
+): Promise<void> {
+  await fs.mkdir(path.join(root, 'sessions'), { recursive: true });
+  await fs.writeFile(path.join(root, 'sessions', `${pid}.json`), JSON.stringify({ pid, sessionId, ...opts }));
+}
+
+/** `projects/<slug(cwd)>/<sessionId>.jsonl` with one record per entry. */
+async function writeTranscript(root: string, cwd: string, sessionId: string, records: object[]): Promise<string> {
+  const projectDir = path.join(root, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  await fs.mkdir(projectDir, { recursive: true });
+  const file = path.join(projectDir, `${sessionId}.jsonl`);
+  await fs.writeFile(file, records.map((r) => `${JSON.stringify({ sessionId, cwd, ...r })}\n`).join(''));
+  return file;
+}
 
 describe('parseArgs', () => {
   it('binds DEFAULT_PORT to 4823, matching the vite proxy and lifecycle probe', () => {
@@ -395,6 +447,68 @@ describe('transcriptMeta', () => {
     expect((await transcriptMeta(file)).title).toBe('one');
     await fs.appendFile(file, rec({ type: 'custom-title', customTitle: 'two' }));
     expect((await transcriptMeta(file)).title).toBe('two');
+  });
+});
+
+describe('walkTeams', () => {
+  const APP = '/Users/x/code/app';
+  const LIVE = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const DEAD = 'bbbbbbbb-0000-4000-8000-000000000002';
+  const roots = () => [path.join(dir, 'teams'), path.join(dir, 'sessions'), path.join(dir, 'projects')] as const;
+
+  it('keeps a team whose lead process is running, and drops one whose lead is gone', async () => {
+    await writeTeamDir(dir, 'session-aaaaaaaa', { leadSessionId: LIVE, members: 3, cwd: APP });
+    await writeTeamDir(dir, 'session-bbbbbbbb', { leadSessionId: DEAD, members: 2, cwd: '/Users/x/code/other' });
+    const old = (Date.now() - 86_400_000) / 1000;
+    await fs.utimes(path.join(dir, 'teams', 'session-bbbbbbbb', 'config.json'), old, old);
+    await writeSidecar(dir, process.pid, LIVE, { status: 'busy', cwd: APP });
+    await writeSidecar(dir, await deadPid(), DEAD, { status: 'busy', cwd: '/Users/x/code/other' });
+    await writeTranscript(dir, APP, LIVE, [{ type: 'user', entrypoint: 'cli', gitBranch: 'main', message: 'hi' }]);
+    const [teams, sessions, projects] = roots();
+
+    const walk = await walkTeams(teams, sessions, '', projects);
+    const byName = new Map(walk.teams.map((t) => [t.name, t]));
+    expect(byName.get('session-aaaaaaaa')).toMatchObject({ leadAlive: true, live: true, state: 'live', members: 3, branch: 'main' });
+    // Still in the walk — a `/branch` ancestor's team must stay matchable —
+    // but from config.json alone: no branch, no goal, not live.
+    expect(byName.get('session-bbbbbbbb')).toMatchObject({ leadAlive: false, live: false, state: 'done', members: 2 });
+    expect(byName.get('session-bbbbbbbb')?.branch).toBeUndefined();
+  });
+
+  it('calls a team idle, not done, when its lead is parked at the prompt', async () => {
+    await writeTeamDir(dir, 'session-aaaaaaaa', { leadSessionId: LIVE, members: 2, cwd: APP });
+    await writeSidecar(dir, process.pid, LIVE, { status: 'idle', cwd: APP });
+    const [teams, sessions, projects] = roots();
+    const walk = await walkTeams(teams, sessions, '', projects);
+    expect(walk.teams[0]?.state).toBe('idle');
+    expect(walk.teams[0]?.live).toBe(true);
+  });
+
+  it('adopts a re-keyed team through the live session in its folder, and drops a leftover one', async () => {
+    // Re-keyed: config.leadSessionId names a session that no longer exists, but a
+    // live session runs in the same folder and the team moved recently.
+    await writeTeamDir(dir, 'session-bbbbbbbb', { leadSessionId: DEAD, members: 2, cwd: APP });
+    // Leftover: same folder, but nothing has touched it for a day.
+    await writeTeamDir(dir, 'session-cccccccc', { leadSessionId: 'cccccccc-0000-4000-8000-000000000003', members: 2, cwd: APP });
+    const old = (Date.now() - 86_400_000) / 1000;
+    await fs.utimes(path.join(dir, 'teams', 'session-cccccccc', 'config.json'), old, old);
+    await writeSidecar(dir, process.pid, LIVE, { status: 'busy', cwd: APP, name: 'the live one' });
+    const [teams, sessions, projects] = roots();
+
+    const walk = await walkTeams(teams, sessions, '', projects);
+    const byName = new Map(walk.teams.map((t) => [t.name, t]));
+    expect(byName.get('session-bbbbbbbb')).toMatchObject({ leadAlive: true, live: true, goal: 'the live one' });
+    expect(byName.get('session-cccccccc')).toMatchObject({ leadAlive: false, live: false });
+    expect(walk.leadSessions.get('session-bbbbbbbb')).toBe(LIVE);
+    expect(walk.adopted.has(LIVE)).toBe(true);
+  });
+
+  it('returns no teams when there is no teams directory', async () => {
+    const [teams, sessions, projects] = roots();
+    await writeSidecar(dir, process.pid, LIVE, { status: 'busy', cwd: APP });
+    const walk = await walkTeams(teams, sessions, '', projects);
+    expect(walk.teams).toEqual([]);
+    expect(walk.sessions.live.has(LIVE)).toBe(true);
   });
 });
 
