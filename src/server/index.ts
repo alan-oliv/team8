@@ -353,8 +353,12 @@ function lastDecidedMode(buf: Buffer): DecidedMode | undefined {
   return undefined;
 }
 
-// ponytail: a transcript's first read loads it whole (the largest seen is 30 MB); stream it if memory ever matters
-async function transcriptMeta(
+/** First read of a transcript: this much from the end, plus HEAD_WINDOW from the start. */
+export const TAIL_WINDOW = 256 * 1024;
+/** `entrypoint` sits on the first record, so the head is read once, separately. */
+export const HEAD_WINDOW = 64 * 1024;
+
+export async function transcriptMeta(
   file: string,
 ): Promise<{
   title?: string;
@@ -371,13 +375,29 @@ async function transcriptMeta(
     return {};
   }
   const known = transcriptFacts.get(file);
-  const offset = known && known.offset <= size ? known.offset : 0;
-  const facts: TranscriptFacts = known && offset > 0 ? { ...known.facts } : {};
+  const first = !known || known.offset > size;
+  // A first read of a big file starts TAIL_WINDOW from the end, at the next
+  // record boundary; a title or branch written earlier and never rewritten is
+  // not seen, and the row falls back to the sidecar name or the session id.
+  let offset = first ? Math.max(0, size - TAIL_WINDOW) : known.offset;
+  const facts: TranscriptFacts = first ? {} : { ...known.facts };
   if (size > offset) {
     const handle = await fs.open(file, 'r');
     try {
-      const read = Buffer.alloc(size - offset);
+      if (first && offset > 0) {
+        // Written on the first record, so only a read from the top can see it.
+        const head = Buffer.alloc(Math.min(HEAD_WINDOW, size));
+        await handle.read(head, 0, head.length, 0);
+        facts.entrypoint = firstEntrypoint(head);
+      }
+      let read = Buffer.alloc(size - offset);
       await handle.read(read, 0, read.length, offset);
+      if (first && offset > 0) {
+        // Skip the partial record the window landed inside.
+        const cut = read.indexOf(0x0a) + 1;
+        offset += cut;
+        read = read.subarray(cut);
+      }
       // Whole lines only: a record being written right now is read next time.
       const whole = read.subarray(0, read.lastIndexOf(0x0a) + 1);
       facts.customTitle = lastRecordField(whole, 'custom-title', 'customTitle') ?? facts.customTitle;
@@ -390,8 +410,7 @@ async function transcriptMeta(
       const cwds = lastCwds(whole, path.basename(path.dirname(file)));
       facts.cwd = cwds.filedUnder ?? facts.cwd;
       facts.lastCwd = cwds.last ?? facts.lastCwd;
-      // Written on the first record, so only the read from the top can see it.
-      if (offset === 0) facts.entrypoint = firstEntrypoint(whole);
+      if (first && offset === 0) facts.entrypoint = firstEntrypoint(whole);
       transcriptFacts.set(file, { offset: offset + whole.length, facts });
     } finally {
       await handle.close();

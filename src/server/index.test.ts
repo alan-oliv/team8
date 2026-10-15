@@ -14,8 +14,10 @@ import {
   listAllFolders, listTeamSummaries,
   sessionProjectDir,
   workflowScriptOf,
+  transcriptMeta,
   DEFAULT_PORT,
   IDLE_GRACE_MS,
+  TAIL_WINDOW,
 } from './index';
 import type { EventKind, StoredEvent, Store } from './store';
 
@@ -346,6 +348,53 @@ describe('discoverTeam', () => {
     await writeSession('other-session', process.pid);
 
     expect(await discoverTeam(teams(), sessions(), undefined, { session: 'workflow-session' })).toBeNull();
+  });
+});
+
+describe('transcriptMeta', () => {
+  const rec = (o: object) => `${JSON.stringify({ cwd: '/Users/x/code/app', ...o })}\n`;
+  // 300 bytes of filler per record, so the window boundary lands mid-file.
+  const pad = 'x'.repeat(300);
+
+  it('reads only the tail of a large transcript on first sight, and finds a title in it', async () => {
+    const file = path.join(dir, 'big.jsonl');
+    let body = rec({ type: 'user', entrypoint: 'cli', message: 'first' });
+    body += rec({ type: 'custom-title', customTitle: 'early-name' });
+    while (Buffer.byteLength(body) < TAIL_WINDOW * 2) body += rec({ type: 'assistant', pad });
+    body += rec({ type: 'custom-title', customTitle: 'late-name', gitBranch: 'feat/x' });
+    await fs.writeFile(file, body);
+
+    const meta = await transcriptMeta(file);
+    expect(meta.title).toBe('late-name');
+    expect(meta.branch).toBe('feat/x');
+    expect(meta.entrypoint).toBe('cli');
+    // `cwd` wants a record whose cwd slugs to the file's parent dir; a tmp dir
+    // is no slug, so only `lastCwd` carries the path here.
+    expect(meta.lastCwd).toBe('/Users/x/code/app');
+  });
+
+  it('does not see a title that only ever appeared before the tail window', async () => {
+    const file = path.join(dir, 'big.jsonl');
+    let body = rec({ type: 'custom-title', customTitle: 'early-name' });
+    while (Buffer.byteLength(body) < TAIL_WINDOW * 2) body += rec({ type: 'assistant', pad });
+    await fs.writeFile(file, body);
+    expect((await transcriptMeta(file)).title).toBeUndefined();
+  });
+
+  it('reads a small transcript whole', async () => {
+    const file = path.join(dir, 'small.jsonl');
+    await fs.writeFile(file, rec({ type: 'custom-title', customTitle: 'tiny', entrypoint: 'cli' }));
+    const meta = await transcriptMeta(file);
+    expect(meta.title).toBe('tiny');
+    expect(meta.entrypoint).toBe('cli');
+  });
+
+  it('reads only what was appended on a second call', async () => {
+    const file = path.join(dir, 'grow.jsonl');
+    await fs.writeFile(file, rec({ type: 'custom-title', customTitle: 'one' }));
+    expect((await transcriptMeta(file)).title).toBe('one');
+    await fs.appendFile(file, rec({ type: 'custom-title', customTitle: 'two' }));
+    expect((await transcriptMeta(file)).title).toBe('two');
   });
 });
 
