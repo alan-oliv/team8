@@ -10,9 +10,9 @@ pr: <url, at close>
 - spec rounds with the user: 1 (two decisions taken in dialogue before the spec: first light ends at the lead's first transcript line; v3 everywhere at 32px)
 
 ## Plan
-- plan: written by the lead · self-review fixes: <n>
-- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: <mode> — <reason>
-- estimate: ≈$<total> (per task in the plan's table)
+- plan: written by the lead · self-review fixes: 3 (spec path in the header; `letterSpacing` round-trip value; a hedged jsdom note replaced with the verified fact)
+- tasks: 9 (+ Close the run) · tracks: 6 (grids, themes, turn, portrait, light, chrome) · waves: 4 · peak: 3 at once · mode: teammates — three tracks start together with no shared files
+- estimate: ≈$13.85 (per task in the plan's table; lead and track reviewers not included)
 
 ## Run
 - executors: <name> · <model> · <effort> · track <X> · wave <n>, one line each · peak <n> at once
