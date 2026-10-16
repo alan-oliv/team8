@@ -43,6 +43,11 @@ the approval gate never does.
 
 ### Three Paths
 
+**A bug with no confirmed cause goes to `team8:reproduce` first.** Say that
+as your classification. Its probe has its own yes, before this phase's
+approval, and its report is the context for this phase. Classify the fix
+once there is one.
+
 Before your first question, classify the request and say the
 classification out loud — "this looks bounded, so I'll present a short
 design here rather than write a spec" — so your human partner can
@@ -103,6 +108,7 @@ else exactly as written.
 | "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
 | "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means `mode: solo`, never no tasks and no approval. |
 | "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table and run do not. |
+| "The ticket has repro steps — I'll just run them" | Reproducing is `team8:reproduce`: propose the probe and get a yes first. |
 | "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
 
 ### Checklist
@@ -349,6 +355,7 @@ pr: <url, at close>
 
 ## Brainstorm
 - path: spike | bounded | architectural
+- repro: reproduced | not reproduced | blocked | n/a — <one line>
 - spec rounds with the user: <n>
 
 ## Plan

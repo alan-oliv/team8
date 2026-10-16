@@ -201,12 +201,17 @@ $0.005 a run).
 
 ## Skills
 
-Four skills fire on their own, when the work calls for them.
+Five skills fire on their own, when the work calls for them.
 
 `team8:plan` takes an idea to an approved spec with you, then writes the plan
 in the same session, a task at a time, with a progress line after each and a
 `plan` tab in the console that fills in as it goes. What comes back to you is
 the task table and a file path, and nothing runs until you say so.
+
+`team8:reproduce` takes a bug report to reproduced, not reproduced or blocked
+before anyone designs a fix. It reads every attachment first, asks before it
+touches production, and records each browser repro as a video from a script
+you can re-run after the fix.
 
 `team8:tasks` sets the contract a task needs before it's handed off: a
 description that stands alone, real `blockedBy` dependencies, and a
@@ -218,7 +223,7 @@ the dispatch contract, and the branch shape the dependency graph implies.
 `team8:multiple-code-reviews` reviews a batch of pull requests with one
 teammate per PR, then posts the reviews as yours once you've read them.
 
-A fifth is a plain toggle. Claude doesn't reach for it on its own, you call it
+A sixth is a plain toggle. Claude doesn't reach for it on its own, you call it
 by name: `/team8:enable-team true` or `/team8:enable-team false` flips the
 same two `env` vars `/team8:setup` writes.
 
