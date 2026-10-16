@@ -28,7 +28,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    it now from the same table and say it in one line. Then, for teammates,
    take the waves from the closing: teammates alive at any moment are the
    tracks in the current wave, never all the tracks.
-5. **Dispatch** in that mode: see Modes below. Teammates use the contract
+5. **Dispatch** in that mode. Before the first spawn, tell the user in one
+   line to run `/effort medium` for the run phase, since your turns from here
+   to close are dispatch, relay and bookkeeping, and that you will say when the
+   run is closed so they can set it back: a notice, not a question, so
+   dispatch in the same turn. See Modes below. Teammates use the contract
    below. Spawn each one under the name `team8:tasks` set as the owner of its
    track's tasks; with every task owned before the first spawn, Claude Code's
    own auto-claim finds nothing to take. A list that came without owners gets
@@ -49,7 +53,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
    `plan`) and commit it on the branch. In teammates mode, then complete the
-   "Close the run" task.
+   "Close the run" task. Then say in one line that the run is closed and
+   `/effort` can go back up.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -316,7 +321,9 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
 ## The Run Log at Close
 
 The Run section of `docs/team8/runs/<batch>.md` takes one line per executor
-(name, model, effort, track), the review rounds per track and their residuals,
+(name, model, effort, track), one for the lead with its effort as `measure`
+prints it under "Model time per call"
+(`lead · fable · high · 215 calls · ≈\$43`), the review rounds per track and their residuals,
 the PR URL, and what it actually cost. `measure` has the numbers: each agent's
 cost, its model and tool minutes, model seconds per call by effort, message
 lag, review tails and idle time with work waiting. Run it from the batch's
@@ -353,6 +360,7 @@ the PR next to the plan it describes.
 | Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
 | Treating a teammate's failure notice as the end of its track | A message wakes a teammate waiting on a retry — send one. Dead a second time, respawn it per After a resume |
 | Run log filled from memory a day later | The console's numbers are for this session. Fill it at close |
+| Lead at high effort through a run of dispatch and relay | Step 5 asks for `/effort medium` once; the definitions carry each agent's own effort, so only the lead's calls get cheaper |
 
 ## Red Flags
 
