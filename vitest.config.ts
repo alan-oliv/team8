@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config';
 // index.wiring.test.ts also touches watchers but only through a spawned server, whose 5s
 // reconciliation sweep covers dropped events. It takes 54s alone, so it runs in the parallel
 // project to overlap with the rest instead of queueing behind the sequential one.
+// It is deliberately parallel: it only mentions fs.watch in a comment, so do not move it back by grep.
 const watcherFiles = [
   'src/server/ingest/files.test.ts',
   'src/web/views/Trace.test.tsx',
