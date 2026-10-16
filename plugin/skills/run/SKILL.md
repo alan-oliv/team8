@@ -45,9 +45,10 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    immediately; a wrong roster is cheap to fix in the first minute and expensive
    once six agents have edited files.
 7. **Stay free.** Answer questions, relay results, and run the track review
-   below as each wave of a track lands. Never fix a finding yourself. **While any track is
-   live, do no multi-step investigation yourself** — a report waits as long as
-   your longest turn. Dispatch a subagent for it, or do it before dispatching.
+   below as each wave of a track lands. Never fix a finding yourself. **While
+   any track is live, do no multi-step investigation yourself** — a report
+   waits as long as your longest turn. Dispatch a subagent for it, or do it
+   before dispatching.
 8. **Close the run.** Run the full suite yourself once every track is clear —
    the executors only ran the tests covering their own files. Then, when the PR
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
@@ -213,10 +214,11 @@ plan reviewer, and the executor stays alive until its track is clear.
 1. **When a teammate reports a wave's tasks completed and pushed**, write that
    wave's diff to a file — the branch's changes to the files those tasks own,
    from the track's base, which starts at the one you recorded before
-   dispatching:
-   `git diff <base>..HEAD -- <those files> > <scratchpad>/review-<track>-<wave>.diff`.
-   Then advance the track's base to HEAD, so the next review covers only new
-   commits. A teammate with tasks in a later wave goes on to its next task
+   dispatching. Take `<head>` from one `git rev-parse HEAD` and use it twice:
+   `git diff <base>..<head> -- <those files> > <scratchpad>/review-<track>-<wave>.diff`,
+   then `<head>` becomes the track's base, so the next review covers only new
+   commits. Reading HEAD twice skips whatever the executor committed between
+   the two reads. A teammate with tasks in a later wave goes on to its next task
    while this wave is reviewed; a track of one wave is reviewed once, at its
    end. Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
@@ -235,15 +237,17 @@ plan reviewer, and the executor stays alive until its track is clear.
    continuing. It fixes, re-runs the covering tests, pushes, and reports the
    fix commit's sha with the test output. Read that commit yourself,
    `git show <sha> -- <files>`, against each Blocking finding. When every fix
-   is confined to the lines its finding named, plus the test that covers them,
-   and the report shows that test passing, record "lead-verified" per finding
-   in the run log and dispatch no re-reviewer: a re-reviewer for a two-line
-   fix costs more wall time than the fix. Dispatch a scoped re-review only
+   addresses its finding, is confined to the lines that finding named, plus
+   the test that covers them, and the report shows that test passing, record
+   "lead-verified" per finding in the run log and dispatch no re-reviewer: a
+   re-reviewer for a two-line fix costs more wall time than the fix. A fix
+   that clearly misses its finding goes back to the executor as another
+   round. Dispatch a scoped re-review only
    when a fix touches code its finding did not name, a finding needed a
    judgment call, or you cannot tell from the diff whether it is addressed:
    the diff since the last review, the findings list, verdict per finding
    ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only. Three
-   re-review rounds per track. After three, rule on each open finding yourself
+   rounds per review. After three, rule on each open finding yourself
    and record the ruling in the run log. Minor findings go straight to the run
    log.
 4. **Clear the track** once the last wave's review and any fixes are done.
@@ -314,20 +318,23 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    ends with its path. Do not also send the report by `SendMessage`. Then go
    idle: idle is how you stay available — never poll the task list waiting.
    The lead's message with review findings wakes you, or arrives while you
-   are on a later task: fix first, then continue. Fix, re-run the covering
-   tests, push, and answer again. Stop only when the lead says the track is
-   clear." Write your real scratchpad path in place of `<scratchpad>`.
+   are on a later task: fix first, report the fix by `SendMessage` with its
+   commit sha and test output, then continue. When woken from idle, fix,
+   re-run, push, and answer again with the fix commit's sha. Stop only when
+   the lead says the track is clear." Write your real scratchpad path in
+   place of `<scratchpad>`.
 
 ## The Run Log at Close
 
 The Run section of `docs/team8/runs/<batch>.md` takes one line per executor
-(name, model, effort, track), one for the lead with its effort as `measure`
-prints it under "Model time per call"
-(`lead · fable · high · 215 calls · ≈\$43`), the review rounds per track and their residuals,
-the PR URL, and what it actually cost. `measure` has the numbers: each agent's
-cost, its model and tool minutes, model seconds per call by effort, message
-lag, review tails and idle time with work waiting. Run it from the batch's
-first dispatch on:
+(name, model, effort, track); one for the lead, with its calls and cost from
+its row in `measure`'s Agents table and each effort it ran at, so a lead that
+switched to medium mid-run lists both
+(`lead · fable · high, medium · 215 calls · ≈\$43`); the review rounds per
+review, the lead-verified findings and the residuals; the PR URL; and what it
+actually cost. `measure` has the numbers: each agent's cost, its model and
+tool minutes, model seconds per call by effort, message lag, review tails and
+idle time with work waiting. Run it from the batch's first dispatch on:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" measure "${CLAUDE_SESSION_ID}" --since <ISO time of the first dispatch>
