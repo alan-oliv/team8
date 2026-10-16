@@ -66,11 +66,13 @@ export interface StatusBarProps {
   solo?: boolean;
   /** Whether `trace` has anything to draw — see {@link soloViews}. */
   hasSubagents?: boolean;
+  /** See BarProps.dimmed. */
+  dimmed?: boolean;
 }
 
 export function StatusBar({
   state, view, onViewChange, now, teamsOpen, onTeamsOpenChange, onSelectRun, appearance, solo,
-  hasSubagents = false,
+  hasSubagents = false, dimmed,
 }: StatusBarProps) {
   const done = state.tasks.filter((t) => t.state === 'completed').length;
   // Team context occupancy — what the meter has always looked like it meant.
@@ -209,6 +211,7 @@ export function StatusBar({
       metricRank={solo ? SOLO_METRIC_RANK : METRIC_RANK}
       appearance={appearance}
       build={state.build}
+      dimmed={dimmed}
     />
   );
 }

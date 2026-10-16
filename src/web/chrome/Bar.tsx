@@ -119,6 +119,8 @@ export interface BarProps<T extends string> {
   appearance: SettingsStore;
   /** Which build serves; chrome like the config menu, so never shed. */
   build?: BuildInfo;
+  /** First light lowers the chrome to .35 so the empty state reads as the subject; it stays clickable. */
+  dimmed?: boolean;
 }
 
 /**
@@ -134,7 +136,7 @@ export interface BarProps<T extends string> {
  * the mechanism is not written twice.
  */
 export function Bar<T extends string>({
-  wordmark, picker, views, view, onViewChange, labelOf, metrics, metricRank, appearance, build,
+  wordmark, picker, views, view, onViewChange, labelOf, metrics, metricRank, appearance, build, dimmed,
 }: BarProps<T>) {
   const [configOpen, setConfigOpen] = useState(false);
   const bar = useRef<HTMLDivElement>(null);
@@ -153,6 +155,7 @@ export function Bar<T extends string>({
         borderBottom: '1px solid var(--color-neutral-900)',
         background: 'var(--color-bg)',
         fontSize: 12.5,
+        opacity: dimmed ? 0.35 : undefined,
       }}
     >
       {/* The id is half of the picker trigger's accessible name — TeamSelect
