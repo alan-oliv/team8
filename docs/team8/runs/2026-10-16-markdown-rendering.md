@@ -10,9 +10,9 @@ pr: <url, at close>
 - spec rounds with the user: 1 (one scope question — tables only, or every ignored construct; answer: everything)
 
 ## Plan
-- plan: written by the lead · self-review fixes: <n>
-- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: <mode> — <reason>
-- estimate: ≈$<total> (per task in the plan's table)
+- plan: written by the lead · self-review fixes: 2 (a table helper named `table` that shadowed the buffer in `blocks()`, renamed `parseTable`; a grep in Task 1 that would have flagged the word "Inline" in comments)
+- tasks: 5 · tracks: 1 · waves: 1 · peak: 1 at once · mode: subagents — one track, every task edits markdown.ts and Prose.tsx, so the five run one after another and the lead reviews each result
+- estimate: ≈$4.61 (per task in the plan's table: 1 haiku·low ≈$0.01, 2–5 sonnet·medium ≈$1.15 each)
 
 ## Run
 - executors: <name> · <model> · <effort> · track <X> · wave <n>, one line each · peak <n> at once
