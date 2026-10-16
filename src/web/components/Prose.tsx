@@ -32,6 +32,29 @@ export function Spans({ spans }: { spans: Inline[] }) {
           >
             {s.text}
           </span>
+        ) : s.kind === 'link' ? (
+          <a
+            key={i}
+            data-testid="md-link"
+            href={s.href}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--color-accent-400)', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+          >
+            {s.text}
+          </a>
+        ) : s.kind === 'strike' ? (
+          <span
+            key={i}
+            data-testid="md-strike"
+            style={{ textDecoration: 'line-through', color: 'var(--color-neutral-500)' }}
+          >
+            {s.text}
+          </span>
+        ) : s.kind === 'em' ? (
+          <em key={i} data-testid="md-em" style={{ fontStyle: 'italic' }}>
+            {s.text}
+          </em>
         ) : (
           <span key={i}>{s.text}</span>
         ),

@@ -14,7 +14,10 @@
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'strong'; text: string }
-  | { kind: 'code'; text: string };
+  | { kind: 'em'; text: string }
+  | { kind: 'strike'; text: string }
+  | { kind: 'code'; text: string }
+  | { kind: 'link'; text: string; href: string };
 
 export type Align = 'left' | 'right' | 'center';
 
@@ -29,21 +32,39 @@ export type Block =
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^\s*[-*]\s+(.*)$/;
 const ORDERED = /^\s*\d+[.)]\s+(.*)$/;
-// `**bold**` and `` `code` ``, in one pass so neither can split the other.
-const INLINE = /(\*\*)(?=\S)([\s\S]*?\S)\1|`([^`]+)`/g;
+// Every inline construct in one pass, so none can split another: `**bold**`,
+// `~~strike~~`, `` `code` ``, `[text](href)`, and `*italic*` last so the
+// double asterisk is tried first. Italic needs a non-space, non-asterisk
+// character on both ends and nothing word-like outside, which is what keeps
+// `2 * 3`, `a*b*c` and `**/*.ts` as text. `_italic_` is not read: snake_case.
+const INLINE =
+  /(\*\*)(?=\S)([\s\S]*?\S)\1|(~~)(?=\S)([\s\S]*?\S)\3|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|(?<![\w*])\*([^\s*](?:[^*]*?[^\s*])?)\*(?![\w*])/g;
+const HTTP = /^https?:\/\//;
 
 export function inlines(text: string): Inline[] {
   const out: Inline[] = [];
+  // Adjacent text stays one span, so a link the console cannot open does not
+  // split the sentence around it into three pieces.
+  const pushText = (t: string) => {
+    const prev = out[out.length - 1];
+    if (prev?.kind === 'text') prev.text += t;
+    else out.push({ kind: 'text', text: t });
+  };
   let last = 0;
   INLINE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = INLINE.exec(text)) !== null) {
-    if (m.index > last) out.push({ kind: 'text', text: text.slice(last, m.index) });
+    if (m.index > last) pushText(text.slice(last, m.index));
     if (m[2] !== undefined) out.push({ kind: 'strong', text: m[2] });
-    else out.push({ kind: 'code', text: m[3] });
+    else if (m[4] !== undefined) out.push({ kind: 'strike', text: m[4] });
+    else if (m[5] !== undefined) out.push({ kind: 'code', text: m[5] });
+    else if (m[6] !== undefined) {
+      if (HTTP.test(m[7])) out.push({ kind: 'link', text: m[6], href: m[7] });
+      else pushText(m[0]);
+    } else out.push({ kind: 'em', text: m[8] });
     last = m.index + m[0].length;
   }
-  if (last < text.length) out.push({ kind: 'text', text: text.slice(last) });
+  if (last < text.length) pushText(text.slice(last));
   return out.length > 0 ? out : [{ kind: 'text', text }];
 }
 

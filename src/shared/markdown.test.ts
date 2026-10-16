@@ -27,6 +27,41 @@ describe('inlines', () => {
     const spans = inlines('x **y** `z` w');
     expect(spans.map((s) => s.text).join('')).toBe('x y z w');
   });
+  it('reads an http link, and leaves any other target as text', () => {
+    expect(inlines('see [docs](https://x.y/z) now')).toEqual([
+      { kind: 'text', text: 'see ' },
+      { kind: 'link', text: 'docs', href: 'https://x.y/z' },
+      { kind: 'text', text: ' now' },
+    ]);
+    // A repo path is not a URL the console can open; the source still reads.
+    expect(inlines('read [the plan](docs/team8/plans/x.md) first')).toEqual([
+      { kind: 'text', text: 'read [the plan](docs/team8/plans/x.md) first' },
+    ]);
+  });
+
+  it('reads strikethrough and italic', () => {
+    expect(inlines('~~old~~ and *soft*')).toEqual([
+      { kind: 'strike', text: 'old' },
+      { kind: 'text', text: ' and ' },
+      { kind: 'em', text: 'soft' },
+    ]);
+  });
+
+  // Multiplication, globs and snake_case are the asterisks and underscores a
+  // transcript actually carries; none of them is emphasis.
+  it('leaves asterisks that are not emphasis alone', () => {
+    for (const t of ['2 * 3 * 4', 'a*b*c', 'src/**/*.ts', 'snake_case_name', '_private']) {
+      expect(inlines(t)).toEqual([{ kind: 'text', text: t }]);
+    }
+  });
+
+  it('still reads bold next to italic', () => {
+    expect(inlines('**a** *b*')).toEqual([
+      { kind: 'strong', text: 'a' },
+      { kind: 'text', text: ' ' },
+      { kind: 'em', text: 'b' },
+    ]);
+  });
 });
 
 describe('blocks', () => {

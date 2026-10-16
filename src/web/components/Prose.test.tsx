@@ -34,3 +34,24 @@ describe('a pipe table', () => {
     expect(screen.getByTestId('md-pre').textContent).toBe('| a | b |\n| 1 | 2 |');
   });
 });
+
+describe('inline constructs', () => {
+  it('renders a link that opens in a new tab', () => {
+    render(<Prose text="see [docs](https://x.y/z)" />);
+    const a = screen.getByTestId('md-link') as HTMLAnchorElement;
+    expect(a.tagName).toBe('A');
+    expect(a.getAttribute('href')).toBe('https://x.y/z');
+    expect(a.getAttribute('target')).toBe('_blank');
+    expect(a.getAttribute('rel')).toBe('noreferrer');
+    expect(a.textContent).toBe('docs');
+  });
+
+  it('renders strikethrough and italic without their markers', () => {
+    render(<Prose text="~~old~~ *soft*" />);
+    expect(screen.getByTestId('md-strike').textContent).toBe('old');
+    expect(screen.getByTestId('md-em').textContent).toBe('soft');
+    const text = screen.getByTestId('md-strike').parentElement!.textContent!;
+    expect(text).not.toContain('~');
+    expect(text).not.toContain('*');
+  });
+});
