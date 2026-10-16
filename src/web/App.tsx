@@ -250,7 +250,7 @@ export function App() {
   // transcript line hands over to the solo stream, the first teammate to the
   // wall — both a cut. Wall view only: the other views are themselves.
   const firstLight =
-    state !== null && state.agents.length === 1 && state.agents[0].transcript.length === 0 && view === 'wall';
+    state !== null && state.agents.length === 1 && state.agents[0].transcript.length === 0 && view === 'wall' && !dismissed;
   const firstLightNote = firstLight ? `messages go to ${leadNameOf(cast, state.agents[0])} until a teammate joins` : undefined;
 
   // Above the `!state` return: every hook has to run on the frame before the

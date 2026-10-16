@@ -1155,3 +1155,17 @@ it('names the lead by character in the strip note under a film', () => {
   expect(screen.getByTestId('needs-you-note').textContent).toBe('messages go to Heisenberg until a teammate joins');
   expect(screen.getByTestId('first-light-head').textContent).toBe('Heisenberg is here. The lab is still an RV.');
 });
+
+it('does not dim the chrome or note the strip once the operator has stopped watching a first-light session', async () => {
+  stubFetch();
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
+  expect(screen.getByTestId('first-light')).toBeTruthy();
+  await openAndStopWatching();
+
+  expect(screen.getByTestId('left-session-heading')).toBeTruthy();
+  expect(screen.queryByTestId('first-light')).toBeNull();
+  expect(screen.getByTestId('bar').style.opacity).toBe('');
+  expect(screen.getByTestId('needs-you').style.opacity).toBe('');
+  expect(screen.queryByTestId('needs-you-note')).toBeNull();
+});
