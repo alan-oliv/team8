@@ -1,16 +1,10 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-// index.wiring.test.ts also touches watchers but only through a spawned server, whose 5s
-// reconciliation sweep covers dropped events. It takes 54s alone, so it runs in the parallel
-// project to overlap with the rest instead of queueing behind the sequential one.
-// It is deliberately parallel: it only mentions fs.watch in a comment, so do not move it back by grep.
 const watcherFiles = [
   'src/server/ingest/files.test.ts',
-  'src/web/views/Trace.test.tsx',
   'src/server/watch/jsonfile.test.ts',
   'src/server/watch/tail.test.ts',
-  'src/shared/subagents.test.ts',
 ];
 
 const shared = {
@@ -38,6 +32,9 @@ export default defineConfig({
         test: {
           ...shared.test,
           name: 'parallel',
+          // index.wiring.test.ts, Trace.test.tsx and subagents.test.ts only mention fs.watch (a
+          // comment, fixture text) and import no watcher, so they stay here, not by grep. The wiring
+          // test takes 54s and its spawned server has the reconciliation sweep as a fallback.
           include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
           exclude: watcherFiles,
         },
