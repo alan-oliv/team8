@@ -5,16 +5,6 @@ export type RoleSlot = 'lead' | 'security' | 'perf' | 'tests' | 'architect' | 'r
 /** The base themes a film may borrow a neutral ramp from. */
 export type NeutralsFrom = 'nocturne' | 'slate';
 
-/**
- * The accessories a look may carry, drawn over the role silhouette in the order
- * the film lists them — `['bald', 'fedora']` puts the hat on the scalp.
- */
-export const FEAT_IDS = [
-  'bald', 'shades', 'specs', 'visor', 'fedora',
-  'pointyhat', 'wildhair', 'goatee', 'beard', 'longhair',
-] as const;
-export type FeatId = (typeof FEAT_IDS)[number];
-
 /** The film's single ramp: `--color-accent` as `base`, then the six steps. */
 export interface PaletteAccent {
   300: string;
@@ -51,6 +41,13 @@ export interface FilmPalette {
   fail: string;
 }
 
+/** The empty-team state's three lines, with `{lead}` still literal. */
+export interface FirstLightCopy {
+  kicker: string;
+  head: string;
+  body: string;
+}
+
 export interface MovieTheme {
   key: string;
   film: string;
@@ -59,14 +56,9 @@ export interface MovieTheme {
   note: string;
   roles: Partial<Record<RoleSlot, string>>;
   spare: string[];
+  firstLight: FirstLightCopy;
   /** Absent on `off`, which is the absence of a theme rather than a colourless one. */
   palette?: FilmPalette;
-  /**
-   * Five pipe-joined hex per role slot — skin, skin shade, garment, garment
-   * shade, hair — stored WITHOUT the leading `#`, which whatever paints them adds.
-   */
-  looks?: Partial<Record<RoleSlot, string>>;
-  feats?: Partial<Record<RoleSlot, FeatId[]>>;
 }
 
 interface ThemesFile {
@@ -92,7 +84,7 @@ export interface Cast {
   asChar(name: string): CastName;
   /**
    * The role slot this agent was cast into, or null if it took a spare, kept its
-   * own name, or was never cast at all. The looks follow THIS rather than the
+   * own name, or was never cast at all. The portrait lookup follows THIS rather than the
    * portrait the sprite hashes, so an agent whose role the console could not
    * read keeps the default portrait instead of wearing a character's clothes.
    */
@@ -106,6 +98,12 @@ const OFF = MOVIE_THEMES[0];
 
 export function themeFor(key: string | null | undefined): MovieTheme {
   return MOVIE_THEMES.find((theme) => theme.key === key) ?? OFF;
+}
+
+/** The theme's first-light copy with every `{lead}` filled. `lead` is the cast's lead name, or 'lead' with no theme. */
+export function firstLightCopy(theme: MovieTheme, lead: string): FirstLightCopy {
+  const fill = (s: string) => s.split('{lead}').join(lead);
+  return { kicker: fill(theme.firstLight.kicker), head: fill(theme.firstLight.head), body: fill(theme.firstLight.body) };
 }
 
 // The same table the portraits classify by, so the security character wears the

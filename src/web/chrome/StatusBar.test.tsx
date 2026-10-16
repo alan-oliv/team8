@@ -475,3 +475,24 @@ it('gives a solo session the two figures the canvas draws, and no team ones', ()
   expect(screen.queryByText(/tasks$/)).toBeNull();
   expect(screen.queryByText(/ctx$/)).toBeNull();
 });
+
+it('dims to .35 when asked, and not otherwise — first light lowers the chrome, it never hides it', () => {
+  renderBar();
+  expect(screen.getByTestId('bar').style.opacity).toBe('');
+  cleanup();
+  render(
+    <StatusBar
+      state={sampleTeamState()}
+      view="wall"
+      onViewChange={vi.fn()}
+      now={FIXTURE_NOW}
+      teamsOpen={false}
+      onTeamsOpenChange={vi.fn()}
+      onSelectRun={vi.fn()}
+      appearance={APPEARANCE}
+      dimmed
+    />,
+  );
+  expect(screen.getByTestId('bar').style.opacity).toBe('0.35');
+  expect(screen.getByRole('tablist')).toBeTruthy();
+});

@@ -7,6 +7,10 @@ export interface NeedsYouProps {
   items: NeedsYouItem[];
   readOnly: boolean;
   now: number;
+  /** First light lowers the strip to .35; it stays interactive. */
+  dimmed?: boolean;
+  /** A right-hand line, e.g. "messages go to Cobb until a teammate joins". */
+  note?: string;
 }
 
 const CARD_BASE = {
@@ -247,9 +251,10 @@ function Card({ item, readOnly, now }: { item: NeedsYouItem; readOnly: boolean; 
   );
 }
 
-export function NeedsYou({ items, readOnly, now }: NeedsYouProps) {
+export function NeedsYou({ items, readOnly, now, dimmed, note }: NeedsYouProps) {
   return (
     <div
+      data-testid="needs-you"
       style={{
         borderTop: '1px solid var(--color-neutral-900)',
         background: 'var(--color-bg)',
@@ -257,6 +262,7 @@ export function NeedsYou({ items, readOnly, now }: NeedsYouProps) {
         display: 'flex',
         alignItems: 'stretch',
         gap: 10,
+        opacity: dimmed ? 0.35 : undefined,
       }}
     >
       <span
@@ -277,6 +283,14 @@ export function NeedsYou({ items, readOnly, now }: NeedsYouProps) {
           items.map((item) => <Card key={item.id} item={item} readOnly={readOnly} now={now} />)
         )}
       </div>
+      {note && (
+        <span
+          data-testid="needs-you-note"
+          style={{ marginLeft: 'auto', alignSelf: 'center', whiteSpace: 'nowrap', color: 'var(--color-neutral-600)', fontSize: 11 }}
+        >
+          {note}
+        </span>
+      )}
     </div>
   );
 }

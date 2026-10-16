@@ -358,15 +358,23 @@ describe('hooks from a foreign session with no agent_id', () => {
 });
 
 describe('SessionEnd', () => {
-  it("never shuts the console down, not even for the lead's own session", async () => {
+  it("hands the ending session's id to onSessionEnd and never exits on its own, not even for the lead's", async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     try {
-      const withLead = createHookHandlers({ store, permits, leadSessionId: () => 'lead-session-id' });
+      const ended: string[] = [];
+      const withLead = createHookHandlers({
+        store,
+        permits,
+        leadSessionId: () => 'lead-session-id',
+        onSessionEnd: (sid) => ended.push(sid),
+      });
       await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'lead-session-id' });
+      await withLead.hook({ hook_event_name: 'SessionEnd', session_id: 'some-other-session' });
       await new Promise((r) => setTimeout(r, 400));
 
       expect(exit).not.toHaveBeenCalled();
-      expect(of(store.replay(), 'hook')).toHaveLength(1);
+      expect(ended).toEqual(['lead-session-id', 'some-other-session']);
+      expect(of(store.replay(), 'hook')).toHaveLength(2);
     } finally {
       exit.mockRestore();
     }

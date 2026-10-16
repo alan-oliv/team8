@@ -245,3 +245,18 @@ it('keeps every action button at its full width when a card is narrow', () => {
   render(<NeedsYou items={[PLAN, FAILURE, PERMISSION, ASK]} readOnly={false} now={FIXTURE_NOW} />);
   for (const b of screen.getAllByRole('button')) expect(b.style.flexShrink).toBe('0');
 });
+
+it('dims to .35 when asked, and carries a right-hand note when given one', () => {
+  render(<NeedsYou items={[]} readOnly={false} now={FIXTURE_NOW} dimmed note="messages go to Heisenberg until a teammate joins" />);
+  expect(screen.getByTestId('needs-you').style.opacity).toBe('0.35');
+  expect(screen.getByText('nothing waiting')).toBeTruthy();
+  const note = screen.getByTestId('needs-you-note');
+  expect(note.textContent).toBe('messages go to Heisenberg until a teammate joins');
+  expect(note.style.marginLeft).toBe('auto');
+});
+
+it('draws no note and no dimming by default', () => {
+  render(<NeedsYou items={[]} readOnly={false} now={FIXTURE_NOW} />);
+  expect(screen.getByTestId('needs-you').style.opacity).toBe('');
+  expect(screen.queryByTestId('needs-you-note')).toBeNull();
+});

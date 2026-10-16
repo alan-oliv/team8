@@ -19,6 +19,7 @@ import { useSpendSamples } from './state/useSpendSamples';
 import { DiffContext, useTeamState } from './state/useTeamState';
 import { WatchContext } from './state/useWatch';
 import { Comms } from './views/Comms';
+import { FirstLight, leadNameOf } from './views/FirstLight';
 import { Grid } from './views/Grid';
 import { LeftSession } from './views/LeftSession';
 import { NoSessions } from './views/NoSessions';
@@ -245,6 +246,12 @@ export function App() {
     () => buildCast(state?.agents ?? [], appearance.settings.movieTheme),
     [state?.agents, appearance.settings.movieTheme],
   );
+  // First light (handoff 2a): one agent and nothing said yet. The first
+  // transcript line hands over to the solo stream, the first teammate to the
+  // wall — both a cut. Wall view only: the other views are themselves.
+  const firstLight =
+    state !== null && state.agents.length === 1 && state.agents[0].transcript.length === 0 && view === 'wall' && !dismissed;
+  const firstLightNote = firstLight ? `messages go to ${leadNameOf(cast, state.agents[0])} until a teammate joins` : undefined;
 
   // Above the `!state` return: every hook has to run on the frame before the
   // first snapshot lands too, or the hook order changes between renders.
@@ -359,6 +366,7 @@ export function App() {
         appearance={appearance}
         solo={solo}
         hasSubagents={hasSubagents}
+        dimmed={firstLight}
       />
       <main className="console-body">
         {nothingLive ? (
@@ -378,7 +386,8 @@ export function App() {
           />
         ) : (
         <>
-        {view === 'wall' && (
+        {view === 'wall' && firstLight && <FirstLight lead={state.agents[0]} />}
+        {view === 'wall' && !firstLight && (
           <Wall
             agents={state.agents}
             focused={store.agent}
@@ -492,7 +501,7 @@ export function App() {
         }}
         onCancel={() => setPendingDismiss(false)}
       />
-      <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} />
+      <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} dimmed={firstLight} note={firstLightNote} />
       <Panel agents={state.agents} focusedAgent={store.agent} onFocusAgent={store.setAgent} />
     </div>
     </WatchContext.Provider>

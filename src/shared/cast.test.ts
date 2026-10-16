@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FEAT_IDS, MOVIE_THEMES, buildCast, themeFor, type CastAgent } from './cast';
+import { MOVIE_THEMES, buildCast, firstLightCopy, themeFor, type CastAgent } from './cast';
 
 const lead = (name: string): CastAgent => ({ name, agentType: 'team-lead', isLead: true });
 const mate = (name: string, agentType: string): CastAgent => ({ name, agentType, isLead: false });
@@ -12,6 +12,13 @@ const crew: CastAgent[] = [
 ];
 
 describe('the theme database', () => {
+  it('carries no looks or accessories: portraits are files now', () => {
+    for (const theme of MOVIE_THEMES) {
+      expect('looks' in theme, theme.key).toBe(false);
+      expect('feats' in theme, theme.key).toBe(false);
+    }
+  });
+
   it('carries the ten films plus the off entry, each film with a lead and a team', () => {
     expect(MOVIE_THEMES).toHaveLength(11);
     expect(MOVIE_THEMES[0].key).toBe('off');
@@ -65,18 +72,6 @@ describe('the v3 film data', () => {
     });
   });
 
-  it('carries a look per role slot as five pipe-joined hex, without the hash', () => {
-    // The database stores them bare; whatever paints them prepends the `#`.
-    expect(inception.looks?.lead).toBe('e0c3a8|b99a80|6b7f9e|3d4a63|31241b');
-    for (const [slot, look] of Object.entries(inception.looks ?? {})) {
-      expect(look.split('|'), `inception.${slot}`).toHaveLength(5);
-    }
-  });
-
-  it('carries accessories per role slot, in the order they are drawn', () => {
-    expect(inception.feats).toEqual({ perf: ['specs'], architect: ['longhair'] });
-  });
-
   it('declares warn and fail per palette rather than deriving them from the accent', () => {
     // noSemanticRecolour, and the rev 4b fix: the three gold films drew warn in
     // amber beside a gold accent, so all three shifted to a rose-orange.
@@ -94,11 +89,9 @@ describe('the v3 film data', () => {
     }
   });
 
-  it('gives every film all three keys, and every palette colour as a hex', () => {
+  it('gives every film a palette, every colour a hex', () => {
     for (const film of films) {
       expect(film.palette, film.key).toBeDefined();
-      expect(film.looks, film.key).toBeDefined();
-      expect(film.feats, film.key).toBeDefined();
       const p = film.palette!;
       for (const value of [p.term, p.bg, p.text, p.warn, p.warnEdge, p.warnTint, p.fail]) {
         expect(value, film.key).toMatch(HEX);
@@ -110,23 +103,11 @@ describe('the v3 film data', () => {
     }
   });
 
-  it('draws every accessory from the published vocabulary', () => {
-    for (const film of films) {
-      for (const [slot, feats] of Object.entries(film.feats ?? {})) {
-        for (const feat of feats) {
-          expect(FEAT_IDS, `${film.key}.${slot}`).toContain(feat);
-        }
-      }
-    }
-  });
-
-  // The off entry is the absence of a theme, and it has none of the three. Every
+  // The off entry is the absence of a theme, and it has no palette. Every
   // consumer has to survive that, so it is asserted here rather than assumed.
-  it('leaves the off entry without a palette, looks or accessories', () => {
+  it('leaves the off entry without a palette', () => {
     const off = themeFor(null);
     expect(off.palette).toBeUndefined();
-    expect(off.looks).toBeUndefined();
-    expect(off.feats).toBeUndefined();
     expect(buildCast(crew, null).asChar('ada')).toEqual({ display: 'ada', real: 'ada' });
   });
 });
@@ -202,10 +183,10 @@ describe('casting', () => {
   });
 });
 
-// The looks follow the ROLE SLOT the cast assigned, not the portrait the sprite
-// hashed: an agent that took a spare is one whose role the console could not
-// read, so it keeps the default role portrait rather than wearing a character's
-// clothes (lookFollowsRoleSlot, and decision 20's premise).
+// The v3 portrait lookup follows the ROLE SLOT the cast assigned, not the
+// portrait the sprite hashed: an agent that took a spare is one whose role the
+// console could not read, so it keeps the default role portrait rather than
+// wearing a character's.
 describe('the slot behind a character', () => {
   it('records the slot it cast each agent into', () => {
     const cast = buildCast(crew, 'inception');
@@ -230,5 +211,31 @@ describe('the slot behind a character', () => {
   it('gives no slot to an agent it was never built with, or with no theme', () => {
     expect(buildCast(crew, 'inception').slotOf('someone-else')).toBeNull();
     expect(buildCast(crew, null).slotOf('ada')).toBeNull();
+  });
+});
+
+describe('first light copy', () => {
+  it('is carried by every theme, the off entry included, with {lead} in the headline', () => {
+    for (const theme of MOVIE_THEMES) {
+      expect(theme.firstLight, theme.key).toBeDefined();
+      expect(theme.firstLight.kicker, theme.key).not.toBe('');
+      expect(theme.firstLight.head, theme.key).toContain('{lead}');
+      expect(theme.firstLight.body, theme.key).not.toBe('');
+    }
+  });
+
+  it('fills every {lead}, however many a line has', () => {
+    const copy = firstLightCopy(themeFor('inception'), 'Cobb');
+    expect(copy.kicker).toBe('THE CREW IS STILL ON THE PLANE');
+    expect(copy.head).toBe('Cobb is awake. Everyone else is a level down.');
+    expect(copy.body).toBe('Arthur, Eames and the rest arrive when Cobb needs them. If they never do, check your totem and carry on.');
+    const twice = firstLightCopy(themeFor('godfather'), 'Vito');
+    expect(twice.body).toBe('Vito will make them an offer when there’s work. Until then, nobody gets a visit.');
+    expect(twice.body).not.toContain('{lead}');
+    expect(firstLightCopy({ ...themeFor('off'), firstLight: { kicker: '', head: '{lead} {lead}', body: '' } }, 'X').head).toBe('X X');
+  });
+
+  it('reads "lead" with no theme', () => {
+    expect(firstLightCopy(themeFor(null), 'lead').head).toBe('lead is here. Nobody else yet.');
   });
 });
