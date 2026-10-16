@@ -7,7 +7,8 @@
  * workflow output tab) renders it the same way, and the feed file is long
  * enough already.
  */
-import { blocks as mdBlocks, type Inline } from '../../shared/markdown';
+import type { CSSProperties } from 'react';
+import { blocks as mdBlocks, type Block, type Inline } from '../../shared/markdown';
 
 export function Spans({ spans }: { spans: Inline[] }) {
   return (
@@ -36,6 +37,62 @@ export function Spans({ spans }: { spans: Inline[] }) {
         ),
       )}
     </>
+  );
+}
+
+/**
+ * Header on the text colour, body one step down, hairline rows from the same
+ * token as the drawer's rule. Cells never wrap: a nine-column report scrolls
+ * sideways inside its own box rather than folding every number onto two lines.
+ */
+function MarkdownTable({ header, align, rows }: Extract<Block, { kind: 'table' }>) {
+  const cell = (i: number): CSSProperties => ({
+    textAlign: align[i],
+    padding: '3px 12px 3px 0',
+    verticalAlign: 'top',
+  });
+  return (
+    <div data-testid="md-table" style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', whiteSpace: 'nowrap', lineHeight: 1.5 }}>
+        <thead>
+          <tr>
+            {header.map((spans, i) => (
+              <th
+                key={i}
+                data-testid="md-th"
+                style={{
+                  ...cell(i),
+                  color: 'var(--color-text)',
+                  fontWeight: 700,
+                  borderBottom: '1px solid var(--color-neutral-800)',
+                }}
+              >
+                <Spans spans={spans} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((spans, i) => (
+                <td
+                  key={i}
+                  data-testid="md-td"
+                  style={{
+                    ...cell(i),
+                    color: 'var(--color-neutral-300)',
+                    borderBottom: '1px solid var(--color-neutral-900)',
+                  }}
+                >
+                  <Spans spans={spans} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -71,15 +128,12 @@ export function Prose({ text }: { text: string }) {
             </span>
           </div>
         ) : b.kind === 'table' ? (
+          <MarkdownTable key={i} {...b} />
+        ) : b.kind === 'pre' ? (
           <div
             key={i}
-            data-testid="md-table"
-            style={{
-              whiteSpace: 'pre',
-              overflowX: 'auto',
-              color: 'var(--color-neutral-400)',
-              lineHeight: 1.5,
-            }}
+            data-testid="md-pre"
+            style={{ whiteSpace: 'pre', overflowX: 'auto', color: 'var(--color-neutral-400)', lineHeight: 1.5 }}
           >
             {b.lines.join('\n')}
           </div>

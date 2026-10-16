@@ -8,19 +8,23 @@
  * A deliberate subset, not a markdown implementation. Rendering the constructs
  * that appear and leaving the rest as literal text is better than half-parsing
  * everything: an unrendered `~~strike~~` still reads, a mangled one does not.
- * Tables stay verbatim — the console is monospace, so a pipe table already
- * aligns, and a real table would fight the drawer's width for nothing.
+ * A pipe table becomes a real table: the terminal prints it unpadded, so the
+ * pipes fall wherever each cell ends and no column can be followed by eye.
  */
 export type Inline =
   | { kind: 'text'; text: string }
   | { kind: 'strong'; text: string }
   | { kind: 'code'; text: string };
 
+export type Align = 'left' | 'right' | 'center';
+
 export type Block =
   | { kind: 'heading'; level: number; spans: Inline[] }
   | { kind: 'para'; spans: Inline[] }
   | { kind: 'item'; spans: Inline[]; ordered: boolean }
-  | { kind: 'table'; lines: string[] };
+  | { kind: 'table'; header: Inline[][]; align: Align[]; rows: Inline[][][] }
+  // Pipe lines with no separator row: not a table in GFM, kept as written.
+  | { kind: 'pre'; lines: string[] };
 
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const BULLET = /^\s*[-*]\s+(.*)$/;
@@ -43,6 +47,47 @@ export function inlines(text: string): Inline[] {
   return out.length > 0 ? out : [{ kind: 'text', text }];
 }
 
+const SEPARATOR = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+const NUMERIC = /^\$?-?\d[\d,]*(\.\d+)?%?$/;
+
+export function isNumeric(text: string): boolean {
+  return NUMERIC.test(text.trim());
+}
+
+function cells(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+}
+
+function markerAlign(cell: string): Align | undefined {
+  const left = cell.startsWith(':');
+  const right = cell.endsWith(':');
+  return left && right ? 'center' : right ? 'right' : left ? 'left' : undefined;
+}
+
+function plain(spans: Inline[]): string {
+  return spans.map((s) => s.text).join('');
+}
+
+function parseTable(lines: string[]): Block {
+  if (lines.length < 2 || !SEPARATOR.test(lines[1].trim())) return { kind: 'pre', lines };
+  const header = cells(lines[0]).map(inlines);
+  const width = header.length;
+  const fit = (row: string[]) => {
+    const out = row.slice(0, width);
+    while (out.length < width) out.push('');
+    return out.map(inlines);
+  };
+  const rows = lines.slice(2).map((l) => fit(cells(l)));
+  const markers = cells(lines[1]).map(markerAlign);
+  const align = header.map((_, i): Align => {
+    const marker = markers[i];
+    if (marker) return marker;
+    const texts = rows.map((r) => plain(r[i])).filter((t) => t !== '');
+    return texts.length > 0 && texts.every(isNumeric) ? 'right' : 'left';
+  });
+  return { kind: 'table', header, align, rows };
+}
+
 /**
  * Consecutive prose lines join into one paragraph, the way markdown reads them
  * — a hard-wrapped sentence is one sentence, not one line per screen row.
@@ -58,7 +103,7 @@ export function blocks(text: string): Block[] {
     para = [];
   };
   const flushTable = () => {
-    if (table.length > 0) out.push({ kind: 'table', lines: table });
+    if (table.length > 0) out.push(parseTable(table));
     table = [];
   };
   const flush = () => {
