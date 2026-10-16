@@ -851,9 +851,11 @@ function soloState() {
 
 // A bare window — no team, no subagents, no run — used to draw the empty
 // screen, because the picker had nowhere to send it. It is its own stream now.
+// The lead has said a line: before that it is first light, tested below.
 function bareState() {
   const { subagents: _dropped, ...rest } = soloState();
-  return { ...rest, subagents: {} };
+  const lead = { ...rest.agents[0], transcript: [{ id: 'line-0', marker: '⏺' as const, text: 'hello', ts: rest.startedAt }] };
+  return { ...rest, agents: [lead], subagents: {} };
 }
 
 it('draws a bare session as its own stream rather than the empty screen', async () => {
@@ -1097,4 +1099,59 @@ it('keeps the splash running across the first snapshot instead of restarting it'
   } finally {
     now.mockRestore();
   }
+});
+
+function firstLightState(transcriptLines = 0) {
+  const base = sampleTeamState();
+  const lead = base.agents.find((a) => a.isLead)!;
+  const transcript = Array.from({ length: transcriptLines }, (_, i) => ({
+    id: `line-${i}`,
+    marker: '⏺' as const,
+    text: `line ${i}`,
+    ts: base.startedAt + i,
+  }));
+  return { ...base, agents: [{ ...lead, transcript }], tasks: [], mail: [] };
+}
+
+it('opens on first light while the session is one agent with nothing said, and cuts to the stream at the first line', () => {
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
+  expect(screen.getByTestId('first-light')).toBeTruthy();
+  expect(screen.queryByTestId('wall')).toBeNull();
+  expect(screen.queryByTestId('composer-solo')).toBeNull();
+  expect(screen.getByTestId('bar').style.opacity).toBe('0.35');
+  expect(screen.getByTestId('needs-you').style.opacity).toBe('0.35');
+  expect(screen.getByTestId('needs-you-note').textContent).toBe('messages go to lead until a teammate joins');
+
+  act(() => MockEventSource.last().emit('state', firstLightState(1)));
+  expect(screen.queryByTestId('first-light')).toBeNull();
+  expect(screen.getByTestId('wall')).toBeTruthy();
+  expect(screen.getByTestId('bar').style.opacity).toBe('');
+  expect(screen.getByTestId('needs-you').style.opacity).toBe('');
+  expect(screen.queryByTestId('needs-you-note')).toBeNull();
+});
+
+it('cuts from first light to the wall when the first teammate joins', () => {
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
+  expect(screen.getByTestId('first-light')).toBeTruthy();
+  act(() => MockEventSource.last().emit('state', sampleTeamState()));
+  expect(screen.queryByTestId('first-light')).toBeNull();
+  expect(screen.getByTestId('wall')).toBeTruthy();
+});
+
+it('shows first light only on the wall view; the overview is itself, undimmed', () => {
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
+  fireEvent.click(screen.getByRole('tab', { name: 'overview' }));
+  expect(screen.queryByTestId('first-light')).toBeNull();
+  expect(screen.getByTestId('bar').style.opacity).toBe('');
+});
+
+it('names the lead by character in the strip note under a film', () => {
+  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ movieTheme: 'breakingbad' }));
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
+  expect(screen.getByTestId('needs-you-note').textContent).toBe('messages go to Heisenberg until a teammate joins');
+  expect(screen.getByTestId('first-light-head').textContent).toBe('Heisenberg is here. The lab is still an RV.');
 });
