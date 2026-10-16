@@ -82,6 +82,8 @@ describe('list items', () => {
     render(<Prose text={'- [ ] todo\n- [x] done\n- plain'} />);
     const items = screen.getAllByTestId('md-item');
     expect(items.map((el) => el.getAttribute('data-checked'))).toEqual(['false', 'true', null]);
+    expect(items[0].textContent).toContain('☐');
+    expect(items[1].textContent).toContain('☑');
     expect(items[1].textContent).toContain('done');
     expect(items[1].textContent).not.toContain('[x]');
   });

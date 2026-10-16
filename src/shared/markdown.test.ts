@@ -71,6 +71,12 @@ describe('blocks', () => {
     expect(out.map((b) => (b.kind === 'item' ? b.depth : null))).toEqual([0, 1, 2, 1]);
   });
 
+  it('nests an item at most one level under the one above', () => {
+    const depths = (t: string) => blocks(t).map((b) => (b.kind === 'item' ? b.depth : null));
+    expect(depths('- a\n    - b\n        - c')).toEqual([0, 1, 2]);
+    expect(depths('- a\n  - b\n- c\n    - d')).toEqual([0, 1, 0, 1]);
+  });
+
   it('reads a checkbox item and strips its marker', () => {
     const out = blocks('- [ ] todo\n- [x] done\n- [X] also done\n- [ ]not one');
     expect(out.map((b) => (b.kind === 'item' ? b.checked : null))).toEqual([false, true, true, undefined]);

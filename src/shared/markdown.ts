@@ -147,6 +147,13 @@ export function blocks(text: string): Block[] {
     if (joined !== '') out.push({ kind: 'quote', spans: inlines(joined) });
     quote = [];
   };
+  // A child is at most one level under the item above, so a four-space
+  // indent under a top-level item nests once instead of leaving a gap.
+  const pushItem = (b: Block) => {
+    const prev = out[out.length - 1];
+    if (b.kind === 'item') b.depth = Math.min(b.depth, prev?.kind === 'item' ? prev.depth + 1 : 0);
+    out.push(b);
+  };
   const flush = () => {
     flushPara();
     flushQuote();
@@ -189,13 +196,13 @@ export function blocks(text: string): Block[] {
     const bullet = BULLET.exec(line);
     if (bullet) {
       flushPara();
-      out.push(item(bullet[1], bullet[2], false));
+      pushItem(item(bullet[1], bullet[2], false));
       continue;
     }
     const ordered = ORDERED.exec(line);
     if (ordered) {
       flushPara();
-      out.push(item(ordered[1], ordered[2], true));
+      pushItem(item(ordered[1], ordered[2], true));
       continue;
     }
     para.push(line.trim());
