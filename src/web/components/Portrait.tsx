@@ -1,15 +1,8 @@
-import { themeFor } from '../../shared/cast';
-import {
-  parseLook,
-  portraitFor,
-  portraitSvg,
-  TERMINAL_SPRITE,
-  TERMINAL_SPRITE_SVG,
-  type FilmPaint,
-} from '../../shared/portrait';
+import { characterGrid } from '../../shared/character-portrait';
+import { gridSvgV3 } from '../../shared/pixel-grid';
+import { portraitFor, portraitSvg, TERMINAL_SPRITE, TERMINAL_SPRITE_SVG } from '../../shared/portrait';
 import { useCast } from '../state/useCast';
-import { activePalette, useAppearance } from '../state/useSettings';
-import { THEMES } from '../themes';
+import { useAppearance } from '../state/useSettings';
 
 export type PortraitSlot = 'wall' | 'rail-row' | 'default';
 
@@ -19,42 +12,32 @@ export interface PortraitProps {
   agent: { name: string; agentType: string; isLead: boolean };
   slot?: PortraitSlot;
   /**
-   * Rendered edge, in px. The sprite is a 12x12 viewBox, so scaling the whole
-   * thing keeps the pixel grid square at any size; shrinking the pixels without
-   * their offset step is what leaves sub-pixel gaps and stripes the face.
+   * Rendered edge, in px. A v3 portrait is a 32×32 grid and is only ever drawn
+   * at a multiple of 32, so every pixel is a whole number of screen pixels —
+   * `gridSvgV3` throws otherwise. The 12×12 role sprite is one SVG viewBox and
+   * scales to any size.
    */
   size?: number;
 }
 
-export function Portrait({ agent, slot = 'default', size = 24 }: PortraitProps) {
+export function Portrait({ agent, slot = 'default', size = 32 }: PortraitProps) {
   const appearance = useAppearance();
   const cast = useCast();
   const { portrait, skinIndex } = portraitFor(agent);
   // Nothing at all, not a blank box: the rows close up around the missing face.
   if (!appearance.avatars) return null;
 
-  // The look follows the slot the CAST assigned, not the portrait the sprite
-  // hashed: an agent that took a spare is one whose role could not be read, and
-  // it keeps the default portrait rather than wearing a character's clothes.
-  const role = cast.slotOf(agent.name);
-  const theme = themeFor(appearance.movieTheme);
-  const look = role ? parseLook(theme.looks?.[role]) : null;
-  // Lifted against whatever ground is actually painted — the film's while its
-  // palette drives, the system theme's when the switch is off. Portrait tints
-  // survive that switch; only the ground they are read against changes.
-  const film: FilmPaint | undefined =
-    look && role
-      ? {
-          look,
-          ground: activePalette(appearance)?.bg ?? (THEMES[appearance.theme] ?? THEMES.nocturne).bg,
-          feats: theme.feats?.[role],
-        }
-      : undefined;
+  // The character follows the slot the CAST assigned, not the portrait the
+  // sprite hashed: an agent that took a spare is one whose role could not be
+  // read, and it keeps the role sprite rather than wearing someone's face.
+  // The film palette switch reaches the ground, never the cast, so it plays
+  // no part here.
+  const grid = characterGrid(cast, agent.name);
 
   return (
     <div
       data-testid="portrait"
-      data-portrait={portrait}
+      data-portrait={grid ? 'v3' : portrait}
       aria-hidden="true"
       style={{
         width: size,
@@ -62,8 +45,9 @@ export function Portrait({ agent, slot = 'default', size = 24 }: PortraitProps) 
         position: 'relative',
         flex: 'none',
         marginTop: SLOT_MARGIN[slot],
+        imageRendering: 'pixelated',
       }}
-      dangerouslySetInnerHTML={{ __html: portraitSvg(portrait, skinIndex, film) }}
+      dangerouslySetInnerHTML={{ __html: grid ? gridSvgV3(grid, size) : portraitSvg(portrait, skinIndex) }}
     />
   );
 }

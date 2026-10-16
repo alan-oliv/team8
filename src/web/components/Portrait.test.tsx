@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { buildCast, type Cast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
 import { SettingsContext, DEFAULT_SETTINGS } from '../state/useSettings';
@@ -24,11 +24,11 @@ function domFlex(css: string): string {
   return probe.style.flex;
 }
 
-it('hosts the inline SVG in a 24x24 relative box', () => {
+it('hosts the inline SVG in a 32x32 relative box', () => {
   render(<Portrait agent={LEAD} />);
   const host = screen.getByTestId('portrait');
-  expect(host.style.width).toBe('24px');
-  expect(host.style.height).toBe('24px');
+  expect(host.style.width).toBe('32px');
+  expect(host.style.height).toBe('32px');
   expect(host.style.position).toBe('relative');
   expect(host.style.flex).toBe(domFlex('none'));
   expect(host.querySelector('svg')).not.toBeNull();
@@ -100,43 +100,68 @@ const filmed = (settings: Partial<typeof DEFAULT_SETTINGS>, cast: Cast, agent = 
 
 const svgOf = () => screen.getByTestId('portrait').innerHTML;
 
-it('wears the film look when the cast gave the agent a role slot', () => {
-  const cast = buildCast([LEAD], 'inception');
+it('draws the v3 portrait of the character the cast gave the agent, crisp, at the integer size', () => {
+  const cast = buildCast([LEAD], 'breakingbad');
   expect(cast.slotOf('team-lead')).toBe('lead');
-  filmed({ movieTheme: 'inception' }, cast);
-  const filmSvg = svgOf();
-  cleanup();
-
-  render(<Portrait agent={LEAD} />);
-  expect(filmSvg).not.toBe(svgOf());
+  filmed({ movieTheme: 'breakingbad' }, cast);
+  const host = screen.getByTestId('portrait');
+  expect(host.getAttribute('data-portrait')).toBe('v3');
+  expect(host.style.width).toBe('32px');
+  expect(host.style.imageRendering).toBe('pixelated');
+  const svg = host.querySelector('svg')!;
+  expect(svg.getAttribute('viewBox')).toBe('0 0 32 32');
+  expect(svg.getAttribute('shape-rendering')).toBe('crispEdges');
+  expect(svg.querySelectorAll('rect').length).toBeGreaterThan(50);
+  // No recolour: every fill is a hex from the file, never a CSS variable or a lifted value.
+  for (const r of svg.querySelectorAll('rect')) expect(r.getAttribute('fill')).toMatch(/^#[0-9a-f]{6}$/);
 });
 
-it('keeps the default portrait for an agent that took a spare', () => {
-  // lookFollowsRoleSlot: an agent whose role could not be read wears nothing.
-  const cast = buildCast([LEAD, ALPHA], 'inception');
+it('keeps the role sprite for an agent that took a spare, and with no theme', () => {
+  const cast = buildCast([LEAD, ALPHA], 'breakingbad');
   expect(cast.slotOf('probe-alpha')).toBeNull();
-  filmed({ movieTheme: 'inception' }, cast, ALPHA);
-  const withFilm = svgOf();
+  filmed({ movieTheme: 'breakingbad' }, cast, ALPHA);
+  expect(screen.getByTestId('portrait').getAttribute('data-portrait')).not.toBe('v3');
+  const spare = svgOf();
   cleanup();
-
   render(<Portrait agent={ALPHA} />);
-  expect(withFilm).toBe(svgOf());
+  expect(svgOf()).toBe(spare);
+  cleanup();
+  filmed({ movieTheme: null }, buildCast([LEAD], null));
+  expect(screen.getByTestId('portrait').getAttribute('data-portrait')).toBe('lead');
 });
 
-it('tints portraits even with the film palette switched off', () => {
-  // The switch reaches the GROUND, not the cast: names and portrait colours
-  // survive it, which is what "names and portrait colours only" means.
-  const cast = buildCast([LEAD], 'inception');
-  filmed({ movieTheme: 'inception', filmPalette: false }, cast);
-  const off = svgOf();
-  cleanup();
-
-  render(<Portrait agent={LEAD} />);
-  expect(off).not.toBe(svgOf());
+it('draws the v3 portrait whatever the film palette switch says — the switch reaches the ground, not the cast', () => {
+  const cast = buildCast([LEAD], 'breakingbad');
+  filmed({ movieTheme: 'breakingbad', filmPalette: false }, cast);
+  expect(screen.getByTestId('portrait').getAttribute('data-portrait')).toBe('v3');
 });
 
 it('still honours the avatars toggle while a film is casting', () => {
-  const cast = buildCast([LEAD], 'inception');
-  filmed({ movieTheme: 'inception', avatars: false }, cast);
+  const cast = buildCast([LEAD], 'breakingbad');
+  filmed({ movieTheme: 'breakingbad', avatars: false }, cast);
   expect(screen.queryByTestId('portrait')).toBeNull();
+});
+
+it('scales a v3 portrait to 128 for the seeker and refuses a size that is not a multiple of 32', () => {
+  const cast = buildCast([LEAD], 'breakingbad');
+  render(
+    <SettingsContext.Provider value={{ ...DEFAULT_SETTINGS, movieTheme: 'breakingbad' }}>
+      <CastContext.Provider value={cast}>
+        <Portrait agent={LEAD} size={128} />
+      </CastContext.Provider>
+    </SettingsContext.Provider>,
+  );
+  expect(screen.getByTestId('portrait').querySelector('svg')!.getAttribute('width')).toBe('128');
+  cleanup();
+  const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+  expect(() =>
+    render(
+      <SettingsContext.Provider value={{ ...DEFAULT_SETTINGS, movieTheme: 'breakingbad' }}>
+        <CastContext.Provider value={cast}>
+          <Portrait agent={LEAD} size={24} />
+        </CastContext.Provider>
+      </SettingsContext.Provider>,
+    ),
+  ).toThrow(/multiple of 32/);
+  quiet.mockRestore();
 });

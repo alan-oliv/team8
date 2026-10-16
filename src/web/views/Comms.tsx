@@ -38,8 +38,8 @@ const FOOT_NOTE: CSSProperties = {
 
 // The thread list overlaps the pair's two faces rather than putting them side by
 // side, so a row reads as one conversation instead of two agents.
-const PORTRAIT_PX = 20;
-const OVERLAP_PX = 14;
+const PORTRAIT_PX = 32;
+const OVERLAP_PX = 22;
 
 // The design's two docs disagree here (78% in the older two-sided spec, 64% in
 // the newer group-chat pass) — the newer number wins, since it also has to hold
@@ -72,7 +72,7 @@ const BUBBLE_GROUND = {
 
 const RUN_GAP = '10px';
 const IN_RUN_GAP = '3px';
-const FACE_PX = 22;
+const FACE_PX = 32;
 
 /** The face's place, kept even when it holds nothing, so a run keeps one edge. */
 function Face({ show, agent }: { show: boolean; agent: { name: string; agentType: string; isLead: boolean } }) {

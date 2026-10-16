@@ -146,8 +146,8 @@ describe('Comms — thread list', () => {
     const faces = within(first).getAllByTestId('portrait');
     expect(faces).toHaveLength(2);
     // Scaled whole, not shrunk pixel by pixel — the sprite is one SVG viewBox.
-    expect(faces[0].style.width).toBe('20px');
-    expect(faces[1].parentElement!.style.left).toBe('14px');
+    expect(faces[0].style.width).toBe('32px');
+    expect(faces[1].parentElement!.style.left).toBe('22px');
   });
 
   it('shows the unread count as a pill and totals it in the header', () => {
@@ -236,7 +236,7 @@ describe('Comms — thread pane', () => {
     expect(left.style.maxWidth).toBe('64%');
     expect(left.style.flexDirection).toBe('row');
     expect(right.style.flexDirection).toBe('row-reverse');
-    expect(within(bubbles[0]).getByTestId('portrait').style.width).toBe('22px');
+    expect(within(bubbles[0]).getByTestId('portrait').style.width).toBe('32px');
   });
 
   it('names the sender and clocks the message', () => {
@@ -483,7 +483,7 @@ describe('Comms — sender runs', () => {
     const faces = screen.getAllByTestId('face-slot');
     expect(faces.map((f) => within(f).queryAllByTestId('portrait').length)).toEqual([0, 0, 1, 1]);
     // The slot stays behind it, so the bubbles of a run keep one edge.
-    expect(faces[0].style.width).toBe('22px');
+    expect(faces[0].style.width).toBe('32px');
   });
 
   it('tightens the gap inside a run and opens it when the speaker changes', () => {
