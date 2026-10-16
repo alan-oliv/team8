@@ -51,6 +51,13 @@ export interface FilmPalette {
   fail: string;
 }
 
+/** The empty-team state's three lines, with `{lead}` still literal. */
+export interface FirstLightCopy {
+  kicker: string;
+  head: string;
+  body: string;
+}
+
 export interface MovieTheme {
   key: string;
   film: string;
@@ -59,6 +66,7 @@ export interface MovieTheme {
   note: string;
   roles: Partial<Record<RoleSlot, string>>;
   spare: string[];
+  firstLight: FirstLightCopy;
   /** Absent on `off`, which is the absence of a theme rather than a colourless one. */
   palette?: FilmPalette;
   /**
@@ -106,6 +114,12 @@ const OFF = MOVIE_THEMES[0];
 
 export function themeFor(key: string | null | undefined): MovieTheme {
   return MOVIE_THEMES.find((theme) => theme.key === key) ?? OFF;
+}
+
+/** The theme's first-light copy with every `{lead}` filled. `lead` is the cast's lead name, or 'lead' with no theme. */
+export function firstLightCopy(theme: MovieTheme, lead: string): FirstLightCopy {
+  const fill = (s: string) => s.split('{lead}').join(lead);
+  return { kicker: fill(theme.firstLight.kicker), head: fill(theme.firstLight.head), body: fill(theme.firstLight.body) };
 }
 
 // The same table the portraits classify by, so the security character wears the

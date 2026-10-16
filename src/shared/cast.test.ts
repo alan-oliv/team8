@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FEAT_IDS, MOVIE_THEMES, buildCast, themeFor, type CastAgent } from './cast';
+import { FEAT_IDS, MOVIE_THEMES, buildCast, firstLightCopy, themeFor, type CastAgent } from './cast';
 
 const lead = (name: string): CastAgent => ({ name, agentType: 'team-lead', isLead: true });
 const mate = (name: string, agentType: string): CastAgent => ({ name, agentType, isLead: false });
@@ -230,5 +230,30 @@ describe('the slot behind a character', () => {
   it('gives no slot to an agent it was never built with, or with no theme', () => {
     expect(buildCast(crew, 'inception').slotOf('someone-else')).toBeNull();
     expect(buildCast(crew, null).slotOf('ada')).toBeNull();
+  });
+});
+
+describe('first light copy', () => {
+  it('is carried by every theme, the off entry included, with {lead} in the headline', () => {
+    for (const theme of MOVIE_THEMES) {
+      expect(theme.firstLight, theme.key).toBeDefined();
+      expect(theme.firstLight.kicker, theme.key).not.toBe('');
+      expect(theme.firstLight.head, theme.key).toContain('{lead}');
+      expect(theme.firstLight.body, theme.key).not.toBe('');
+    }
+  });
+
+  it('fills every {lead}, however many a line has', () => {
+    const copy = firstLightCopy(themeFor('inception'), 'Cobb');
+    expect(copy.kicker).toBe('THE CREW IS STILL ON THE PLANE');
+    expect(copy.head).toBe('Cobb is awake. Everyone else is a level down.');
+    expect(copy.body).toBe('Arthur, Eames and the rest arrive when Cobb needs them. If they never do, check your totem and carry on.');
+    const twice = firstLightCopy(themeFor('godfather'), 'Vito');
+    expect(twice.body).toBe('Vito will make them an offer when there’s work. Until then, nobody gets a visit.');
+    expect(twice.body).not.toContain('{lead}');
+  });
+
+  it('reads "lead" with no theme', () => {
+    expect(firstLightCopy(themeFor(null), 'lead').head).toBe('lead is here. Nobody else yet.');
   });
 });
