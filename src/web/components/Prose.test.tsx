@@ -21,6 +21,7 @@ describe('a pipe table', () => {
     expect(agent.style.textAlign).toBe('left');
     expect(wall.style.textAlign).toBe('right');
     expect(cost.style.textAlign).toBe('right');
+    expect(screen.getAllByTestId('md-td')[1].style.textAlign).toBe('right');
   });
 
   it('renders inline markdown inside a cell', () => {

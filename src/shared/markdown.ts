@@ -55,7 +55,7 @@ export function isNumeric(text: string): boolean {
 }
 
 function cells(line: string): string[] {
-  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, '|').trim());
 }
 
 function markerAlign(cell: string): Align | undefined {

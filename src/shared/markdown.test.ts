@@ -94,6 +94,12 @@ describe('blocks', () => {
     expect(out[0].kind === 'table' && out[0].rows[0][1]).toEqual([{ kind: 'text', text: '' }]);
   });
 
+  it('keeps an escaped pipe inside its cell', () => {
+    const out = blocks('| a | b |\n|---|---|\n| x\\|y | 2 |');
+    const row = out[0].kind === 'table' ? out[0].rows[0] : [];
+    expect(row).toEqual([[{ kind: 'text', text: 'x|y' }], [{ kind: 'text', text: '2' }]]);
+  });
+
   // Pipe lines with no separator are not a table in GFM; the shape the author
   // wrote still reads better than a paragraph that swallows the newlines.
   it('keeps pipe lines with no separator row verbatim', () => {
