@@ -84,7 +84,7 @@ export interface Cast {
   asChar(name: string): CastName;
   /**
    * The role slot this agent was cast into, or null if it took a spare, kept its
-   * own name, or was never cast at all. The looks follow THIS rather than the
+   * own name, or was never cast at all. The portrait lookup follows THIS rather than the
    * portrait the sprite hashes, so an agent whose role the console could not
    * read keeps the default portrait instead of wearing a character's clothes.
    */

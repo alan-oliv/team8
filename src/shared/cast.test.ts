@@ -103,7 +103,7 @@ describe('the v3 film data', () => {
     }
   });
 
-  // The off entry is the absence of a theme, and it has none of the three. Every
+  // The off entry is the absence of a theme, and it has no palette. Every
   // consumer has to survive that, so it is asserted here rather than assumed.
   it('leaves the off entry without a palette', () => {
     const off = themeFor(null);
@@ -183,10 +183,10 @@ describe('casting', () => {
   });
 });
 
-// The looks follow the ROLE SLOT the cast assigned, not the portrait the sprite
-// hashed: an agent that took a spare is one whose role the console could not
-// read, so it keeps the default role portrait rather than wearing a character's
-// clothes (lookFollowsRoleSlot, and decision 20's premise).
+// The v3 portrait lookup follows the ROLE SLOT the cast assigned, not the
+// portrait the sprite hashed: an agent that took a spare is one whose role the
+// console could not read, so it keeps the default role portrait rather than
+// wearing a character's.
 describe('the slot behind a character', () => {
   it('records the slot it cast each agent into', () => {
     const cast = buildCast(crew, 'inception');
@@ -232,6 +232,7 @@ describe('first light copy', () => {
     const twice = firstLightCopy(themeFor('godfather'), 'Vito');
     expect(twice.body).toBe('Vito will make them an offer when there’s work. Until then, nobody gets a visit.');
     expect(twice.body).not.toContain('{lead}');
+    expect(firstLightCopy({ ...themeFor('off'), firstLight: { kicker: '', head: '{lead} {lead}', body: '' } }, 'X').head).toBe('X X');
   });
 
   it('reads "lead" with no theme', () => {
