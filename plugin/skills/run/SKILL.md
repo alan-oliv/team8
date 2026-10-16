@@ -41,7 +41,7 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    immediately; a wrong roster is cheap to fix in the first minute and expensive
    once six agents have edited files.
 7. **Stay free.** Answer questions, relay results, and run the track review
-   below as each track lands. Never fix a finding yourself. **While any track is
+   below as each wave of a track lands. Never fix a finding yourself. **While any track is
    live, do no multi-step investigation yourself** — a report waits as long as
    your longest turn. Dispatch a subagent for it, or do it before dispatching.
 8. **Close the run.** Run the full suite yourself once every track is clear —
@@ -202,14 +202,18 @@ contract. Never message the dead name — nothing is listening.
 ## Track Review
 
 An executor that self-verifies and pushes has had nobody read its diff. Each
-track gets one fresh reviewer when it lands, the same shape as the plan
-reviewer, and the executor stays alive until its track is clear.
+wave of a track gets one fresh reviewer when it lands, the same shape as the
+plan reviewer, and the executor stays alive until its track is clear.
 
-1. **When a teammate reports its last task completed and pushed**, write its
-   diff to a file — the branch's changes to the files it owns, from the base
-   you recorded before dispatching:
-   `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
-   Never hand a reviewer the diff inline.
+1. **When a teammate reports a wave's tasks completed and pushed**, write that
+   wave's diff to a file — the branch's changes to the files those tasks own,
+   from the track's base, which starts at the one you recorded before
+   dispatching:
+   `git diff <base>..HEAD -- <those files> > <scratchpad>/review-<track>-<wave>.diff`.
+   Then advance the track's base to HEAD, so the next review covers only new
+   commits. A teammate with tasks in a later wave goes on to its next task
+   while this wave is reviewed; a track of one wave is reviewed once, at its
+   end. Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
    runs at high effort and carries no Edit or Write, so read-only is enforced),
    model sized like the track's biggest task (sonnet for standard, opus for
@@ -221,14 +225,25 @@ reviewer, and the executor stays alive until its track is clear.
    assert something, no duplication of a block that exists, no scope beyond
    the tasks. Findings labelled Blocking or Minor, each with file, line and the
    fix. Do not tell it what not to flag.
-3. **Blocking findings go to the executor** by `SendMessage`, verbatim. It
-   fixes, re-runs the covering tests, pushes, and reports. Then a scoped
-   re-review: the diff since the last review, the findings list, verdict per
-   finding ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only.
-   Three rounds per track. After three, rule on each open finding yourself and
-   record the ruling in the run log. Minor findings go straight to the run log.
-4. **Clear the track.** Tell the executor its track is clear and it can stop.
-   Note the rounds in the run log.
+3. **Blocking findings go to the executor** by `SendMessage`, verbatim. From
+   a wave review they reach it on a later task, and it fixes them before
+   continuing. It fixes, re-runs the covering tests, pushes, and reports the
+   fix commit's sha with the test output. Read that commit yourself,
+   `git show <sha> -- <files>`, against each Blocking finding. When every fix
+   is confined to the lines its finding named, plus the test that covers them,
+   and the report shows that test passing, record "lead-verified" per finding
+   in the run log and dispatch no re-reviewer: a re-reviewer for a two-line
+   fix costs more wall time than the fix. Dispatch a scoped re-review only
+   when a fix touches code its finding did not name, a finding needed a
+   judgment call, or you cannot tell from the diff whether it is addressed:
+   the diff since the last review, the findings list, verdict per finding
+   ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only. Three
+   re-review rounds per track. After three, rule on each open finding yourself
+   and record the ruling in the run log. Minor findings go straight to the run
+   log.
+4. **Clear the track** once the last wave's review and any fixes are done.
+   Tell the executor its track is clear and it can stop. Note the rounds and
+   the lead-verified findings in the run log.
 
 ## The Dispatch Contract
 
@@ -293,7 +308,8 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    Anything longer goes in a file in `<scratchpad>/reports/`, and the answer
    ends with its path. Do not also send the report by `SendMessage`. Then go
    idle: idle is how you stay available — never poll the task list waiting.
-   The lead's message with review findings wakes you; fix, re-run the covering
+   The lead's message with review findings wakes you, or arrives while you
+   are on a later task: fix first, then continue. Fix, re-run the covering
    tests, push, and answer again. Stop only when the lead says the track is
    clear." Write your real scratchpad path in place of `<scratchpad>`.
 
@@ -333,7 +349,7 @@ the PR next to the plan it describes.
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
 | `isolation: "worktree"` to keep parallel writers apart | It silently spawns a subagent, not a teammate. Isolate by file ownership |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
-| Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for the track review. Nobody else can fix its findings |
+| Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for its last wave's review. Nobody else can fix its findings |
 | Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
 | Treating a teammate's failure notice as the end of its track | A message wakes a teammate waiting on a retry — send one. Dead a second time, respawn it per After a resume |
 | Run log filled from memory a day later | The console's numbers are for this session. Fill it at close |

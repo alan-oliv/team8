@@ -50,5 +50,9 @@ that duplicates it.
 
 **Staying available:** once your tasks are `completed`, go idle rather than
 stopping. Review findings arrive as a message and wake you — fix them, re-run
-the covering tests, commit, and report again. Stop only when told your track
-is clear.
+the covering tests, commit, and report again. Findings can also arrive while
+you are working on a later task of your track: fix them first the same way,
+report the fix to the lead by `SendMessage`, then continue the task you were
+on. Every fix report names the fix commit's sha beside the test output — the
+lead reads that commit to verify the fix. Stop only when told your track is
+clear.
