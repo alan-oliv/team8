@@ -49,7 +49,7 @@
       "agentType": "general-purpose"
     }
   ],
-  "legal": "Character names are protected IP, and so is a film’s visual identity. Palettes here are hand-picked colours in the spirit of each film’s grade, and looks are five-colour recolours of a generic sprite — not artwork, not likenesses. Fine for a personal or internal tool; not for anything shipped publicly.",
+  "legal": "Character names are protected IP, and so is a film’s visual identity. Palettes here are hand-picked colours in the spirit of each film’s grade, and the portraits are stylised hand-drawn 32x32 pixel characters — not artwork from the films, not likenesses. Fine for a personal or internal tool; not for anything shipped publicly.",
   "themes": [
     {
       "key": "off",
