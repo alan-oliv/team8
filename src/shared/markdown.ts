@@ -25,11 +25,15 @@ export type Block =
   | { kind: 'heading'; level: number; spans: Inline[] }
   | { kind: 'para'; spans: Inline[] }
   | { kind: 'item'; spans: Inline[]; ordered: boolean }
+  | { kind: 'quote'; spans: Inline[] }
+  | { kind: 'rule' }
   | { kind: 'table'; header: Inline[][]; align: Align[]; rows: Inline[][][] }
   // Pipe lines with no separator row: not a table in GFM, kept as written.
   | { kind: 'pre'; lines: string[] };
 
 const HEADING = /^(#{1,6})\s+(.*)$/;
+const QUOTE = /^\s*>\s?(.*)$/;
+const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const BULLET = /^\s*[-*]\s+(.*)$/;
 const ORDERED = /^\s*\d+[.)]\s+(.*)$/;
 // Every inline construct in one pass, so none can split another: `**bold**`,
@@ -118,6 +122,7 @@ export function blocks(text: string): Block[] {
   const out: Block[] = [];
   let para: string[] = [];
   let table: string[] = [];
+  let quote: string[] = [];
 
   const flushPara = () => {
     if (para.length > 0) out.push({ kind: 'para', spans: inlines(para.join(' ')) });
@@ -127,21 +132,41 @@ export function blocks(text: string): Block[] {
     if (table.length > 0) out.push(parseTable(table));
     table = [];
   };
+  const flushQuote = () => {
+    if (quote.length > 0) out.push({ kind: 'quote', spans: inlines(quote.filter((l) => l !== '').join(' ')) });
+    quote = [];
+  };
   const flush = () => {
     flushPara();
+    flushQuote();
     flushTable();
   };
 
   for (const line of text.split('\n')) {
     if (line.trim().startsWith('|')) {
       flushPara();
+      flushQuote();
       table.push(line);
       continue;
     }
     flushTable();
 
+    const quoted = QUOTE.exec(line);
+    if (quoted) {
+      flushPara();
+      quote.push(quoted[1]);
+      continue;
+    }
+    flushQuote();
+
     if (line.trim() === '') {
       flushPara();
+      continue;
+    }
+    // Before the bullet check: `- - -` is a rule, not an item reading `- -`.
+    if (RULE.test(line)) {
+      flushPara();
+      out.push({ kind: 'rule' });
       continue;
     }
     const heading = HEADING.exec(line);

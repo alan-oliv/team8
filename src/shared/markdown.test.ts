@@ -147,6 +147,29 @@ describe('blocks', () => {
   it('separates a table from the prose around it', () => {
     expect(blocks('before\n| a |\n|---|\n| 1 |\nafter').map((b) => b.kind)).toEqual(['para', 'table', 'para']);
   });
+
+  it('joins consecutive quote lines into one quote', () => {
+    expect(blocks('> one line\n> and its continuation')).toEqual([
+      { kind: 'quote', spans: [{ kind: 'text', text: 'one line and its continuation' }] },
+    ]);
+  });
+
+  it('ends a quote at the first unquoted line', () => {
+    expect(blocks('> q\nafter').map((b) => b.kind)).toEqual(['quote', 'para']);
+  });
+
+  it('reads a horizontal rule in each of its spellings', () => {
+    for (const t of ['---', '***', '___', '- - -', '  ----  ']) expect(blocks(t)).toEqual([{ kind: 'rule' }]);
+  });
+
+  it('does not mistake a dash-led sentence or a two-dash line for a rule', () => {
+    expect(blocks('-- not a rule').map((b) => b.kind)).toEqual(['para']);
+    expect(blocks('- an item').map((b) => b.kind)).toEqual(['item']);
+  });
+
+  it('breaks a paragraph at a rule', () => {
+    expect(blocks('a\n---\nb').map((b) => b.kind)).toEqual(['para', 'rule', 'para']);
+  });
 });
 
 describe('isNumeric', () => {

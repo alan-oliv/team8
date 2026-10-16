@@ -55,3 +55,16 @@ describe('inline constructs', () => {
     expect(text).not.toContain('*');
   });
 });
+
+describe('quotes and rules', () => {
+  it('renders a quote without its angle brackets', () => {
+    render(<Prose text={'> one\n> two'} />);
+    expect(screen.getByTestId('md-quote').textContent).toBe('one two');
+  });
+
+  it('renders a rule as an element, not as dashes', () => {
+    render(<Prose text={'a\n---\nb'} />);
+    expect(screen.getByTestId('md-rule')).toBeTruthy();
+    expect(screen.getByTestId('md-rule').textContent).toBe('');
+  });
+});

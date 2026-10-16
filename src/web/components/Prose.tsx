@@ -150,6 +150,21 @@ export function Prose({ text }: { text: string }) {
               <Spans spans={b.spans} />
             </span>
           </div>
+        ) : b.kind === 'quote' ? (
+          <div
+            key={i}
+            data-testid="md-quote"
+            style={{
+              borderLeft: '2px solid var(--color-neutral-800)',
+              paddingLeft: '10px',
+              color: 'var(--color-neutral-400)',
+              lineHeight: 1.65,
+            }}
+          >
+            <Spans spans={b.spans} />
+          </div>
+        ) : b.kind === 'rule' ? (
+          <div key={i} data-testid="md-rule" style={{ height: '1px', background: 'var(--color-neutral-900)', margin: '4px 0' }} />
         ) : b.kind === 'table' ? (
           <MarkdownTable key={i} {...b} />
         ) : b.kind === 'pre' ? (
