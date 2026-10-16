@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { agentNameFrom } from './ingest/hooks';
 import { agentOfTranscript, TAIL_POLL_MS } from './ingest/files';
-import { FOLLOW_INTERVAL_MS } from './index';
+import { FOLLOW_INTERVAL_MS, IDLE_EXIT_TICKS } from './index';
 import type { SessionRow, TeamState } from '../shared/domain';
 import type { Sidecar } from '../shared/roster';
 
@@ -987,5 +987,53 @@ describe('which team a console boots onto', () => {
     });
 
     expect(code).toBe(1);
+  }, 20_000);
+
+  it('stops itself once no claude session is running, recording auto so a restart reopens nothing stale', async () => {
+    home = await layout();
+    // layout() leaves sessions/ empty, so the watched session is already gone.
+    const url = await boot(home, ['--session', LEAD_SESSION], null);
+    const port = Number(new URL(url).port);
+    expect(await readRecord(home, port, { kind: 'session', id: LEAD_SESSION })).toMatchObject({
+      watching: { kind: 'session', id: LEAD_SESSION },
+    });
+
+    const code = await new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => resolve(-1), FOLLOW_INTERVAL_MS * (IDLE_EXIT_TICKS + 3));
+      child!.on('exit', (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      });
+    });
+    expect(code).toBe(0);
+    child = null;
+    expect((await readRecord(home, port, { kind: 'auto' })).watching).toEqual({ kind: 'auto' });
+  }, FOLLOW_INTERVAL_MS * (IDLE_EXIT_TICKS + 5));
+
+  it('stops at once on the last running session\'s SessionEnd, without waiting out the idle ticks', async () => {
+    home = await layout();
+    // One live session: this test process. Its pid keeps answering after the
+    // hook, so only the SessionEnd path — not the empty-tick backstop — can
+    // bring the console down inside the deadline below.
+    await fs.writeFile(
+      path.join(home, 'sessions', `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId: SOLO_SESSION, status: 'idle', cwd: process.cwd() }),
+    );
+    const url = await boot(home, [], null);
+    await sessionsOf(url);
+
+    const exited = new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => resolve(-1), FOLLOW_INTERVAL_MS * 2);
+      child!.on('exit', (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      });
+    });
+    const res = await postHook(url, { hook_event_name: 'SessionEnd', session_id: SOLO_SESSION });
+    expect(res.status).toBe(200);
+    expect(await exited).toBe(0);
+    child = null;
+    const port = Number(new URL(url).port);
+    expect((await readRecord(home, port, { kind: 'auto' })).watching).toEqual({ kind: 'auto' });
   }, 20_000);
 });

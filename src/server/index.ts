@@ -40,6 +40,14 @@ export const IDLE_GRACE_MS = 10 * 60 * 1000;
  * it, and it costs one readdir over ~/.claude/teams.
  */
 export const FOLLOW_INTERVAL_MS = 3000;
+/**
+ * Follower ticks with no Claude session running before the console stops
+ * itself — the backstop for a session killed without its SessionEnd hook; a
+ * clean exit stops the console at once (see onSessionEnd). Ten, not one: a
+ * `claude` restart is a gap between sidecars, and the wiring tests boot on an
+ * empty sessions/ dir and run for up to twenty seconds.
+ */
+export const IDLE_EXIT_TICKS = 10;
 
 export interface Cli {
   command: 'run' | 'setup' | 'uninstall' | 'measure';
@@ -1525,6 +1533,12 @@ export async function main(argv: string[]): Promise<number> {
     store.close();
     process.exit(0);
   };
+  const stopIdle = async (): Promise<void> => {
+    logInfo('no claude session is running, stopping');
+    watch({ kind: 'auto' });
+    await recording;
+    stop();
+  };
 
   server.removeAllListeners('request');
   server.on('request', createHttpHandler({
@@ -1535,6 +1549,18 @@ export async function main(argv: string[]): Promise<number> {
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
       onAgentActivity: (agent) => void ingest.drainAgent(agent),
+      // Respond first: the hook's curl treats a dropped reply as a crash and
+      // runs console-restart.sh, which would bring this console straight back.
+      onSessionEnd: (sid) =>
+        setTimeout(() => {
+          void readSessions(sessionsRoot)
+            .then((facts) => {
+              // The ending session's own pid still answers while its hooks run.
+              facts.live.delete(sid);
+              if (facts.live.size === 0) return stopIdle();
+            })
+            .catch((err: unknown) => logError('session end', err));
+        }, 250),
     }),
     stream: hub,
     state: publish,
@@ -1576,6 +1602,7 @@ export async function main(argv: string[]): Promise<number> {
    * Moves what is shown toward the watch (`targetOf`): a watched session to the
    * team it drives, auto to the newest live team. A held team is never moved.
    */
+  let idleTicks = 0;
   const followRealTeam = async (): Promise<void> => {
     if (switching) return;
     // Snapshotted before the listing awaits: retarget/retargetSession bump
@@ -1603,6 +1630,16 @@ export async function main(argv: string[]): Promise<number> {
     // these are the previous target's, and the rows' `current` flags with them.
     if (gen !== generation) return;
     leadFacts = facts;
+
+    // With no Claude session running there is nothing to observe, and the
+    // console would otherwise sit on whatever it last showed — a dead session
+    // over an empty picker. Recorded as `auto` first, so the hook that brings
+    // it back for the next session does not reopen the one that is gone.
+    idleTicks = walk.sessions.live.size === 0 ? idleTicks + 1 : 0;
+    if (idleTicks >= IDLE_EXIT_TICKS) {
+      await stopIdle();
+      return;
+    }
     const json = JSON.stringify(rows);
     if (json !== liveRowsJson) {
       liveRows = rows;

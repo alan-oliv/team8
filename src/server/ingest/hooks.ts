@@ -34,6 +34,8 @@ export interface HookDeps {
    * the line to an fs.watch event macOS drops under load.
    */
   onAgentActivity?: (agent: string) => void;
+  /** A session ended, by its id. The console decides whether anything is left to watch. */
+  onSessionEnd?: (sessionId: string) => void;
 }
 
 export interface HookHandlers {
@@ -120,6 +122,7 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         const toolName = str(b.tool_name);
         const text = str(b.message) ?? str(b.prompt);
         store.append('hook', { event, agent, toolName, text }, agent);
+        if (event === 'SessionEnd' && sid) deps.onSessionEnd?.(sid);
         // Before the PermissionRequest branch below, which can await the
         // operator for ten minutes: the transcript explaining why the agent is
         // asking has to be on screen while they decide.

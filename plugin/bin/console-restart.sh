@@ -21,8 +21,9 @@ ROOT="${OCTO_ROOT:-${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.."
 
 console_up && exit 0
 
-# The console never stops on its own, so nothing answering means it crashed or
-# was killed. Without a record it has never run here: only a team spawn, a
+# Nothing answering means it crashed, was killed, or stopped itself once no
+# Claude session was running (it records `auto` before it does, so this reopens
+# nothing stale). Without a record it has never run here: only a team spawn, a
 # workflow or /team8:console starts it the first time.
 [ -f "$RECORD" ] || exit 0
 
