@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { WorkflowRun as Run } from '../../shared/domain';
-import { Prose } from '../components/TranscriptFeed';
+import { Prose } from '../components/Prose';
 import { clockLabel, formatElapsed, formatTokens } from '../format';
 import { liveCounts } from './workflow-grid';
 import { humanizeKey, parseOutput, type OutputDoc, type Primitive } from './workflow-output';
