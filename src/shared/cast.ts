@@ -5,16 +5,6 @@ export type RoleSlot = 'lead' | 'security' | 'perf' | 'tests' | 'architect' | 'r
 /** The base themes a film may borrow a neutral ramp from. */
 export type NeutralsFrom = 'nocturne' | 'slate';
 
-/**
- * The accessories a look may carry, drawn over the role silhouette in the order
- * the film lists them — `['bald', 'fedora']` puts the hat on the scalp.
- */
-export const FEAT_IDS = [
-  'bald', 'shades', 'specs', 'visor', 'fedora',
-  'pointyhat', 'wildhair', 'goatee', 'beard', 'longhair',
-] as const;
-export type FeatId = (typeof FEAT_IDS)[number];
-
 /** The film's single ramp: `--color-accent` as `base`, then the six steps. */
 export interface PaletteAccent {
   300: string;
@@ -69,12 +59,6 @@ export interface MovieTheme {
   firstLight: FirstLightCopy;
   /** Absent on `off`, which is the absence of a theme rather than a colourless one. */
   palette?: FilmPalette;
-  /**
-   * Five pipe-joined hex per role slot — skin, skin shade, garment, garment
-   * shade, hair — stored WITHOUT the leading `#`, which whatever paints them adds.
-   */
-  looks?: Partial<Record<RoleSlot, string>>;
-  feats?: Partial<Record<RoleSlot, FeatId[]>>;
 }
 
 interface ThemesFile {
