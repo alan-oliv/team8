@@ -167,6 +167,19 @@ describe('blocks', () => {
     expect(blocks('- an item').map((b) => b.kind)).toEqual(['item']);
   });
 
+  it('draws nothing for a quote with no text', () => {
+    expect(blocks('>')).toEqual([]);
+    expect(blocks('>  \n> ')).toEqual([]);
+  });
+
+  it('keeps a quote together across a bare > line', () => {
+    expect(blocks('> a\n>\n> b')).toEqual([{ kind: 'quote', spans: [{ kind: 'text', text: 'a b' }] }]);
+  });
+
+  it('ends a quote at a table', () => {
+    expect(blocks('> q\n| a |\n|---|\n| 1 |').map((b) => b.kind)).toEqual(['quote', 'table']);
+  });
+
   it('breaks a paragraph at a rule', () => {
     expect(blocks('a\n---\nb').map((b) => b.kind)).toEqual(['para', 'rule', 'para']);
   });

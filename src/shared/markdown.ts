@@ -133,7 +133,8 @@ export function blocks(text: string): Block[] {
     table = [];
   };
   const flushQuote = () => {
-    if (quote.length > 0) out.push({ kind: 'quote', spans: inlines(quote.filter((l) => l !== '').join(' ')) });
+    const joined = quote.filter((l) => l.trim() !== '').join(' ');
+    if (joined !== '') out.push({ kind: 'quote', spans: inlines(joined) });
     quote = [];
   };
   const flush = () => {
