@@ -10,5 +10,5 @@ import { PORTRAITS_V3 } from './portraits-v3';
 export function characterGrid(cast: Cast, name: string): PixelGrid | null {
   const slot = cast.slotOf(name);
   const character = slot ? cast.theme.roles[slot] : undefined;
-  return (character && PORTRAITS_V3[cast.theme.key]?.[character]) ?? null;
+  return (character ? PORTRAITS_V3[cast.theme.key]?.[character] : null) ?? null;
 }
