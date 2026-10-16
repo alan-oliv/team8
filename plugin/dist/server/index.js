@@ -4704,6 +4704,7 @@ function createHookHandlers(deps) {
         const toolName = str3(b.tool_name);
         const text = str3(b.message) ?? str3(b.prompt);
         store.append("hook", { event, agent, toolName, text }, agent);
+        if (event === "SessionEnd" && sid) deps.onSessionEnd?.(sid);
         touched(agent);
         if (event === "PostToolUse") {
           for (const permit of permits.list()) {
@@ -6513,6 +6514,7 @@ var execFileAsync2 = promisify4(execFile5);
 var DEFAULT_PORT = 4823;
 var IDLE_GRACE_MS = 10 * 60 * 1e3;
 var FOLLOW_INTERVAL_MS = 3e3;
+var IDLE_EXIT_TICKS = 10;
 function parseArgs(argv) {
   let command = "run";
   let port = DEFAULT_PORT;
@@ -7395,6 +7397,12 @@ async function main(argv) {
     store.close();
     process.exit(0);
   };
+  const stopIdle = async () => {
+    logInfo("no claude session is running, stopping");
+    watch2({ kind: "auto" });
+    await recording;
+    stop();
+  };
   server.removeAllListeners("request");
   server.on("request", createHttpHandler({
     permits,
@@ -7403,7 +7411,15 @@ async function main(argv) {
       permits,
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
-      onAgentActivity: (agent) => void ingest.drainAgent(agent)
+      onAgentActivity: (agent) => void ingest.drainAgent(agent),
+      // Respond first: the hook's curl treats a dropped reply as a crash and
+      // runs console-restart.sh, which would bring this console straight back.
+      onSessionEnd: (sid) => setTimeout(() => {
+        void readSessions(sessionsRoot).then((facts) => {
+          facts.live.delete(sid);
+          if (facts.live.size === 0) return stopIdle();
+        }).catch((err) => logError("session end", err));
+      }, 250)
     }),
     stream: hub,
     state: publish,
@@ -7433,6 +7449,7 @@ async function main(argv) {
     onShutdown: stop
   }));
   console.log(`team8 on http://127.0.0.1:${port}${cli.readOnly ? " (read-only)" : ""}`);
+  let idleTicks = 0;
   const followRealTeam = async () => {
     if (switching) return;
     const gen = generation;
@@ -7442,6 +7459,11 @@ async function main(argv) {
     const facts = mine ? { sessionName: mine.title, branch: mine.branch, mode: mine.mode } : await leadFactsOf(currentTeam ? leadSessionId : currentSession);
     if (gen !== generation) return;
     leadFacts = facts;
+    idleTicks = walk2.sessions.live.size === 0 ? idleTicks + 1 : 0;
+    if (idleTicks >= IDLE_EXIT_TICKS) {
+      await stopIdle();
+      return;
+    }
     const json2 = JSON.stringify(rows);
     if (json2 !== liveRowsJson) {
       liveRows = rows;
@@ -7481,6 +7503,7 @@ export {
   DEFAULT_PORT,
   FOLLOW_INTERVAL_MS,
   HEAD_WINDOW,
+  IDLE_EXIT_TICKS,
   IDLE_GRACE_MS,
   TAIL_WINDOW,
   discoverTeam,
