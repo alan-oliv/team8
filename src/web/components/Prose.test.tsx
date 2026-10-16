@@ -68,3 +68,21 @@ describe('quotes and rules', () => {
     expect(screen.getByTestId('md-rule').textContent).toBe('');
   });
 });
+
+describe('list items', () => {
+  it('indents by depth', () => {
+    render(<Prose text={'- a\n  - b\n    - c'} />);
+    const items = screen.getAllByTestId('md-item');
+    expect(items.map((el) => el.getAttribute('data-depth'))).toEqual(['0', '1', '2']);
+    expect(items[2].style.paddingLeft).toBe('28px');
+    expect(items[0].style.paddingLeft).toBe('0px');
+  });
+
+  it('shows a checkbox item as checked or not, with the marker gone', () => {
+    render(<Prose text={'- [ ] todo\n- [x] done\n- plain'} />);
+    const items = screen.getAllByTestId('md-item');
+    expect(items.map((el) => el.getAttribute('data-checked'))).toEqual(['false', 'true', null]);
+    expect(items[1].textContent).toContain('done');
+    expect(items[1].textContent).not.toContain('[x]');
+  });
+});

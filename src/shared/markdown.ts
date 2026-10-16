@@ -24,7 +24,7 @@ export type Align = 'left' | 'right' | 'center';
 export type Block =
   | { kind: 'heading'; level: number; spans: Inline[] }
   | { kind: 'para'; spans: Inline[] }
-  | { kind: 'item'; spans: Inline[]; ordered: boolean }
+  | { kind: 'item'; spans: Inline[]; ordered: boolean; depth: number; checked?: boolean }
   | { kind: 'quote'; spans: Inline[] }
   | { kind: 'rule' }
   | { kind: 'table'; header: Inline[][]; align: Align[]; rows: Inline[][][] }
@@ -34,8 +34,9 @@ export type Block =
 const HEADING = /^(#{1,6})\s+(.*)$/;
 const QUOTE = /^\s*>\s?(.*)$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
-const BULLET = /^\s*[-*]\s+(.*)$/;
-const ORDERED = /^\s*\d+[.)]\s+(.*)$/;
+const BULLET = /^(\s*)[-*]\s+(.*)$/;
+const ORDERED = /^(\s*)\d+[.)]\s+(.*)$/;
+const CHECK = /^\[( |x|X)\]\s+(.*)$/;
 // Every inline construct in one pass, so none can split another: `**bold**`,
 // `~~strike~~`, `` `code` ``, `[text](href)`, and `*italic*` last so the
 // double asterisk is tried first. Italic needs a non-space, non-asterisk
@@ -113,6 +114,15 @@ function parseTable(lines: string[]): Block {
   return { kind: 'table', header, align, rows };
 }
 
+// Two spaces per level, the width a teammate's lists actually use; a tab
+// counts as one level so a tabbed list does not flatten.
+function item(indent: string, text: string, ordered: boolean): Block {
+  const depth = Math.floor(indent.replace(/\t/g, '  ').length / 2);
+  const check = CHECK.exec(text);
+  if (check) return { kind: 'item', spans: inlines(check[2]), ordered, depth, checked: check[1] !== ' ' };
+  return { kind: 'item', spans: inlines(text), ordered, depth };
+}
+
 /**
  * Consecutive prose lines join into one paragraph, the way markdown reads them
  * — a hard-wrapped sentence is one sentence, not one line per screen row.
@@ -179,13 +189,13 @@ export function blocks(text: string): Block[] {
     const bullet = BULLET.exec(line);
     if (bullet) {
       flushPara();
-      out.push({ kind: 'item', spans: inlines(bullet[1]), ordered: false });
+      out.push(item(bullet[1], bullet[2], false));
       continue;
     }
     const ordered = ORDERED.exec(line);
     if (ordered) {
       flushPara();
-      out.push({ kind: 'item', spans: inlines(ordered[1]), ordered: true });
+      out.push(item(ordered[1], ordered[2], true));
       continue;
     }
     para.push(line.trim());

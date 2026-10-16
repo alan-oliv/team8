@@ -66,6 +66,23 @@ describe('inlines', () => {
 });
 
 describe('blocks', () => {
+  it('reads nesting from the indent, two spaces or a tab per level', () => {
+    const out = blocks('- a\n  - b\n    - c\n\t- d');
+    expect(out.map((b) => (b.kind === 'item' ? b.depth : null))).toEqual([0, 1, 2, 1]);
+  });
+
+  it('reads a checkbox item and strips its marker', () => {
+    const out = blocks('- [ ] todo\n- [x] done\n- [X] also done\n- [ ]not one');
+    expect(out.map((b) => (b.kind === 'item' ? b.checked : null))).toEqual([false, true, true, undefined]);
+    expect(out[0].kind === 'item' && out[0].spans).toEqual([{ kind: 'text', text: 'todo' }]);
+  });
+
+  it('gives a plain item depth 0 and no checked field', () => {
+    expect(blocks('- a')).toEqual([
+      { kind: 'item', spans: [{ kind: 'text', text: 'a' }], ordered: false, depth: 0 },
+    ]);
+  });
+
   it('reads a heading with its level', () => {
     expect(blocks('## What changed')).toEqual([
       { kind: 'heading', level: 2, spans: [{ kind: 'text', text: 'What changed' }] },

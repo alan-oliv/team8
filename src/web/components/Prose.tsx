@@ -142,11 +142,17 @@ export function Prose({ text }: { text: string }) {
             <Spans spans={b.spans} />
           </div>
         ) : b.kind === 'item' ? (
-          <div key={i} data-testid="md-item" style={{ display: 'flex', gap: '7px', lineHeight: 1.65 }}>
+          <div
+            key={i}
+            data-testid="md-item"
+            data-depth={b.depth}
+            data-checked={b.checked === undefined ? undefined : String(b.checked)}
+            style={{ display: 'flex', gap: '7px', lineHeight: 1.65, paddingLeft: `${b.depth * 14}px` }}
+          >
             <span style={{ color: 'var(--color-neutral-600)', flex: 'none' }}>
-              {b.ordered ? '·' : '–'}
+              {b.checked === undefined ? (b.ordered ? '·' : '–') : b.checked ? '☑' : '☐'}
             </span>
-            <span style={{ color: 'var(--color-neutral-300)', minWidth: 0 }}>
+            <span style={{ color: b.checked ? 'var(--color-neutral-500)' : 'var(--color-neutral-300)', minWidth: 0 }}>
               <Spans spans={b.spans} />
             </span>
           </div>
