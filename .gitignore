@@ -18,3 +18,5 @@ graphify-out/
 design_handoff_agent_teams_console/
 .playwright-mcp/
 plugin/tsconfig.json
+docs/team8/
+docs/design/
