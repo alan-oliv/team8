@@ -2,6 +2,7 @@ import type { Store, StoredEvent } from '../store';
 import type { TaskPayload, TaskRemovedPayload } from '../project';
 import { holdMsFor, type Permits } from '../control/permits';
 import { logError } from '../log';
+import { readAskContext } from './ask-context';
 import type { AskQuestion } from '../../shared/domain';
 
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 600_000;
@@ -179,11 +180,15 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         if (deps.readOnly) return { status: 200, body: {} };
 
         const timeoutMs = num(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
-        const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
         const questions =
           toolName === 'AskUserQuestion' && Array.isArray(bagOf(b.tool_input).questions)
             ? (bagOf(b.tool_input).questions as AskQuestion[])
             : undefined;
+        // Only a question with a transcript awaits here, so every other hold
+        // still lands its card before hook() first yields.
+        const transcriptPath = str(b.transcript_path);
+        const context = questions && transcriptPath ? await readAskContext(transcriptPath) : undefined;
+        const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
         store.append(
           'needsyou',
           {
@@ -196,6 +201,7 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
               : `${toolName ?? 'unknown'} — awaiting your decision`,
             expiresAt: Date.now() + holdMsFor(timeoutMs),
             ...(questions ? { questions } : {}),
+            ...(context ? { context } : {}),
           },
           agent,
         );

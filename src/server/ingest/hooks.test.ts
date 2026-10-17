@@ -240,6 +240,58 @@ describe('hook', () => {
     expect(permits.list()).toEqual([]);
   });
 
+  it("carries Claude's text before the call as the question card's context", async () => {
+    const questions = [
+      { question: 'Where should the choice live?', header: 'Storage', options: [{ label: 'URL' }, { label: 'localStorage' }], multiSelect: false },
+    ];
+    const file = path.join(dir, 'lead.jsonl');
+    await fs.writeFile(
+      file,
+      `${JSON.stringify({
+        type: 'assistant',
+        uuid: 'a1',
+        timestamp: '2026-10-17T10:00:00.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'That decides where she writes it, so I would rather ask than guess.' },
+            { type: 'tool_use', id: 'tu1', name: 'AskUserQuestion', input: { questions } },
+          ],
+        },
+      })}\n`,
+    );
+
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions },
+      transcript_path: file,
+      timeout: 10000,
+    });
+
+    await vi.waitFor(() => expect(of(store.replay(), 'needsyou')).toHaveLength(1));
+    const card = of(store.replay(), 'needsyou')[0].payload as NeedsYouItem;
+    expect(card.context).toBe('That decides where she writes it, so I would rather ask than guess.');
+    permits.resolve(card.id, 'allow');
+    await pending;
+  });
+
+  it('leaves context off a question card whose transcript cannot be read', async () => {
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+      transcript_path: path.join(dir, 'missing.jsonl'),
+      timeout: 10000,
+    });
+
+    await vi.waitFor(() => expect(of(store.replay(), 'needsyou')).toHaveLength(1));
+    const card = of(store.replay(), 'needsyou')[0].payload as NeedsYouItem;
+    expect(card).not.toHaveProperty('context');
+    permits.resolve(card.id, 'allow');
+    await pending;
+  });
+
   it('resolves a held PermissionRequest once PostToolUse shows the tool already ran', async () => {
     const pending = handlers.hook({
       hook_event_name: 'PermissionRequest',
