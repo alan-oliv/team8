@@ -10,6 +10,16 @@ export interface HeldPermit {
   expiresAt: number;
 }
 
+/**
+ * `withdrawn` is the call going away on its own — interrupted, answered in the
+ * terminal, or its session ended — so the hook answers with no decision.
+ */
+export interface PermitOutcome {
+  decision: 'allow' | 'deny' | 'withdrawn';
+  reason?: string;
+  updatedInput?: Record<string, unknown>;
+}
+
 export interface Permits {
   hold(
     agent: string,
@@ -18,7 +28,7 @@ export interface Permits {
     timeoutMs: number,
   ): {
     id: string;
-    promise: Promise<{ decision: 'allow' | 'deny'; reason?: string; updatedInput?: Record<string, unknown> }>;
+    promise: Promise<PermitOutcome>;
   };
   resolve(
     id: string,
@@ -26,6 +36,7 @@ export interface Permits {
     reason?: string,
     updatedInput?: Record<string, unknown>,
   ): boolean;
+  withdraw(id: string): boolean;
   list(): HeldPermit[];
 }
 
@@ -47,26 +58,26 @@ export function autoDenyReason(timeoutMs: number): string {
 interface Entry {
   permit: HeldPermit;
   timer: NodeJS.Timeout;
-  settle(decision: 'allow' | 'deny', reason?: string, updatedInput?: Record<string, unknown>): void;
+  settle(outcome: PermitOutcome): void;
 }
 
 export function createPermits(): Permits {
   const held = new Map<string, Entry>();
 
+  const take = (id: string): Entry | undefined => {
+    const entry = held.get(id);
+    if (!entry) return undefined;
+    clearTimeout(entry.timer);
+    held.delete(id);
+    return entry;
+  };
+
   return {
     hold(agent, toolName, input, timeoutMs) {
       const id = randomUUID();
       const holdMs = holdMsFor(timeoutMs);
-      let settle!: (v: {
-        decision: 'allow' | 'deny';
-        reason?: string;
-        updatedInput?: Record<string, unknown>;
-      }) => void;
-      const promise = new Promise<{
-        decision: 'allow' | 'deny';
-        reason?: string;
-        updatedInput?: Record<string, unknown>;
-      }>((res) => {
+      let settle!: (v: PermitOutcome) => void;
+      const promise = new Promise<PermitOutcome>((res) => {
         settle = res;
       });
 
@@ -79,18 +90,23 @@ export function createPermits(): Permits {
       held.set(id, {
         permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
         timer,
-        settle: (decision, reason, updatedInput) => settle({ decision, reason, updatedInput }),
+        settle,
       });
 
       return { id, promise };
     },
 
     resolve(id, decision, reason, updatedInput) {
-      const entry = held.get(id);
+      const entry = take(id);
       if (!entry) return false;
-      clearTimeout(entry.timer);
-      held.delete(id);
-      entry.settle(decision, reason, updatedInput);
+      entry.settle({ decision, reason, updatedInput });
+      return true;
+    },
+
+    withdraw(id) {
+      const entry = take(id);
+      if (!entry) return false;
+      entry.settle({ decision: 'withdrawn' });
       return true;
     },
 

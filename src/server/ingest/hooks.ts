@@ -39,7 +39,7 @@ export interface HookDeps {
 }
 
 export interface HookHandlers {
-  hook(body: unknown): Promise<HookResponse>;
+  hook(body: unknown, signal?: AbortSignal): Promise<HookResponse>;
   statusline(body: unknown): Promise<HookResponse>;
   substatus(body: unknown): Promise<HookResponse>;
 }
@@ -103,7 +103,7 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
     }
   };
   return {
-    async hook(body) {
+    async hook(body, signal) {
       // A thrown error or a hang here is a 10-minute stall of the agent's turn,
       // so every path returns 200 and nothing escapes this try.
       try {
@@ -159,6 +159,17 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           }
         }
 
+        // A new prompt, or the session ending, means no call of this agent is
+        // still waiting — it was answered in the terminal, interrupted, or its
+        // process is gone — so its holds must not sit until the auto-deny.
+        // The foreign-session filter above lets every SessionEnd through, and a
+        // foreign one resolves to the lead's name, so it only counts here when
+        // it is the lead's own session (or no lead is known yet).
+        const sessionOver = event === 'SessionEnd' && (str(b.agent_id) !== undefined || !lead || sid === lead);
+        if (event === 'UserPromptSubmit' || sessionOver) {
+          for (const permit of permits.list()) if (permit.agent === agent) permits.withdraw(permit.id);
+        }
+
         if (event !== 'PermissionRequest') return { status: 200, body: {} };
 
         // Holding in read-only mode is the worst of both worlds: the card
@@ -189,8 +200,15 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           agent,
         );
 
+        // The hook's curl being killed (interrupt, a terminal-side answer, a
+        // dying session) closes the request while the hold is still up.
+        const onGone = () => permits.withdraw(held.id);
+        signal?.addEventListener('abort', onGone, { once: true });
+        if (signal?.aborted) onGone();
         const decided = await held.promise;
+        signal?.removeEventListener('abort', onGone);
         store.append('needsyou-resolved', { id: held.id }, agent);
+        if (decided.decision === 'withdrawn') return { status: 200, body: {} };
         return {
           status: 200,
           body: {
