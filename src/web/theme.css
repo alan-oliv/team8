@@ -163,6 +163,14 @@ button {
   background: var(--color-neutral-900);
 }
 
+.question-step:hover {
+  color: var(--color-text);
+}
+
+.question-other::placeholder {
+  color: var(--color-neutral-600);
+}
+
 .chip:hover {
   border-color: var(--color-accent-700);
 }
