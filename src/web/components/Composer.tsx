@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type KeyboardEvent } from 'react';
-import type { Agent } from '../../shared/domain';
+import type { Agent, NeedsYouItem } from '../../shared/domain';
 import { AGENT_STATUS } from '../../shared/status';
 import { postJson } from '../api';
 import { useCast } from '../state/useCast';
@@ -47,6 +47,9 @@ const VARIANT: Record<'wall' | 'rail' | 'thread' | 'everyone', Variant> = {
  * transcript included — every time any agent anywhere changed.
  */
 export const RosterContext = createContext<Agent[]>([]);
+
+/** The calls waiting on the operator, from App: a send to one of their askers answers it. */
+export const PendingQuestionsContext = createContext<NeedsYouItem[]>([]);
 
 function routeState(a: Agent): string {
   if (a.status === 'idle') return 'idle · a message wakes it';
@@ -105,6 +108,8 @@ export function Composer({
   const v = VARIANT[variant];
 
   const roster = useContext(RosterContext);
+  const pending = useContext(PendingQuestionsContext);
+  const askedOf = (to: Agent) => pending.find((c) => c.agent === to.name && (c.questions?.length ?? 0) > 0);
   // A departed agent has no reader left, so it is not offered.
   const routable = routed ? roster.filter((a) => a.status !== 'departed') : [];
 
@@ -162,16 +167,28 @@ export function Composer({
     setBusy(true);
     try {
       const results = await Promise.all(
-        recipients.map((to) =>
-          postJson(`/api/agents/${encodeURIComponent(to.name)}/message`, { text: body }),
-        ),
+        recipients.map((to) => {
+          // Typing while the recipient is blocked on AskUserQuestion is the
+          // answer: the text goes to every question of that call.
+          const asked = askedOf(to);
+          return asked
+            ? postJson(`/api/permits/${asked.id}/allow`, {
+                answers: Object.fromEntries((asked.questions ?? []).map((q) => [q.question, body])),
+              })
+            : postJson(`/api/agents/${encodeURIComponent(to.name)}/message`, { text: body });
+        }),
       );
       const delivered = results.every((res) => res.ok);
       if (delivered) setText('');
       // A teammate drains its own inbox, so a live one has it already. The
-      // lead's is drained by the team loop, which needs a teammate alive.
+      // lead's is drained by the team loop, which needs a teammate alive —
+      // unless the send answered its pending question instead.
       setAck(
-        !delivered ? 'not sent' : recipients.some((to) => to.isLead) && !teamLive ? 'queued' : 'sent',
+        !delivered
+          ? 'not sent'
+          : recipients.some((to) => to.isLead && !askedOf(to)) && !teamLive
+            ? 'queued'
+            : 'sent',
       );
     } finally {
       setBusy(false);
@@ -366,6 +383,7 @@ export function Composer({
 
       <textarea
         data-testid="composer-input"
+        data-composer-for={routed ? (target?.name ?? '') : agent.name}
         rows={1}
         value={routed ? body : text}
         placeholder={

@@ -727,6 +727,67 @@ it('draws workflow mode instead of the team shell when the frame says so', () =>
   expect(screen.getByTestId('config-trigger')).toBeTruthy();
 });
 
+const QUESTION_CARD = {
+  id: 'permit-q',
+  kind: 'permission',
+  agent: 'team-lead',
+  reason: 'permission',
+  detail: 'AskUserQuestion — 1 question(s) for you',
+  questions: [{ question: 'Ship today?', header: 'Ship', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }],
+};
+
+it('opens the question modal over the wall, keeps it off the strip, and gives it Esc', () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [QUESTION_CARD] }));
+
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
+  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  const urls = fetchMock.mock.calls.map(([url]) => String(url));
+  expect(urls).toContain('/api/permits/permit-q/deny');
+  expect(urls.some((url) => url.includes('/interrupt'))).toBe(false);
+});
+
+it('hides a question cancelled on the review tab, the call still pending', () => {
+  render(<App />);
+  const multi = { ...QUESTION_CARD, questions: [{ ...QUESTION_CARD.questions[0], multiSelect: true }] };
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [multi] }));
+
+  fireEvent.click(screen.getByText('✔ Submit'));
+  fireEvent.click(screen.getByTestId('question-cancel'));
+  expect(screen.queryByTestId('question-modal')).toBeNull();
+  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
+});
+
+it('opens the question modal over the workflow shell too', () => {
+  render(<App />);
+  act(() =>
+    MockEventSource.last().emit('snapshot', {
+      ...sampleTeamState(),
+      agents: [],
+      mode: 'workflow',
+      needsYou: [QUESTION_CARD],
+      workflows: [
+        {
+          runId: 'wf_d36b25c0-f96',
+          name: 'team-selector',
+          status: 'completed',
+          live: false,
+          startedAt: 1_000_000,
+          durationMs: 60_000,
+          logs: [],
+          phases: [{ index: 1, title: 'Build' }],
+          agents: [{ agentId: 'a1', label: 'impl:task-9', phaseIndex: 1, state: 'done' }],
+        },
+      ],
+    }),
+  );
+  expect(screen.getByTestId('workflow-run')).toBeTruthy();
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
+});
+
 // A roster always wins, so nothing about workflow mode can regress team mode.
 it('stays in the team shell when a roster exists, runs or not', () => {
   render(<App />);
