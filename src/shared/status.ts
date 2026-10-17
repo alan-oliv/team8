@@ -6,6 +6,7 @@ export const AGENT_STATUS: Record<AgentStatus, StatusStyle> = {
   working: { glyph: '●', label: 'working', color: 'var(--color-accent-400)' },
   idle: { glyph: '○', label: 'idle', color: 'var(--color-neutral-600)' },
   plan_pending: { glyph: '▲', label: 'plan approval', color: 'var(--warn)' },
+  asking: { glyph: '▲', label: 'waiting on you', color: 'var(--warn)' },
   failed: { glyph: '✗', label: 'failed', color: 'var(--fail)' },
   blocked: { glyph: '⊘', label: 'blocked', color: 'var(--color-neutral-600)' },
   departed: { glyph: '◌', label: 'departed', color: 'var(--color-neutral-800)' },

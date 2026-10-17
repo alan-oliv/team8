@@ -1,6 +1,6 @@
 import type { TokenSplit } from './cost';
 
-export type AgentStatus = 'working' | 'idle' | 'plan_pending' | 'failed' | 'blocked' | 'departed';
+export type AgentStatus = 'working' | 'idle' | 'plan_pending' | 'asking' | 'failed' | 'blocked' | 'departed';
 export type TaskState = 'pending' | 'in_progress' | 'completed' | 'plan_pending' | 'failed' | 'blocked';
 // `trace` is offered only on a solo session (decision 24); the id exists for
 // every mode so a URL carrying it survives a reload on any session.
@@ -18,6 +18,7 @@ export interface TranscriptLine {
   ts: number;          // epoch ms
   diff?: Diff;         // present only on a line that reports an edit
   sender?: string;     // teammate this row was delivered FROM; absent on the agent's own lines
+  answers?: { header: string; answer: string }[]; // present only on an answered AskUserQuestion result
 }
 
 export type DiffSign = ' ' | '-' | '+';
@@ -267,7 +268,7 @@ export interface MailMessage {
 export interface AskQuestion {
   question: string;
   header: string;
-  options: { label: string; description?: string }[];
+  options: { label: string; description?: string; preview?: string }[];
   multiSelect: boolean;
 }
 
@@ -279,6 +280,7 @@ export interface NeedsYouItem {
   detail: string;            // e.g. '4 steps · step 4 drops migrations/legacy/'
   expiresAt?: number;        // permission holds only
   questions?: AskQuestion[]; // AskUserQuestion permission holds only
+  context?: string;          // Claude's text just before an AskUserQuestion call
 }
 
 export interface RateLimits { fiveHourPct: number; sevenDayPct: number; resetsAt?: string }

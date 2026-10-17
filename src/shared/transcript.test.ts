@@ -4,6 +4,7 @@ import { segments } from './code';
 import { DIFF_LINES_CAP, DIFF_LINE_TEXT_CAP } from './domain';
 import {
   currentToolOf,
+  DECLINE_MESSAGE,
   isPromptTurn,
   parseLine,
   toTranscriptLines,
@@ -659,4 +660,76 @@ describe('isPromptTurn', () => {
       expect(isPromptTurn(rec)).toBe(drawsPrompt);
     });
   }
+});
+
+describe('AskUserQuestion results', () => {
+  const ts = '2026-08-27T15:09:55.618Z';
+
+  it('draws an answered call as one line carrying each header and answer', () => {
+    const rec: TranscriptRecord = {
+      type: 'user',
+      uuid: 'q1',
+      timestamp: ts,
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tu1',
+            content: 'Your questions have been answered: "Where should the choice live?"="URL". You can now continue with these answers in mind.',
+          },
+        ],
+      },
+      toolUseResult: {
+        questions: [
+          { question: 'Where should the choice live?', header: 'Storage', options: [], multiSelect: false },
+          { question: 'Which boards get it?', header: 'Boards', options: [], multiSelect: true },
+          { question: 'Ship today?', header: 'Ship', options: [], multiSelect: false },
+        ],
+        answers: { 'Where should the choice live?': 'URL', 'Which boards get it?': 'Kanban, List' },
+      },
+    };
+    expect(toTranscriptLines(rec)).toEqual([
+      {
+        id: 'q1#0',
+        marker: '⎿',
+        text: "User answered Claude's questions:",
+        ts: Date.parse(ts),
+        answers: [
+          { header: 'Storage', answer: 'URL' },
+          { header: 'Boards', answer: 'Kanban, List' },
+          { header: 'Ship', answer: '' },
+        ],
+      },
+    ]);
+  });
+
+  it("draws the console's decline as the wants-to-chat line", () => {
+    const rec: TranscriptRecord = {
+      type: 'user',
+      uuid: 'd1',
+      timestamp: ts,
+      message: { role: 'user', content: [{ type: 'tool_result', content: DECLINE_MESSAGE, is_error: true }] },
+      toolUseResult: `Error: ${DECLINE_MESSAGE}`,
+    };
+    expect(toTranscriptLines(rec)).toEqual([
+      { id: 'd1#0', marker: '⎿', text: 'User declined to answer · wants to chat', ts: Date.parse(ts) },
+    ]);
+  });
+
+  it("leaves Claude Code's own rejection of a question as an ordinary errored result", () => {
+    const rec: TranscriptRecord = {
+      type: 'user',
+      uuid: 'r1',
+      timestamp: ts,
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', content: "The user doesn't want to proceed with this tool use.", is_error: true }],
+      },
+      toolUseResult: 'User rejected tool use',
+    };
+    const [line] = toTranscriptLines(rec);
+    expect(line.marker).toBe('✗');
+    expect(line).not.toHaveProperty('answers');
+  });
 });
