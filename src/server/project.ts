@@ -203,6 +203,14 @@ function memoisable(rec: TranscriptRecord): boolean {
  * time. The Map lives only inside the WeakMap entry, so it dies with it.
  */
 const lineMemo = new WeakMap<TranscriptRecord, Map<string, TranscriptLine[]>>();
+
+// The pending half of the handoff's `● AskUserQuestion` row. It lives only as
+// long as the card, so it is projected rather than stored.
+function waitingLine(card: NeedsYouItem, ts: number): TranscriptLine {
+  const n = card.questions?.length ?? 0;
+  return { id: `${card.id}#waiting`, marker: '⎿', text: `waiting on you · ${n} question${n === 1 ? '' : 's'}`, ts };
+}
+
 function linesOf(rec: TranscriptRecord, agent: string): TranscriptLine[] {
   if (!memoisable(rec)) return toTranscriptLines(rec, agent);
   const byAgent = lineMemo.get(rec) ?? new Map<string, TranscriptLine[]>();
@@ -336,6 +344,8 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
   // freshest read is the one that describes the file as it is now.
   const logClock = new Map<string, number>();
   const needsYou = new Map<string, NeedsYouItem>();
+  // When each card was raised, for the waiting line's timestamp.
+  const cardAt = new Map<string, number>();
   const usageTotals = new Map<string, AgentUsageTotals>();
   // Per roster agent, the `Task`/`Agent` calls its transcript made — collected
   // inside the record loop below rather than by a second walk, because that
@@ -461,6 +471,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       case 'needsyou': {
         const item = ev.payload as NeedsYouItem;
         needsYou.set(item.id, item);
+        cardAt.set(item.id, ev.ts);
         break;
       }
       case 'needsyou-resolved': {
@@ -558,6 +569,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     const lines: TranscriptLine[] = [];
     for (let i = tail.length - 1; i >= 0; i--) for (const line of tail[i]) lines.push(line);
 
+    const asking = cards.find((c) => c.agent === id.name && (c.questions?.length ?? 0) > 0);
     let status: AgentStatus = 'working';
     // The synthetic lead has no membership to be missing from — its transcript
     // is the only evidence either way, so it goes through the activity ladder
@@ -565,6 +577,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     if (id.name !== soloLead && (!liveMembers || !liveMembers.has(id.name))) status = 'departed';
     else if (errors.has(id.name)) status = 'failed';
     else if (cards.some((c) => c.agent === id.name && c.kind === 'plan')) status = 'plan_pending';
+    else if (asking) status = 'asking';
     else {
       const act = lastActivity.get(id.name) ?? -1;
       const idle = lastIdle.get(id.name) ?? -1;
@@ -608,7 +621,9 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       costUsd: carried ? carried.costUsd : totalCost(usage),
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
-      transcript: lines.slice(-PROJECTED_TRANSCRIPT_LINES),
+      transcript: asking
+        ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)]
+        : lines.slice(-PROJECTED_TRANSCRIPT_LINES),
       unread: unread.get(id.name) ?? 0,
       error: errors.get(id.name),
     };

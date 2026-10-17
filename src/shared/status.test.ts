@@ -36,10 +36,11 @@ describe('AGENT_STATUS', () => {
     expect(AGENT_STATUS.working).toEqual({ glyph: '●', label: 'working', color: 'var(--color-accent-400)' });
     expect(AGENT_STATUS.idle).toEqual({ glyph: '○', label: 'idle', color: 'var(--color-neutral-600)' });
     expect(AGENT_STATUS.plan_pending).toEqual({ glyph: '▲', label: 'plan approval', color: 'var(--warn)' });
+    expect(AGENT_STATUS.asking).toEqual({ glyph: '▲', label: 'waiting on you', color: 'var(--warn)' });
     expect(AGENT_STATUS.failed).toEqual({ glyph: '✗', label: 'failed', color: 'var(--fail)' });
     expect(AGENT_STATUS.blocked).toEqual({ glyph: '⊘', label: 'blocked', color: 'var(--color-neutral-600)' });
     expect(AGENT_STATUS.departed).toEqual({ glyph: '◌', label: 'departed', color: 'var(--color-neutral-800)' });
-    expect(Object.keys(AGENT_STATUS)).toHaveLength(6);
+    expect(Object.keys(AGENT_STATUS)).toHaveLength(7);
   });
 });
 

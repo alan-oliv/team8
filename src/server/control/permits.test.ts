@@ -61,4 +61,16 @@ describe('createPermits', () => {
     expect(permits.resolve(held.id, 'allow', undefined, updatedInput)).toBe(true);
     expect(await held.promise).toEqual({ decision: 'allow', reason: undefined, updatedInput });
   });
+
+  it('withdraws a hold with no decision, clearing its timer', async () => {
+    const permits = createPermits();
+    const held = permits.hold('probe-alpha', 'AskUserQuestion', { questions: [] }, 100);
+    expect(permits.withdraw(held.id)).toBe(true);
+    expect(await held.promise).toEqual({ decision: 'withdrawn' });
+    expect(permits.list()).toEqual([]);
+    expect(permits.withdraw(held.id)).toBe(false);
+    // The auto-deny timer would have fired at 90ms; it must not settle twice.
+    await new Promise((r) => setTimeout(r, 120));
+    expect(permits.list()).toEqual([]);
+  });
 });

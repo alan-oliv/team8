@@ -1165,3 +1165,23 @@ describe('the stream size', () => {
     expect(screen.queryByTestId('stream-prompt')).toBeNull();
   });
 });
+
+it('draws each answer of an answered question on its own line under the row', () => {
+  const lines: TranscriptLine[] = [
+    {
+      id: 'q1#0',
+      marker: '⎿',
+      text: "User answered Claude's questions:",
+      ts: 1,
+      answers: [
+        { header: 'Storage', answer: 'URL (Recommended)' },
+        { header: 'Ship', answer: 'no' },
+      ],
+    },
+  ];
+  render(<TranscriptFeed lines={lines} size="wall" />);
+  expect(screen.getByText("User answered Claude's questions:")).toBeTruthy();
+  const answers = screen.getAllByTestId('transcript-answer');
+  expect(answers.map((el) => el.textContent)).toEqual(['· Storage → URL (Recommended)', '· Ship → no']);
+  expect(answers[0].style.color).toBe('var(--color-accent-300)');
+});

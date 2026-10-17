@@ -6,10 +6,13 @@ import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
 import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
+import { QuestionModal } from './chrome/QuestionModal';
+import { firstQuestion } from './chrome/question-answers';
 import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
 import { byRow, readStoredFolder, scopeOf } from './chrome/TeamSelect';
+import { PendingQuestionsContext } from './components/Composer';
 import { DiffModal } from './components/DiffModal';
 import { StopContext } from './components/StopButton';
 import { CastContext } from './state/useCast';
@@ -31,6 +34,13 @@ import { Trace } from './views/Trace';
 import { Usage } from './views/Usage';
 import { Wall } from './views/Wall';
 import { Workflow } from './views/Workflow';
+
+// "Chat about this" hands the operator to the composer of whoever asked, or to
+// the one composer there is; workflow mode has none, and nothing takes focus.
+function focusComposer(agent: string): void {
+  const boxes = [...document.querySelectorAll<HTMLTextAreaElement>('textarea[data-composer-for]')];
+  (boxes.find((box) => box.dataset.composerFor === agent) ?? boxes[0])?.focus();
+}
 
 export function App() {
   const store = useTeamState();
@@ -265,6 +275,17 @@ export function App() {
     [stopRequested, state?.readOnly],
   );
 
+  // Questions closed with Cancel on the review tab: still pending, only hidden
+  // in this tab, so a reload brings them back as the handoff asks.
+  const [cancelledQuestions, setCancelledQuestions] = useState<ReadonlySet<string>>(() => new Set());
+  const cancelQuestion = useCallback((id: string) => setCancelledQuestions((s) => new Set(s).add(id)), []);
+  const question = firstQuestion(state?.needsYou ?? [], cancelledQuestions);
+  const pendingQuestions = useMemo(
+    () => (state?.needsYou ?? []).filter((item) => (item.questions?.length ?? 0) > 0),
+    [state?.needsYou],
+  );
+  const questionLead = state?.agents.find((a) => a.isLead)?.name ?? 'team-lead';
+
   useKeyboard({
     agents: wallOrder,
     view,
@@ -278,9 +299,9 @@ export function App() {
     // send the request outright, which is a hard thing to undo from one key.
     stop: askStop,
     toggleTeams,
-    // The patch owns the keyboard while it is open, or Esc interrupts the
-    // focused agent instead of closing it.
-    suspended: store.openDiff !== null,
+    // The patch and the question each own the keyboard while open, or Esc
+    // interrupts the focused agent instead of closing or declining.
+    suspended: store.openDiff !== null || question !== null,
   });
 
   const splash = splashDone ? null : (
@@ -335,6 +356,7 @@ export function App() {
           build={state.build}
           sessions={state.sessions ?? []}
         />
+        <QuestionModal item={question} leadName={questionLead} onCancel={cancelQuestion} onDeclined={focusComposer} />
       </div>
       </WatchContext.Provider>
       </SettingsContext.Provider>
@@ -350,6 +372,7 @@ export function App() {
     <CastContext.Provider value={cast}>
     <DiffContext.Provider value={store.setOpenDiff}>
     <WatchContext.Provider value={watchState}>
+    <PendingQuestionsContext.Provider value={pendingQuestions}>
     <div
       className="console"
       style={appearance.vars}
@@ -491,6 +514,13 @@ export function App() {
         )}
       </main>
       <DiffModal diff={store.openDiff} onClose={() => store.setOpenDiff(null)} />
+      {/* Under an open patch the question would be hidden yet still take keys. */}
+      <QuestionModal
+        item={store.openDiff ? null : question}
+        leadName={questionLead}
+        onCancel={cancelQuestion}
+        onDeclined={focusComposer}
+      />
       <StopConfirm target={stopping} onConfirm={confirmStop} onCancel={() => setStopping(null)} />
       <WatchConfirm
         show={pendingDismiss}
@@ -504,6 +534,7 @@ export function App() {
       <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} dimmed={firstLight} note={firstLightNote} />
       <Panel agents={state.agents} focusedAgent={store.agent} onFocusAgent={store.setAgent} />
     </div>
+    </PendingQuestionsContext.Provider>
     </WatchContext.Provider>
     </DiffContext.Provider>
     </CastContext.Provider>

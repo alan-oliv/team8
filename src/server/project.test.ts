@@ -363,6 +363,77 @@ describe('project', () => {
     expect(project(buildLog(), true).readOnly).toBe(true);
   });
 
+  it('marks an agent with a pending question as asking and ends its transcript with the waiting line', () => {
+    const log = buildLog();
+    let seq = log.length;
+    const question = (n: number) => ({
+      question: `question ${n}?`,
+      header: `Q${n}`,
+      multiSelect: false,
+      options: [{ label: 'yes' }, { label: 'no' }],
+    });
+    log.push({
+      seq: ++seq,
+      ts: 1787843500000,
+      kind: 'needsyou',
+      agent: 'probe-alpha',
+      payload: {
+        id: 'q1',
+        kind: 'permission',
+        agent: 'probe-alpha',
+        reason: 'permission',
+        detail: 'AskUserQuestion — 1 question(s) for you',
+        questions: [question(1)],
+      },
+    });
+    const asking = project(log, false).agents.find((a) => a.name === 'probe-alpha')!;
+    expect(asking.status).toBe('asking');
+    expect(asking.transcript.at(-1)).toEqual({
+      id: 'q1#waiting',
+      marker: '⎿',
+      text: 'waiting on you · 1 question',
+      ts: 1787843500000,
+    });
+
+    log.push({ seq: ++seq, ts: 1787843500001, kind: 'needsyou-resolved', payload: { id: 'q1' } });
+    const after = project(log, false).agents.find((a) => a.name === 'probe-alpha')!;
+    expect(after.status).not.toBe('asking');
+    expect(after.transcript.some((l) => l.id === 'q1#waiting')).toBe(false);
+
+    log.push({
+      seq: ++seq,
+      ts: 1787843500002,
+      kind: 'needsyou',
+      agent: 'probe-alpha',
+      payload: {
+        id: 'q2',
+        kind: 'permission',
+        agent: 'probe-alpha',
+        reason: 'permission',
+        detail: 'AskUserQuestion — 3 question(s) for you',
+        questions: [question(1), question(2), question(3)],
+      },
+    });
+    expect(project(log, false).agents.find((a) => a.name === 'probe-alpha')!.transcript.at(-1)!.text).toBe(
+      'waiting on you · 3 questions',
+    );
+  });
+
+  it('leaves an agent with a plain permission card alone', () => {
+    const log = buildLog();
+    const before = project(log, false).agents.find((a) => a.name === 'probe-bravo')!;
+    log.push({
+      seq: log.length + 1,
+      ts: 1787843500000,
+      kind: 'needsyou',
+      agent: 'probe-bravo',
+      payload: { id: 'p2', kind: 'permission', agent: 'probe-bravo', reason: 'permission', detail: 'Bash' },
+    });
+    const bravo = project(log, false).agents.find((a) => a.name === 'probe-bravo')!;
+    expect(bravo.status).toBe(before.status);
+    expect(bravo.transcript).toEqual(before.transcript);
+  });
+
   it('drops resolved needs-you cards', () => {
     const log = buildLog();
     let seq = log.length;

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -438,6 +438,34 @@ describe('control routes', () => {
 
       const missing = await post(`${url}/api/permits/${held.id}/deny`);
       expect(missing.status).toBe(404);
+    } finally {
+      await shutdown(server);
+    }
+  });
+
+  it('withdraws a held hook whose client disconnects before the console answers', async () => {
+    const { server, url } = await boot(false);
+    try {
+      const client = new AbortController();
+      const pending = fetch(`${url}/hook`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'PermissionRequest',
+          tool_name: 'Bash',
+          tool_input: { command: 'ls' },
+          agent_id: 'aprobe-bravo-babf58016882bc72',
+          timeout: 600000,
+        }),
+        signal: client.signal,
+      }).catch(() => undefined);
+      await vi.waitFor(() => expect(permits.list()).toHaveLength(1));
+
+      client.abort();
+      await pending;
+
+      await vi.waitFor(() => expect(permits.list()).toEqual([]));
+      expect(store.replay().some((e) => e.kind === 'needsyou-resolved')).toBe(true);
     } finally {
       await shutdown(server);
     }

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { NeedsYouItem } from '../../shared/domain';
 import { fixtureAgents } from '../agents.fixture';
-import { Composer } from './Composer';
+import { Composer, PendingQuestionsContext } from './Composer';
 
 const agents = fixtureAgents();
 const alpha = agents.find((a) => a.name === 'probe-alpha')!;
@@ -201,5 +202,49 @@ describe('Composer send acknowledgement', () => {
     await type(input, 'hello');
     await waitFor(() => expect(ack()).toBe('not sent'));
     expect(input.value).toBe('hello');
+  });
+
+  const asked = (agent: string): NeedsYouItem => ({
+    id: 'permit-q',
+    kind: 'permission',
+    agent,
+    reason: 'permission',
+    detail: 'AskUserQuestion — 2 question(s) for you',
+    questions: [
+      { question: 'Where should it live?', header: 'Where', multiSelect: false, options: [{ label: 'URL' }, { label: 'local' }] },
+      { question: 'Ship today?', header: 'Ship', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] },
+    ],
+  });
+
+  it('answers every question of a call its recipient is waiting on, instead of messaging it', async () => {
+    render(
+      <PendingQuestionsContext.Provider value={[asked('probe-alpha')]}>
+        <Composer agent={alpha} variant="wall" />
+      </PendingQuestionsContext.Provider>,
+    );
+    const input = screen.getByTestId('composer-input');
+    expect(input.getAttribute('data-composer-for')).toBe('probe-alpha');
+    fireEvent.change(input, { target: { value: 'URL, and ship tomorrow' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/permits/permit-q/allow');
+    expect(JSON.parse(init.body)).toEqual({
+      answers: { 'Where should it live?': 'URL, and ship tomorrow', 'Ship today?': 'URL, and ship tomorrow' },
+    });
+  });
+
+  it("still messages a recipient when the pending call is someone else's", async () => {
+    render(
+      <PendingQuestionsContext.Provider value={[asked('team-lead')]}>
+        <Composer agent={alpha} variant="wall" />
+      </PendingQuestionsContext.Provider>,
+    );
+    const input = screen.getByTestId('composer-input');
+    fireEvent.change(input, { target: { value: 'carry on' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/agents/probe-alpha/message');
   });
 });

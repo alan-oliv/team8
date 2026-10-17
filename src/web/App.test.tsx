@@ -727,6 +727,97 @@ it('draws workflow mode instead of the team shell when the frame says so', () =>
   expect(screen.getByTestId('config-trigger')).toBeTruthy();
 });
 
+const QUESTION_CARD = {
+  id: 'permit-q',
+  kind: 'permission',
+  agent: 'team-lead',
+  reason: 'permission',
+  detail: 'AskUserQuestion — 1 question(s) for you',
+  questions: [{ question: 'Ship today?', header: 'Ship', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }],
+};
+
+it('opens the question modal over the wall, keeps it off the strip, and gives it Esc', () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  // A focused agent, or the wall's Esc never reaches its interrupt to be suspended.
+  window.history.replaceState(null, '', '/?agent=team-lead');
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/interrupt'))).toBe(true);
+  fetchMock.mockClear();
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [QUESTION_CARD] }));
+
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
+  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  const urls = fetchMock.mock.calls.map(([url]) => String(url));
+  expect(urls).toContain('/api/permits/permit-q/deny');
+  expect(urls.some((url) => url.includes('/interrupt'))).toBe(false);
+});
+
+it('holds the question back while a patch is open, so Esc only closes the patch', () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  const diff: Diff = { path: 'src/x.ts', added: 1, removed: 0, agent: 'probe-alpha', ts: 1, commit: 'abc1234', hunks: [] };
+  const withDiff = {
+    ...sampleTeamState(),
+    agents: sampleTeamState().agents.map((a) =>
+      a.name === 'probe-alpha'
+        ? { ...a, transcript: [...a.transcript, { id: 'edit#0', marker: '⎿' as const, text: 'Update(x)', ts: 1, diff }] }
+        : a,
+    ),
+  };
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', withDiff));
+  fireEvent.click(screen.getByTestId('diff-chip'));
+  act(() => MockEventSource.last().emit('snapshot', { ...withDiff, needsYou: [QUESTION_CARD] }));
+
+  expect(screen.queryByTestId('question-modal')).toBeNull();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByTestId('diff-modal')).toBeNull();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/deny'))).toBe(false);
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
+});
+
+it('hides a question cancelled on the review tab, the call still pending', () => {
+  render(<App />);
+  const multi = { ...QUESTION_CARD, questions: [{ ...QUESTION_CARD.questions[0], multiSelect: true }] };
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [multi] }));
+
+  fireEvent.click(screen.getByText('✔ Submit'));
+  fireEvent.click(screen.getByTestId('question-cancel'));
+  expect(screen.queryByTestId('question-modal')).toBeNull();
+  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
+});
+
+it('opens the question modal over the workflow shell too', () => {
+  render(<App />);
+  act(() =>
+    MockEventSource.last().emit('snapshot', {
+      ...sampleTeamState(),
+      agents: [],
+      mode: 'workflow',
+      needsYou: [QUESTION_CARD],
+      workflows: [
+        {
+          runId: 'wf_d36b25c0-f96',
+          name: 'team-selector',
+          status: 'completed',
+          live: false,
+          startedAt: 1_000_000,
+          durationMs: 60_000,
+          logs: [],
+          phases: [{ index: 1, title: 'Build' }],
+          agents: [{ agentId: 'a1', label: 'impl:task-9', phaseIndex: 1, state: 'done' }],
+        },
+      ],
+    }),
+  );
+  expect(screen.getByTestId('workflow-run')).toBeTruthy();
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
+});
+
 // A roster always wins, so nothing about workflow mode can regress team mode.
 it('stays in the team shell when a roster exists, runs or not', () => {
   render(<App />);

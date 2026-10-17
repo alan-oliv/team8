@@ -355,9 +355,16 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
 
         if (method === 'POST' && (route === '/hook' || route === '/statusline' || route === '/substatus')) {
           const body = await readBody(req);
+          // A PermissionRequest can hold this response for ten minutes. If the
+          // hook's curl dies first, the socket closes with nothing written, and
+          // the hold it was waiting on has to go with it.
+          const gone = new AbortController();
+          res.on('close', () => {
+            if (!res.writableEnded) gone.abort();
+          });
           const out =
             route === '/hook'
-              ? await deps.hooks.hook(body)
+              ? await deps.hooks.hook(body, gone.signal)
               : route === '/statusline'
                 ? await deps.hooks.statusline(body)
                 : await deps.hooks.substatus(body);

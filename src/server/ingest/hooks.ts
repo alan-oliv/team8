@@ -2,6 +2,7 @@ import type { Store, StoredEvent } from '../store';
 import type { TaskPayload, TaskRemovedPayload } from '../project';
 import { holdMsFor, type Permits } from '../control/permits';
 import { logError } from '../log';
+import { readAskContext } from './ask-context';
 import type { AskQuestion } from '../../shared/domain';
 
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 600_000;
@@ -39,7 +40,7 @@ export interface HookDeps {
 }
 
 export interface HookHandlers {
-  hook(body: unknown): Promise<HookResponse>;
+  hook(body: unknown, signal?: AbortSignal): Promise<HookResponse>;
   statusline(body: unknown): Promise<HookResponse>;
   substatus(body: unknown): Promise<HookResponse>;
 }
@@ -103,7 +104,7 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
     }
   };
   return {
-    async hook(body) {
+    async hook(body, signal) {
       // A thrown error or a hang here is a 10-minute stall of the agent's turn,
       // so every path returns 200 and nothing escapes this try.
       try {
@@ -159,6 +160,17 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
           }
         }
 
+        // A new prompt, or the session ending, means no call of this agent is
+        // still waiting — it was answered in the terminal, interrupted, or its
+        // process is gone — so its holds must not sit until the auto-deny.
+        // The foreign-session filter above lets every SessionEnd through, and a
+        // foreign one resolves to the lead's name, so it only counts here when
+        // it is the lead's own session (or no lead is known yet).
+        const sessionOver = event === 'SessionEnd' && (str(b.agent_id) !== undefined || !lead || sid === lead);
+        if (event === 'UserPromptSubmit' || sessionOver) {
+          for (const permit of permits.list()) if (permit.agent === agent) permits.withdraw(permit.id);
+        }
+
         if (event !== 'PermissionRequest') return { status: 200, body: {} };
 
         // Holding in read-only mode is the worst of both worlds: the card
@@ -168,11 +180,15 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         if (deps.readOnly) return { status: 200, body: {} };
 
         const timeoutMs = num(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
-        const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
         const questions =
           toolName === 'AskUserQuestion' && Array.isArray(bagOf(b.tool_input).questions)
             ? (bagOf(b.tool_input).questions as AskQuestion[])
             : undefined;
+        // Only a question with a transcript awaits here, so every other hold
+        // still lands its card before hook() first yields.
+        const transcriptPath = str(b.transcript_path);
+        const context = questions && transcriptPath ? await readAskContext(transcriptPath) : undefined;
+        const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
         store.append(
           'needsyou',
           {
@@ -185,12 +201,20 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
               : `${toolName ?? 'unknown'} — awaiting your decision`,
             expiresAt: Date.now() + holdMsFor(timeoutMs),
             ...(questions ? { questions } : {}),
+            ...(context ? { context } : {}),
           },
           agent,
         );
 
+        // The hook's curl being killed (interrupt, a terminal-side answer, a
+        // dying session) closes the request while the hold is still up.
+        const onGone = () => permits.withdraw(held.id);
+        signal?.addEventListener('abort', onGone, { once: true });
+        if (signal?.aborted) onGone();
         const decided = await held.promise;
+        signal?.removeEventListener('abort', onGone);
         store.append('needsyou-resolved', { id: held.id }, agent);
+        if (decided.decision === 'withdrawn') return { status: 200, body: {} };
         return {
           status: 200,
           body: {

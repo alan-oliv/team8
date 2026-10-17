@@ -13,7 +13,7 @@ import type { NeedsYouItem } from '../../shared/domain';
 // 'holds PermissionRequest' test needs, without depending on Task 15's work.
 function stubPermits(): Permits & { held: HeldPermit[] } {
   const held: HeldPermit[] = [];
-  type Settled = { decision: 'allow' | 'deny'; reason?: string; updatedInput?: Record<string, unknown> };
+  type Settled = { decision: 'allow' | 'deny' | 'withdrawn'; reason?: string; updatedInput?: Record<string, unknown> };
   const settlers = new Map<string, (d: Settled) => void>();
   return {
     held,
@@ -30,6 +30,14 @@ function stubPermits(): Permits & { held: HeldPermit[] } {
       if (idx === -1) return false;
       held.splice(idx, 1);
       settlers.get(id)?.({ decision, reason, updatedInput });
+      settlers.delete(id);
+      return true;
+    },
+    withdraw(id) {
+      const idx = held.findIndex((p) => p.id === id);
+      if (idx === -1) return false;
+      held.splice(idx, 1);
+      settlers.get(id)?.({ decision: 'withdrawn' });
       settlers.delete(id);
       return true;
     },
@@ -163,6 +171,125 @@ describe('hook', () => {
     });
     expect(resolved.body).not.toHaveProperty('hookSpecificOutput.permissionDecision');
     expect((of(store.replay(), 'needsyou-resolved').at(-1)!.payload as { id: string }).id).toBe(card.id);
+  });
+
+  it('withdraws a held PermissionRequest when its hook request goes away, answering with no decision', async () => {
+    const gone = new AbortController();
+    const pending = handlers.hook(
+      {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'AskUserQuestion',
+        tool_input: { questions: [] },
+        agent_id: 'aprobe-bravo-babf58016882bc72',
+        timeout: 10000,
+      },
+      gone.signal,
+    );
+    const card = of(store.replay(), 'needsyou').at(-1)!.payload as NeedsYouItem;
+
+    gone.abort();
+
+    expect(await pending).toEqual({ status: 200, body: {} });
+    expect(permits.list()).toEqual([]);
+    expect((of(store.replay(), 'needsyou-resolved').at(-1)!.payload as { id: string }).id).toBe(card.id);
+  });
+
+  it("withdraws only the prompting agent's holds on UserPromptSubmit", async () => {
+    const bravo = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      timeout: 10000,
+    });
+    const alpha = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'Bash',
+      tool_input: { command: 'ls' },
+      agent_id: 'aprobe-alpha-84fd551b27de6433',
+      timeout: 10000,
+    });
+
+    await handlers.hook({
+      hook_event_name: 'UserPromptSubmit',
+      agent_id: 'aprobe-bravo-babf58016882bc72',
+      prompt: 'never mind, do the other thing',
+    });
+
+    expect(await bravo).toEqual({ status: 200, body: {} });
+    expect(permits.list().map((p) => p.agent)).toEqual(['probe-alpha']);
+    permits.resolve(permits.list()[0].id, 'allow');
+    await alpha;
+  });
+
+  it("withdraws the lead's holds when the lead's session ends, and not when another session does", async () => {
+    const handlers = createHookHandlers({ store, permits, leadSessionId: () => 'lead-sid' });
+    const held = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+      session_id: 'lead-sid',
+      timeout: 10000,
+    });
+
+    await handlers.hook({ hook_event_name: 'SessionEnd', session_id: 'someone-else' });
+    expect(permits.list()).toHaveLength(1);
+
+    await handlers.hook({ hook_event_name: 'SessionEnd', session_id: 'lead-sid' });
+    expect(await held).toEqual({ status: 200, body: {} });
+    expect(permits.list()).toEqual([]);
+  });
+
+  it("carries Claude's text before the call as the question card's context", async () => {
+    const questions = [
+      { question: 'Where should the choice live?', header: 'Storage', options: [{ label: 'URL' }, { label: 'localStorage' }], multiSelect: false },
+    ];
+    const file = path.join(dir, 'lead.jsonl');
+    await fs.writeFile(
+      file,
+      `${JSON.stringify({
+        type: 'assistant',
+        uuid: 'a1',
+        timestamp: '2026-10-17T10:00:00.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'That decides where she writes it, so I would rather ask than guess.' },
+            { type: 'tool_use', id: 'tu1', name: 'AskUserQuestion', input: { questions } },
+          ],
+        },
+      })}\n`,
+    );
+
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions },
+      transcript_path: file,
+      timeout: 10000,
+    });
+
+    await vi.waitFor(() => expect(of(store.replay(), 'needsyou')).toHaveLength(1));
+    const card = of(store.replay(), 'needsyou')[0].payload as NeedsYouItem;
+    expect(card.context).toBe('That decides where she writes it, so I would rather ask than guess.');
+    permits.resolve(card.id, 'allow');
+    await pending;
+  });
+
+  it('leaves context off a question card whose transcript cannot be read', async () => {
+    const pending = handlers.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [] },
+      transcript_path: path.join(dir, 'missing.jsonl'),
+      timeout: 10000,
+    });
+
+    await vi.waitFor(() => expect(of(store.replay(), 'needsyou')).toHaveLength(1));
+    const card = of(store.replay(), 'needsyou')[0].payload as NeedsYouItem;
+    expect(card).not.toHaveProperty('context');
+    permits.resolve(card.id, 'allow');
+    await pending;
   });
 
   it('resolves a held PermissionRequest once PostToolUse shows the tool already ran', async () => {

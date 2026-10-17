@@ -304,6 +304,27 @@ function markerForResult(text: string, isError: boolean): Marker {
   return '⎿';
 }
 
+/**
+ * The console's own deny message for "Chat about this". A tool_result carries
+ * no tool name, so the decline is recognised by this exact text instead of by
+ * the call it answers.
+ */
+export const DECLINE_MESSAGE = 'User declined to answer';
+
+// Claude Code records an answered AskUserQuestion as `toolUseResult: {
+// questions, answers }`, answers keyed by question text — enough to draw it
+// without the tool_use it answers.
+function answeredQuestions(result: unknown): { header: string; answer: string }[] | undefined {
+  if (!result || typeof result !== 'object') return undefined;
+  const { questions, answers } = result as { questions?: unknown; answers?: unknown };
+  if (!Array.isArray(questions) || !answers || typeof answers !== 'object') return undefined;
+  return questions.map((q) => {
+    const { question, header } = (q ?? {}) as { question?: unknown; header?: unknown };
+    const answer = typeof question === 'string' ? (answers as Record<string, unknown>)[question] : undefined;
+    return { header: typeof header === 'string' ? header : '', answer: typeof answer === 'string' ? answer : '' };
+  });
+}
+
 function resultText(content: unknown): string {
   if (typeof content === 'string') return tidy(content);
   if (Array.isArray(content)) {
@@ -327,6 +348,7 @@ interface Draft {
   text: string;
   diff?: Diff;
   sender?: string;
+  answers?: { header: string; answer: string }[];
 }
 
 /**
@@ -357,8 +379,11 @@ function draftsOf(rec: TranscriptRecord, agent = ''): { ts: number; drafts: Draf
         if (!block || typeof block !== 'object') continue;
         const b = block as { type?: string; content?: unknown; is_error?: boolean; text?: string };
         if (b.type === 'tool_result') {
+          const answers = answeredQuestions(rec.toolUseResult);
           const text = resultText(b.content);
-          if (text) drafts.push({ marker: markerForResult(text, b.is_error === true), text });
+          if (answers) drafts.push({ marker: '⎿', text: "User answered Claude's questions:", answers });
+          else if (text === DECLINE_MESSAGE) drafts.push({ marker: '⎿', text: 'User declined to answer · wants to chat' });
+          else if (text) drafts.push({ marker: markerForResult(text, b.is_error === true), text });
         } else if (b.type === 'text' && typeof b.text === 'string') {
           const text = tidy(b.text);
           if (text) drafts.push({ marker: '❯', text });
@@ -394,6 +419,7 @@ export function toTranscriptLines(rec: TranscriptRecord, agent = ''): Transcript
     ts: built.ts,
     ...(draft.diff ? { diff: draft.diff } : {}),
     ...(draft.sender ? { sender: draft.sender } : {}),
+    ...(draft.answers ? { answers: draft.answers } : {}),
   }));
 }
 
