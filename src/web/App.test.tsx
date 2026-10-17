@@ -739,7 +739,13 @@ const QUESTION_CARD = {
 it('opens the question modal over the wall, keeps it off the strip, and gives it Esc', () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
+  // A focused agent, or the wall's Esc never reaches its interrupt to be suspended.
+  window.history.replaceState(null, '', '/?agent=team-lead');
   render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/interrupt'))).toBe(true);
+  fetchMock.mockClear();
   act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [QUESTION_CARD] }));
 
   expect(screen.getByTestId('question-modal')).toBeTruthy();
@@ -748,6 +754,30 @@ it('opens the question modal over the wall, keeps it off the strip, and gives it
   const urls = fetchMock.mock.calls.map(([url]) => String(url));
   expect(urls).toContain('/api/permits/permit-q/deny');
   expect(urls.some((url) => url.includes('/interrupt'))).toBe(false);
+});
+
+it('holds the question back while a patch is open, so Esc only closes the patch', () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  const diff: Diff = { path: 'src/x.ts', added: 1, removed: 0, agent: 'probe-alpha', ts: 1, commit: 'abc1234', hunks: [] };
+  const withDiff = {
+    ...sampleTeamState(),
+    agents: sampleTeamState().agents.map((a) =>
+      a.name === 'probe-alpha'
+        ? { ...a, transcript: [...a.transcript, { id: 'edit#0', marker: '⎿' as const, text: 'Update(x)', ts: 1, diff }] }
+        : a,
+    ),
+  };
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', withDiff));
+  fireEvent.click(screen.getByTestId('diff-chip'));
+  act(() => MockEventSource.last().emit('snapshot', { ...withDiff, needsYou: [QUESTION_CARD] }));
+
+  expect(screen.queryByTestId('question-modal')).toBeNull();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByTestId('diff-modal')).toBeNull();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/deny'))).toBe(false);
+  expect(screen.getByTestId('question-modal')).toBeTruthy();
 });
 
 it('hides a question cancelled on the review tab, the call still pending', () => {

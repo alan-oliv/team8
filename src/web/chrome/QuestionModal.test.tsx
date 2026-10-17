@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AskQuestion, NeedsYouItem } from '../../shared/domain';
+import { fixtureAgents } from '../agents.fixture';
+import { Composer, PendingQuestionsContext } from '../components/Composer';
 import { QuestionModal } from './QuestionModal';
 
 const STORAGE: AskQuestion = {
@@ -260,6 +262,40 @@ describe('QuestionModal', () => {
       <QuestionModal item={card([STORAGE], { id: 'q2' })} leadName="team-lead" onCancel={() => {}} onDeclined={() => {}} />,
     );
     expect((screen.getByTestId('question-submit') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('takes focus when it opens', () => {
+    show(card([STORAGE]));
+    expect(document.activeElement).toBe(screen.getByRole('dialog'));
+  });
+
+  it('leaves keys typed into a field behind it alone, so a composer Enter answers once', async () => {
+    const asker = fixtureAgents().find((a) => a.name === 'probe-alpha')!;
+    const item = card([SHIP], { agent: asker.name });
+    render(
+      <PendingQuestionsContext.Provider value={[item]}>
+        <Composer agent={asker} variant="wall" />
+        <QuestionModal item={item} leadName="team-lead" onCancel={() => {}} onDeclined={() => {}} />
+      </PendingQuestionsContext.Provider>,
+    );
+    const input = screen.getByTestId('composer-input');
+    input.focus();
+    fireEvent.change(input, { target: { value: 'later' } });
+    expect(press('2', input)).toBe(true);
+    expect(options()[1].textContent).not.toContain('❯');
+    press('Enter', input);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted()).toEqual([['/api/permits/q1/allow', { answers: { 'Ship today?': 'later' } }]]);
+  });
+
+  it('leaves a key another handler already took, so closing a menu with Esc does not decline', () => {
+    show(card([STORAGE]));
+    const menu = document.body.appendChild(document.createElement('div'));
+    menu.addEventListener('keydown', (e) => e.preventDefault());
+    press('Escape', menu);
+    menu.remove();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('closes when its card leaves', () => {

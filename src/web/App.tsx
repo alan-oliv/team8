@@ -514,7 +514,13 @@ export function App() {
         )}
       </main>
       <DiffModal diff={store.openDiff} onClose={() => store.setOpenDiff(null)} />
-      <QuestionModal item={question} leadName={questionLead} onCancel={cancelQuestion} onDeclined={focusComposer} />
+      {/* Under an open patch the question would be hidden yet still take keys. */}
+      <QuestionModal
+        item={store.openDiff ? null : question}
+        leadName={questionLead}
+        onCancel={cancelQuestion}
+        onDeclined={focusComposer}
+      />
       <StopConfirm target={stopping} onConfirm={confirmStop} onCancel={() => setStopping(null)} />
       <WatchConfirm
         show={pendingDismiss}

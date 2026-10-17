@@ -62,6 +62,7 @@ function Asking({
   const [cursors, setCursors] = useState<number[]>(() => Array<number>(n + 1).fill(0));
   const [answers, setAnswers] = useState<TabAnswer[]>(() => questions.map(emptyAnswer));
   const field = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
 
   const review = tabs && tab === n;
   const qi = Math.min(tab, n - 1);
@@ -110,10 +111,21 @@ function Asking({
   const type = (text: string) =>
     setAnswer(q.multiSelect ? { ...a, other: text !== '', otherText: text } : { sel: [], other: true, otherText: text });
 
+  useEffect(() => dialog.current?.focus(), []);
+
   // Re-bound every render, so the handler always reads this render's state.
   useEffect(() => {
     function onKeyDown(e: globalThis.KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A key a menu already took, or one typed into a field behind the scrim
+      // (the asker's composer, focused on decline), is not this modal's.
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (
+        el instanceof HTMLElement &&
+        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) &&
+        !dialog.current?.contains(el)
+      )
+        return;
       const typing = field.current !== null && e.target === field.current;
       const rows = review ? 2 : k + 2;
       if (e.key === 'Escape') {
@@ -176,10 +188,13 @@ function Asking({
       }}
     >
       <div
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-label="Claude is asking"
+        tabIndex={-1}
         style={{
+          outline: 'none',
           width: 760,
           maxWidth: 'calc(100% - 32px)',
           maxHeight: 'calc(100% - 40px)',
