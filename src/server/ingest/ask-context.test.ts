@@ -46,6 +46,14 @@ describe('askContext', () => {
     expect(askContext(lines)).toBe('Second question.');
   });
 
+  it('ignores a call that already has its result, since the current call may not be flushed yet', () => {
+    const lines = [
+      assistant('a1', [text('Old question.'), ask]),
+      user('u1', [{ type: 'tool_result', tool_use_id: 'tu1', content: 'answered' }]),
+    ];
+    expect(askContext(lines)).toBeUndefined();
+  });
+
   it('is undefined with no AskUserQuestion call, and skips lines that do not parse', () => {
     expect(askContext([assistant('a1', [text('hello')]), '{"truncated', ''])).toBeUndefined();
   });

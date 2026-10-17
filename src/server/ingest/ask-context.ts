@@ -5,7 +5,7 @@ import { parseLine, type TranscriptRecord } from '../../shared/transcript';
 // result before it is the only thing that could push it further back.
 const TAIL_BYTES = 256 * 1024;
 
-type Block = { type?: string; text?: unknown; name?: unknown };
+type Block = { type?: string; text?: unknown; name?: unknown; id?: unknown; tool_use_id?: unknown };
 
 const blocksOf = (rec: TranscriptRecord): Block[] =>
   rec.type === 'assistant' && Array.isArray(rec.message?.content) ? (rec.message.content as Block[]) : [];
@@ -23,12 +23,20 @@ function lastParagraph(text: string): string {
 export function askContext(lines: string[]): string | undefined {
   const recs = lines.map(parseLine).filter((r): r is TranscriptRecord => r !== null);
 
+  // The hook can fire before the current call is flushed to the transcript; the
+  // latest call in the tail is then an answered one, whose text is stale.
+  const answered = new Set<unknown>();
+  for (const rec of recs) {
+    const content = rec.type === 'user' ? rec.message?.content : undefined;
+    if (Array.isArray(content)) for (const b of content as Block[]) if (b?.type === 'tool_result') answered.add(b.tool_use_id);
+  }
+
   let at = -1;
   let blockAt = -1;
   for (let i = recs.length - 1; i >= 0 && at < 0; i--) {
     const blocks = blocksOf(recs[i]);
     for (let k = blocks.length - 1; k >= 0; k--) {
-      if (blocks[k]?.type === 'tool_use' && blocks[k].name === 'AskUserQuestion') {
+      if (blocks[k]?.type === 'tool_use' && blocks[k].name === 'AskUserQuestion' && !answered.has(blocks[k].id)) {
         at = i;
         blockAt = k;
         break;
