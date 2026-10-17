@@ -951,6 +951,49 @@ export function TranscriptFeed({
           );
         }
 
+        // An answered AskUserQuestion: the result row, then the handoff's
+        // `· {header} → {answer}` line per question, aligned with the text.
+        if (line.answers) {
+          return (
+            <div
+              key={line.id}
+              data-testid="transcript-row"
+              style={{ display: 'flex', flexDirection: 'column', gap: '2px', opacity }}
+            >
+              <div style={{ display: 'flex', gap: `${s.gap}px`, alignItems: 'baseline' }}>
+                <span
+                  data-testid="transcript-marker"
+                  style={{ color: MARKER_COLOR, width: s.markerWidth, flex: 'none', fontSize: s.markerSize }}
+                >
+                  {glyphOf(line.marker)}
+                </span>
+                <span
+                  data-testid="transcript-text"
+                  style={{ color: s.textColor, ...(s.textSize ? { fontSize: s.textSize } : {}) }}
+                >
+                  {text}
+                </span>
+              </div>
+              {line.answers.map((a, n) => (
+                <span
+                  key={n}
+                  data-testid="transcript-answer"
+                  style={{
+                    paddingLeft: `calc(${s.markerWidth} + ${s.gap}px)`,
+                    color: 'var(--color-accent-300)',
+                    ...(s.wrap
+                      ? { textWrap: 'pretty' }
+                      : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }),
+                    ...(s.textSize ? { fontSize: s.textSize } : {}),
+                  }}
+                >
+                  {`· ${a.header} → ${a.answer}`}
+                </span>
+              ))}
+            </div>
+          );
+        }
+
         // A diff-bearing row opens the patch in the shared modal rather than
         // expanding in place — a hunk is too tall for a column, so it never
         // takes the `more` drawer path below.
