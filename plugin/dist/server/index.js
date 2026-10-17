@@ -61,54 +61,54 @@ var require_polyfills = __commonJS({
     }
     var chdir;
     module.exports = patch;
-    function patch(fs11) {
+    function patch(fs12) {
       if (constants.hasOwnProperty("O_SYMLINK") && process.version.match(/^v0\.6\.[0-2]|^v0\.5\./)) {
-        patchLchmod(fs11);
+        patchLchmod(fs12);
       }
-      if (!fs11.lutimes) {
-        patchLutimes(fs11);
+      if (!fs12.lutimes) {
+        patchLutimes(fs12);
       }
-      fs11.chown = chownFix(fs11.chown);
-      fs11.fchown = chownFix(fs11.fchown);
-      fs11.lchown = chownFix(fs11.lchown);
-      fs11.chmod = chmodFix(fs11.chmod);
-      fs11.fchmod = chmodFix(fs11.fchmod);
-      fs11.lchmod = chmodFix(fs11.lchmod);
-      fs11.chownSync = chownFixSync(fs11.chownSync);
-      fs11.fchownSync = chownFixSync(fs11.fchownSync);
-      fs11.lchownSync = chownFixSync(fs11.lchownSync);
-      fs11.chmodSync = chmodFixSync(fs11.chmodSync);
-      fs11.fchmodSync = chmodFixSync(fs11.fchmodSync);
-      fs11.lchmodSync = chmodFixSync(fs11.lchmodSync);
-      fs11.stat = statFix(fs11.stat);
-      fs11.fstat = statFix(fs11.fstat);
-      fs11.lstat = statFix(fs11.lstat);
-      fs11.statSync = statFixSync(fs11.statSync);
-      fs11.fstatSync = statFixSync(fs11.fstatSync);
-      fs11.lstatSync = statFixSync(fs11.lstatSync);
-      if (fs11.chmod && !fs11.lchmod) {
-        fs11.lchmod = function(path14, mode, cb) {
+      fs12.chown = chownFix(fs12.chown);
+      fs12.fchown = chownFix(fs12.fchown);
+      fs12.lchown = chownFix(fs12.lchown);
+      fs12.chmod = chmodFix(fs12.chmod);
+      fs12.fchmod = chmodFix(fs12.fchmod);
+      fs12.lchmod = chmodFix(fs12.lchmod);
+      fs12.chownSync = chownFixSync(fs12.chownSync);
+      fs12.fchownSync = chownFixSync(fs12.fchownSync);
+      fs12.lchownSync = chownFixSync(fs12.lchownSync);
+      fs12.chmodSync = chmodFixSync(fs12.chmodSync);
+      fs12.fchmodSync = chmodFixSync(fs12.fchmodSync);
+      fs12.lchmodSync = chmodFixSync(fs12.lchmodSync);
+      fs12.stat = statFix(fs12.stat);
+      fs12.fstat = statFix(fs12.fstat);
+      fs12.lstat = statFix(fs12.lstat);
+      fs12.statSync = statFixSync(fs12.statSync);
+      fs12.fstatSync = statFixSync(fs12.fstatSync);
+      fs12.lstatSync = statFixSync(fs12.lstatSync);
+      if (fs12.chmod && !fs12.lchmod) {
+        fs12.lchmod = function(path14, mode, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs11.lchmodSync = function() {
+        fs12.lchmodSync = function() {
         };
       }
-      if (fs11.chown && !fs11.lchown) {
-        fs11.lchown = function(path14, uid, gid, cb) {
+      if (fs12.chown && !fs12.lchown) {
+        fs12.lchown = function(path14, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
-        fs11.lchownSync = function() {
+        fs12.lchownSync = function() {
         };
       }
       if (platform === "win32") {
-        fs11.rename = typeof fs11.rename !== "function" ? fs11.rename : (function(fs$rename) {
+        fs12.rename = typeof fs12.rename !== "function" ? fs12.rename : (function(fs$rename) {
           function rename(from, to, cb) {
             var start = Date.now();
             var backoff = 0;
             fs$rename(from, to, function CB(er) {
               if (er && (er.code === "EACCES" || er.code === "EPERM" || er.code === "EBUSY") && Date.now() - start < 6e4) {
                 setTimeout(function() {
-                  fs11.stat(to, function(stater, st) {
+                  fs12.stat(to, function(stater, st) {
                     if (stater && stater.code === "ENOENT")
                       fs$rename(from, to, CB);
                     else
@@ -124,9 +124,9 @@ var require_polyfills = __commonJS({
           }
           if (Object.setPrototypeOf) Object.setPrototypeOf(rename, fs$rename);
           return rename;
-        })(fs11.rename);
+        })(fs12.rename);
       }
-      fs11.read = typeof fs11.read !== "function" ? fs11.read : (function(fs$read) {
+      fs12.read = typeof fs12.read !== "function" ? fs12.read : (function(fs$read) {
         function read(fd, buffer, offset, length, position, callback_) {
           var callback;
           if (callback_ && typeof callback_ === "function") {
@@ -134,22 +134,22 @@ var require_polyfills = __commonJS({
             callback = function(er, _, __) {
               if (er && er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
-                return fs$read.call(fs11, fd, buffer, offset, length, position, callback);
+                return fs$read.call(fs12, fd, buffer, offset, length, position, callback);
               }
               callback_.apply(this, arguments);
             };
           }
-          return fs$read.call(fs11, fd, buffer, offset, length, position, callback);
+          return fs$read.call(fs12, fd, buffer, offset, length, position, callback);
         }
         if (Object.setPrototypeOf) Object.setPrototypeOf(read, fs$read);
         return read;
-      })(fs11.read);
-      fs11.readSync = typeof fs11.readSync !== "function" ? fs11.readSync : /* @__PURE__ */ (function(fs$readSync) {
+      })(fs12.read);
+      fs12.readSync = typeof fs12.readSync !== "function" ? fs12.readSync : /* @__PURE__ */ (function(fs$readSync) {
         return function(fd, buffer, offset, length, position) {
           var eagCounter = 0;
           while (true) {
             try {
-              return fs$readSync.call(fs11, fd, buffer, offset, length, position);
+              return fs$readSync.call(fs12, fd, buffer, offset, length, position);
             } catch (er) {
               if (er.code === "EAGAIN" && eagCounter < 10) {
                 eagCounter++;
@@ -159,10 +159,10 @@ var require_polyfills = __commonJS({
             }
           }
         };
-      })(fs11.readSync);
-      function patchLchmod(fs12) {
-        fs12.lchmod = function(path14, mode, callback) {
-          fs12.open(
+      })(fs12.readSync);
+      function patchLchmod(fs13) {
+        fs13.lchmod = function(path14, mode, callback) {
+          fs13.open(
             path14,
             constants.O_WRONLY | constants.O_SYMLINK,
             mode,
@@ -171,80 +171,80 @@ var require_polyfills = __commonJS({
                 if (callback) callback(err);
                 return;
               }
-              fs12.fchmod(fd, mode, function(err2) {
-                fs12.close(fd, function(err22) {
+              fs13.fchmod(fd, mode, function(err2) {
+                fs13.close(fd, function(err22) {
                   if (callback) callback(err2 || err22);
                 });
               });
             }
           );
         };
-        fs12.lchmodSync = function(path14, mode) {
-          var fd = fs12.openSync(path14, constants.O_WRONLY | constants.O_SYMLINK, mode);
+        fs13.lchmodSync = function(path14, mode) {
+          var fd = fs13.openSync(path14, constants.O_WRONLY | constants.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
-            ret = fs12.fchmodSync(fd, mode);
+            ret = fs13.fchmodSync(fd, mode);
             threw = false;
           } finally {
             if (threw) {
               try {
-                fs12.closeSync(fd);
+                fs13.closeSync(fd);
               } catch (er) {
               }
             } else {
-              fs12.closeSync(fd);
+              fs13.closeSync(fd);
             }
           }
           return ret;
         };
       }
-      function patchLutimes(fs12) {
-        if (constants.hasOwnProperty("O_SYMLINK") && fs12.futimes) {
-          fs12.lutimes = function(path14, at, mt, cb) {
-            fs12.open(path14, constants.O_SYMLINK, function(er, fd) {
+      function patchLutimes(fs13) {
+        if (constants.hasOwnProperty("O_SYMLINK") && fs13.futimes) {
+          fs13.lutimes = function(path14, at, mt, cb) {
+            fs13.open(path14, constants.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
               }
-              fs12.futimes(fd, at, mt, function(er2) {
-                fs12.close(fd, function(er22) {
+              fs13.futimes(fd, at, mt, function(er2) {
+                fs13.close(fd, function(er22) {
                   if (cb) cb(er2 || er22);
                 });
               });
             });
           };
-          fs12.lutimesSync = function(path14, at, mt) {
-            var fd = fs12.openSync(path14, constants.O_SYMLINK);
+          fs13.lutimesSync = function(path14, at, mt) {
+            var fd = fs13.openSync(path14, constants.O_SYMLINK);
             var ret;
             var threw = true;
             try {
-              ret = fs12.futimesSync(fd, at, mt);
+              ret = fs13.futimesSync(fd, at, mt);
               threw = false;
             } finally {
               if (threw) {
                 try {
-                  fs12.closeSync(fd);
+                  fs13.closeSync(fd);
                 } catch (er) {
                 }
               } else {
-                fs12.closeSync(fd);
+                fs13.closeSync(fd);
               }
             }
             return ret;
           };
-        } else if (fs12.futimes) {
-          fs12.lutimes = function(_a, _b, _c, cb) {
+        } else if (fs13.futimes) {
+          fs13.lutimes = function(_a, _b, _c, cb) {
             if (cb) process.nextTick(cb);
           };
-          fs12.lutimesSync = function() {
+          fs13.lutimesSync = function() {
           };
         }
       }
       function chmodFix(orig) {
         if (!orig) return orig;
         return function(target, mode, cb) {
-          return orig.call(fs11, target, mode, function(er) {
+          return orig.call(fs12, target, mode, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -254,7 +254,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, mode) {
           try {
-            return orig.call(fs11, target, mode);
+            return orig.call(fs12, target, mode);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -263,7 +263,7 @@ var require_polyfills = __commonJS({
       function chownFix(orig) {
         if (!orig) return orig;
         return function(target, uid, gid, cb) {
-          return orig.call(fs11, target, uid, gid, function(er) {
+          return orig.call(fs12, target, uid, gid, function(er) {
             if (chownErOk(er)) er = null;
             if (cb) cb.apply(this, arguments);
           });
@@ -273,7 +273,7 @@ var require_polyfills = __commonJS({
         if (!orig) return orig;
         return function(target, uid, gid) {
           try {
-            return orig.call(fs11, target, uid, gid);
+            return orig.call(fs12, target, uid, gid);
           } catch (er) {
             if (!chownErOk(er)) throw er;
           }
@@ -293,13 +293,13 @@ var require_polyfills = __commonJS({
             }
             if (cb) cb.apply(this, arguments);
           }
-          return options ? orig.call(fs11, target, options, callback) : orig.call(fs11, target, callback);
+          return options ? orig.call(fs12, target, options, callback) : orig.call(fs12, target, callback);
         };
       }
       function statFixSync(orig) {
         if (!orig) return orig;
         return function(target, options) {
-          var stats = options ? orig.call(fs11, target, options) : orig.call(fs11, target);
+          var stats = options ? orig.call(fs12, target, options) : orig.call(fs12, target);
           if (stats) {
             if (stats.uid < 0) stats.uid += 4294967296;
             if (stats.gid < 0) stats.gid += 4294967296;
@@ -328,7 +328,7 @@ var require_legacy_streams = __commonJS({
   "node_modules/graceful-fs/legacy-streams.js"(exports, module) {
     var Stream = __require("stream").Stream;
     module.exports = legacy;
-    function legacy(fs11) {
+    function legacy(fs12) {
       return {
         ReadStream,
         WriteStream
@@ -371,7 +371,7 @@ var require_legacy_streams = __commonJS({
           });
           return;
         }
-        fs11.open(this.path, this.flags, this.mode, function(err, fd) {
+        fs12.open(this.path, this.flags, this.mode, function(err, fd) {
           if (err) {
             self.emit("error", err);
             self.readable = false;
@@ -410,7 +410,7 @@ var require_legacy_streams = __commonJS({
         this.busy = false;
         this._queue = [];
         if (this.fd === null) {
-          this._open = fs11.open;
+          this._open = fs12.open;
           this._queue.push([this._open, this.path, this.flags, this.mode, void 0]);
           this.flush();
         }
@@ -445,7 +445,7 @@ var require_clone = __commonJS({
 // node_modules/graceful-fs/graceful-fs.js
 var require_graceful_fs = __commonJS({
   "node_modules/graceful-fs/graceful-fs.js"(exports, module) {
-    var fs11 = __require("fs");
+    var fs12 = __require("fs");
     var polyfills = require_polyfills();
     var legacy = require_legacy_streams();
     var clone = require_clone();
@@ -477,12 +477,12 @@ var require_graceful_fs = __commonJS({
         m = "GFS4: " + m.split(/\n/).join("\nGFS4: ");
         console.error(m);
       };
-    if (!fs11[gracefulQueue]) {
+    if (!fs12[gracefulQueue]) {
       queue = global[gracefulQueue] || [];
-      publishQueue(fs11, queue);
-      fs11.close = (function(fs$close) {
+      publishQueue(fs12, queue);
+      fs12.close = (function(fs$close) {
         function close(fd, cb) {
-          return fs$close.call(fs11, fd, function(err) {
+          return fs$close.call(fs12, fd, function(err) {
             if (!err) {
               resetQueue();
             }
@@ -494,40 +494,40 @@ var require_graceful_fs = __commonJS({
           value: fs$close
         });
         return close;
-      })(fs11.close);
-      fs11.closeSync = (function(fs$closeSync) {
+      })(fs12.close);
+      fs12.closeSync = (function(fs$closeSync) {
         function closeSync(fd) {
-          fs$closeSync.apply(fs11, arguments);
+          fs$closeSync.apply(fs12, arguments);
           resetQueue();
         }
         Object.defineProperty(closeSync, previousSymbol, {
           value: fs$closeSync
         });
         return closeSync;
-      })(fs11.closeSync);
+      })(fs12.closeSync);
       if (/\bgfs4\b/i.test(process.env.NODE_DEBUG || "")) {
         process.on("exit", function() {
-          debug2(fs11[gracefulQueue]);
-          __require("assert").equal(fs11[gracefulQueue].length, 0);
+          debug2(fs12[gracefulQueue]);
+          __require("assert").equal(fs12[gracefulQueue].length, 0);
         });
       }
     }
     var queue;
     if (!global[gracefulQueue]) {
-      publishQueue(global, fs11[gracefulQueue]);
+      publishQueue(global, fs12[gracefulQueue]);
     }
-    module.exports = patch(clone(fs11));
-    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs11.__patched) {
-      module.exports = patch(fs11);
-      fs11.__patched = true;
+    module.exports = patch(clone(fs12));
+    if (process.env.TEST_GRACEFUL_FS_GLOBAL_PATCH && !fs12.__patched) {
+      module.exports = patch(fs12);
+      fs12.__patched = true;
     }
-    function patch(fs12) {
-      polyfills(fs12);
-      fs12.gracefulify = patch;
-      fs12.createReadStream = createReadStream;
-      fs12.createWriteStream = createWriteStream;
-      var fs$readFile = fs12.readFile;
-      fs12.readFile = readFile;
+    function patch(fs13) {
+      polyfills(fs13);
+      fs13.gracefulify = patch;
+      fs13.createReadStream = createReadStream;
+      fs13.createWriteStream = createWriteStream;
+      var fs$readFile = fs13.readFile;
+      fs13.readFile = readFile;
       function readFile(path14, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
@@ -543,8 +543,8 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$writeFile = fs12.writeFile;
-      fs12.writeFile = writeFile;
+      var fs$writeFile = fs13.writeFile;
+      fs13.writeFile = writeFile;
       function writeFile(path14, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
@@ -560,9 +560,9 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$appendFile = fs12.appendFile;
+      var fs$appendFile = fs13.appendFile;
       if (fs$appendFile)
-        fs12.appendFile = appendFile;
+        fs13.appendFile = appendFile;
       function appendFile(path14, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
@@ -578,9 +578,9 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$copyFile = fs12.copyFile;
+      var fs$copyFile = fs13.copyFile;
       if (fs$copyFile)
-        fs12.copyFile = copyFile;
+        fs13.copyFile = copyFile;
       function copyFile(src, dest, flags, cb) {
         if (typeof flags === "function") {
           cb = flags;
@@ -598,8 +598,8 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      var fs$readdir = fs12.readdir;
-      fs12.readdir = readdir;
+      var fs$readdir = fs13.readdir;
+      fs13.readdir = readdir;
       var noReaddirOptionVersions = /^v[0-5]\./;
       function readdir(path14, options, cb) {
         if (typeof options === "function")
@@ -640,21 +640,21 @@ var require_graceful_fs = __commonJS({
         }
       }
       if (process.version.substr(0, 4) === "v0.8") {
-        var legStreams = legacy(fs12);
+        var legStreams = legacy(fs13);
         ReadStream = legStreams.ReadStream;
         WriteStream = legStreams.WriteStream;
       }
-      var fs$ReadStream = fs12.ReadStream;
+      var fs$ReadStream = fs13.ReadStream;
       if (fs$ReadStream) {
         ReadStream.prototype = Object.create(fs$ReadStream.prototype);
         ReadStream.prototype.open = ReadStream$open;
       }
-      var fs$WriteStream = fs12.WriteStream;
+      var fs$WriteStream = fs13.WriteStream;
       if (fs$WriteStream) {
         WriteStream.prototype = Object.create(fs$WriteStream.prototype);
         WriteStream.prototype.open = WriteStream$open;
       }
-      Object.defineProperty(fs12, "ReadStream", {
+      Object.defineProperty(fs13, "ReadStream", {
         get: function() {
           return ReadStream;
         },
@@ -664,7 +664,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      Object.defineProperty(fs12, "WriteStream", {
+      Object.defineProperty(fs13, "WriteStream", {
         get: function() {
           return WriteStream;
         },
@@ -675,7 +675,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileReadStream = ReadStream;
-      Object.defineProperty(fs12, "FileReadStream", {
+      Object.defineProperty(fs13, "FileReadStream", {
         get: function() {
           return FileReadStream;
         },
@@ -686,7 +686,7 @@ var require_graceful_fs = __commonJS({
         configurable: true
       });
       var FileWriteStream = WriteStream;
-      Object.defineProperty(fs12, "FileWriteStream", {
+      Object.defineProperty(fs13, "FileWriteStream", {
         get: function() {
           return FileWriteStream;
         },
@@ -735,13 +735,13 @@ var require_graceful_fs = __commonJS({
         });
       }
       function createReadStream(path14, options) {
-        return new fs12.ReadStream(path14, options);
+        return new fs13.ReadStream(path14, options);
       }
       function createWriteStream(path14, options) {
-        return new fs12.WriteStream(path14, options);
+        return new fs13.WriteStream(path14, options);
       }
-      var fs$open = fs12.open;
-      fs12.open = open;
+      var fs$open = fs13.open;
+      fs13.open = open;
       function open(path14, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
@@ -757,20 +757,20 @@ var require_graceful_fs = __commonJS({
           });
         }
       }
-      return fs12;
+      return fs13;
     }
     function enqueue(elem) {
       debug2("ENQUEUE", elem[0].name, elem[1]);
-      fs11[gracefulQueue].push(elem);
+      fs12[gracefulQueue].push(elem);
       retry();
     }
     var retryTimer;
     function resetQueue() {
       var now = Date.now();
-      for (var i = 0; i < fs11[gracefulQueue].length; ++i) {
-        if (fs11[gracefulQueue][i].length > 2) {
-          fs11[gracefulQueue][i][3] = now;
-          fs11[gracefulQueue][i][4] = now;
+      for (var i = 0; i < fs12[gracefulQueue].length; ++i) {
+        if (fs12[gracefulQueue][i].length > 2) {
+          fs12[gracefulQueue][i][3] = now;
+          fs12[gracefulQueue][i][4] = now;
         }
       }
       retry();
@@ -778,9 +778,9 @@ var require_graceful_fs = __commonJS({
     function retry() {
       clearTimeout(retryTimer);
       retryTimer = void 0;
-      if (fs11[gracefulQueue].length === 0)
+      if (fs12[gracefulQueue].length === 0)
         return;
-      var elem = fs11[gracefulQueue].shift();
+      var elem = fs12[gracefulQueue].shift();
       var fn = elem[0];
       var args = elem[1];
       var err = elem[2];
@@ -802,7 +802,7 @@ var require_graceful_fs = __commonJS({
           debug2("RETRY", fn.name, args);
           fn.apply(null, args.concat([startTime]));
         } else {
-          fs11[gracefulQueue].push(elem);
+          fs12[gracefulQueue].push(elem);
         }
       }
       if (retryTimer === void 0) {
@@ -1237,10 +1237,10 @@ var require_mtime_precision = __commonJS({
   "node_modules/proper-lockfile/lib/mtime-precision.js"(exports, module) {
     "use strict";
     var cacheSymbol = /* @__PURE__ */ Symbol();
-    function probe(file, fs11, callback) {
-      const cachedPrecision = fs11[cacheSymbol];
+    function probe(file, fs12, callback) {
+      const cachedPrecision = fs12[cacheSymbol];
       if (cachedPrecision) {
-        return fs11.stat(file, (err, stat) => {
+        return fs12.stat(file, (err, stat) => {
           if (err) {
             return callback(err);
           }
@@ -1248,16 +1248,16 @@ var require_mtime_precision = __commonJS({
         });
       }
       const mtime = new Date(Math.ceil(Date.now() / 1e3) * 1e3 + 5);
-      fs11.utimes(file, mtime, mtime, (err) => {
+      fs12.utimes(file, mtime, mtime, (err) => {
         if (err) {
           return callback(err);
         }
-        fs11.stat(file, (err2, stat) => {
+        fs12.stat(file, (err2, stat) => {
           if (err2) {
             return callback(err2);
           }
           const precision = stat.mtime.getTime() % 1e3 === 0 ? "s" : "ms";
-          Object.defineProperty(fs11, cacheSymbol, { value: precision });
+          Object.defineProperty(fs12, cacheSymbol, { value: precision });
           callback(null, stat.mtime, precision);
         });
       });
@@ -1279,7 +1279,7 @@ var require_lockfile = __commonJS({
   "node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
     "use strict";
     var path14 = __require("path");
-    var fs11 = require_graceful_fs();
+    var fs12 = require_graceful_fs();
     var retry = require_retry2();
     var onExit = require_signal_exit();
     var mtimePrecision = require_mtime_precision();
@@ -1410,7 +1410,7 @@ var require_lockfile = __commonJS({
         update: null,
         realpath: true,
         retries: 0,
-        fs: fs11,
+        fs: fs12,
         onCompromised: (err) => {
           throw err;
         },
@@ -1454,7 +1454,7 @@ var require_lockfile = __commonJS({
     }
     function unlock(file, options, callback) {
       options = {
-        fs: fs11,
+        fs: fs12,
         realpath: true,
         ...options
       };
@@ -1476,7 +1476,7 @@ var require_lockfile = __commonJS({
       options = {
         stale: 1e4,
         realpath: true,
-        fs: fs11,
+        fs: fs12,
         ...options
       };
       options.stale = Math.max(options.stale || 0, 2e3);
@@ -1515,16 +1515,16 @@ var require_lockfile = __commonJS({
 var require_adapter = __commonJS({
   "node_modules/proper-lockfile/lib/adapter.js"(exports, module) {
     "use strict";
-    var fs11 = require_graceful_fs();
-    function createSyncFs(fs12) {
+    var fs12 = require_graceful_fs();
+    function createSyncFs(fs13) {
       const methods = ["mkdir", "realpath", "stat", "rmdir", "utimes"];
-      const newFs = { ...fs12 };
+      const newFs = { ...fs13 };
       methods.forEach((method) => {
         newFs[method] = (...args) => {
           const callback = args.pop();
           let ret;
           try {
-            ret = fs12[`${method}Sync`](...args);
+            ret = fs13[`${method}Sync`](...args);
           } catch (err) {
             return callback(err);
           }
@@ -1562,7 +1562,7 @@ var require_adapter = __commonJS({
     }
     function toSyncOptions(options) {
       options = { ...options };
-      options.fs = createSyncFs(options.fs || fs11);
+      options.fs = createSyncFs(options.fs || fs12);
       if (typeof options.retries === "number" && options.retries > 0 || options.retries && typeof options.retries.retries === "number" && options.retries.retries > 0) {
         throw Object.assign(new Error("Cannot use retries with the sync api"), { code: "ESYNC" });
       }
@@ -1616,7 +1616,7 @@ var require_proper_lockfile = __commonJS({
 import os2 from "node:os";
 import path13 from "node:path";
 import { execFile as execFile5 } from "node:child_process";
-import { promises as fs10 } from "node:fs";
+import { promises as fs11 } from "node:fs";
 import { promisify as promisify4 } from "node:util";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -2965,6 +2965,17 @@ function markerForResult(text, isError) {
   if (/^(updated|created|wrote|applied|added|completed|done|success)/i.test(text)) return "\u2713";
   return "\u23BF";
 }
+var DECLINE_MESSAGE = "User declined to answer";
+function answeredQuestions(result) {
+  if (!result || typeof result !== "object") return void 0;
+  const { questions, answers } = result;
+  if (!Array.isArray(questions) || !answers || typeof answers !== "object") return void 0;
+  return questions.map((q) => {
+    const { question, header } = q ?? {};
+    const answer = typeof question === "string" ? answers[question] : void 0;
+    return { header: typeof header === "string" ? header : "", answer: typeof answer === "string" ? answer : "" };
+  });
+}
 function resultText(content) {
   if (typeof content === "string") return tidy(content);
   if (Array.isArray(content)) {
@@ -2994,8 +3005,11 @@ function draftsOf(rec, agent = "") {
         if (!block || typeof block !== "object") continue;
         const b = block;
         if (b.type === "tool_result") {
+          const answers = answeredQuestions(rec.toolUseResult);
           const text = resultText(b.content);
-          if (text) drafts.push({ marker: markerForResult(text, b.is_error === true), text });
+          if (answers) drafts.push({ marker: "\u23BF", text: "User answered Claude's questions:", answers });
+          else if (text === DECLINE_MESSAGE) drafts.push({ marker: "\u23BF", text: "User declined to answer \xB7 wants to chat" });
+          else if (text) drafts.push({ marker: markerForResult(text, b.is_error === true), text });
         } else if (b.type === "text" && typeof b.text === "string") {
           const text = tidy(b.text);
           if (text) drafts.push({ marker: "\u276F", text });
@@ -3028,7 +3042,8 @@ function toTranscriptLines(rec, agent = "") {
     text: capText(draft.text),
     ts: built.ts,
     ...draft.diff ? { diff: draft.diff } : {},
-    ...draft.sender ? { sender: draft.sender } : {}
+    ...draft.sender ? { sender: draft.sender } : {},
+    ...draft.answers ? { answers: draft.answers } : {}
   }));
 }
 function fullLineText(rec, index) {
@@ -3076,6 +3091,10 @@ function memoisable(rec) {
   return rec !== null && typeof rec === "object";
 }
 var lineMemo = /* @__PURE__ */ new WeakMap();
+function waitingLine(card, ts) {
+  const n = card.questions?.length ?? 0;
+  return { id: `${card.id}#waiting`, marker: "\u23BF", text: `waiting on you \xB7 ${n} question${n === 1 ? "" : "s"}`, ts };
+}
 function linesOf(rec, agent) {
   if (!memoisable(rec)) return toTranscriptLines(rec, agent);
   const byAgent = lineMemo.get(rec) ?? /* @__PURE__ */ new Map();
@@ -3164,6 +3183,7 @@ function project(events, readOnly, now = Date.now()) {
   const lastActivity = /* @__PURE__ */ new Map();
   const logClock = /* @__PURE__ */ new Map();
   const needsYou = /* @__PURE__ */ new Map();
+  const cardAt = /* @__PURE__ */ new Map();
   const usageTotals = /* @__PURE__ */ new Map();
   const spawnFolds = /* @__PURE__ */ new Map();
   const subagentFacts = /* @__PURE__ */ new Map();
@@ -3274,6 +3294,7 @@ function project(events, readOnly, now = Date.now()) {
       case "needsyou": {
         const item = ev.payload;
         needsYou.set(item.id, item);
+        cardAt.set(item.id, ev.ts);
         break;
       }
       case "needsyou-resolved": {
@@ -3334,10 +3355,12 @@ function project(events, readOnly, now = Date.now()) {
     }
     const lines = [];
     for (let i = tail.length - 1; i >= 0; i--) for (const line of tail[i]) lines.push(line);
+    const asking = cards.find((c) => c.agent === id.name && (c.questions?.length ?? 0) > 0);
     let status = "working";
     if (id.name !== soloLead && (!liveMembers || !liveMembers.has(id.name))) status = "departed";
     else if (errors.has(id.name)) status = "failed";
     else if (cards.some((c) => c.agent === id.name && c.kind === "plan")) status = "plan_pending";
+    else if (asking) status = "asking";
     else {
       const act = lastActivity.get(id.name) ?? -1;
       const idle = lastIdle.get(id.name) ?? -1;
@@ -3369,7 +3392,7 @@ function project(events, readOnly, now = Date.now()) {
       costUsd: carried ? carried.costUsd : totalCost(usage),
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
-      transcript: lines.slice(-PROJECTED_TRANSCRIPT_LINES),
+      transcript: asking ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)] : lines.slice(-PROJECTED_TRANSCRIPT_LINES),
       unread: unread.get(id.name) ?? 0,
       error: errors.get(id.name)
     };
@@ -4605,6 +4628,13 @@ function autoDenyReason(timeoutMs) {
 }
 function createPermits() {
   const held = /* @__PURE__ */ new Map();
+  const take = (id) => {
+    const entry = held.get(id);
+    if (!entry) return void 0;
+    clearTimeout(entry.timer);
+    held.delete(id);
+    return entry;
+  };
   return {
     hold(agent, toolName, input, timeoutMs) {
       const id = randomUUID2();
@@ -4621,22 +4651,88 @@ function createPermits() {
       held.set(id, {
         permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
         timer,
-        settle: (decision, reason, updatedInput) => settle({ decision, reason, updatedInput })
+        settle
       });
       return { id, promise };
     },
     resolve(id, decision, reason, updatedInput) {
-      const entry = held.get(id);
+      const entry = take(id);
       if (!entry) return false;
-      clearTimeout(entry.timer);
-      held.delete(id);
-      entry.settle(decision, reason, updatedInput);
+      entry.settle({ decision, reason, updatedInput });
+      return true;
+    },
+    withdraw(id) {
+      const entry = take(id);
+      if (!entry) return false;
+      entry.settle({ decision: "withdrawn" });
       return true;
     },
     list() {
       return [...held.values()].map((e) => e.permit);
     }
   };
+}
+
+// src/server/ingest/ask-context.ts
+import { promises as fs4 } from "node:fs";
+var TAIL_BYTES = 256 * 1024;
+var blocksOf = (rec) => rec.type === "assistant" && Array.isArray(rec.message?.content) ? rec.message.content : [];
+function lastParagraph(text) {
+  const paragraphs = text.trim().split(/\n\s*\n/);
+  return paragraphs[paragraphs.length - 1].trim();
+}
+function askContext(lines) {
+  const recs = lines.map(parseLine).filter((r) => r !== null);
+  const answered = /* @__PURE__ */ new Set();
+  for (const rec of recs) {
+    const content = rec.type === "user" ? rec.message?.content : void 0;
+    if (Array.isArray(content)) {
+      for (const b of content) if (b?.type === "tool_result") answered.add(b.tool_use_id);
+    }
+  }
+  let at = -1;
+  let blockAt = -1;
+  for (let i = recs.length - 1; i >= 0 && at < 0; i--) {
+    const blocks = blocksOf(recs[i]);
+    for (let k = blocks.length - 1; k >= 0; k--) {
+      if (blocks[k]?.type === "tool_use" && blocks[k].name === "AskUserQuestion" && !answered.has(blocks[k].id)) {
+        at = i;
+        blockAt = k;
+        break;
+      }
+    }
+  }
+  if (at < 0) return void 0;
+  for (let i = at; i >= 0; i--) {
+    if (recs[i].type === "user") return void 0;
+    const blocks = blocksOf(recs[i]);
+    for (let k = (i === at ? blockAt : blocks.length) - 1; k >= 0; k--) {
+      const b = blocks[k];
+      if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) return lastParagraph(b.text);
+    }
+  }
+  return void 0;
+}
+async function readTailLines(file, maxBytes = TAIL_BYTES) {
+  const fh = await fs4.open(file, "r");
+  try {
+    const { size } = await fh.stat();
+    const start = Math.max(0, size - maxBytes);
+    const buf = Buffer.alloc(size - start);
+    await fh.read(buf, 0, buf.length, start);
+    const lines = buf.toString("utf8").split("\n");
+    return start > 0 ? lines.slice(1) : lines;
+  } finally {
+    await fh.close();
+  }
+}
+async function readAskContext(file) {
+  if (!file) return void 0;
+  try {
+    return askContext(await readTailLines(file));
+  } catch {
+    return void 0;
+  }
 }
 
 // src/server/ingest/hooks.ts
@@ -4691,7 +4787,7 @@ function createHookHandlers(deps) {
     }
   };
   return {
-    async hook(body) {
+    async hook(body, signal) {
       try {
         const b = bagOf2(body);
         const event = str3(b.hook_event_name) ?? "";
@@ -4726,11 +4822,17 @@ function createHookHandlers(deps) {
             };
           }
         }
+        const sessionOver = event === "SessionEnd" && (str3(b.agent_id) !== void 0 || !lead || sid === lead);
+        if (event === "UserPromptSubmit" || sessionOver) {
+          for (const permit of permits.list()) if (permit.agent === agent) permits.withdraw(permit.id);
+        }
         if (event !== "PermissionRequest") return { status: 200, body: {} };
         if (deps.readOnly) return { status: 200, body: {} };
         const timeoutMs = num2(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
-        const held = permits.hold(agent, toolName ?? "unknown", b.tool_input, timeoutMs);
         const questions = toolName === "AskUserQuestion" && Array.isArray(bagOf2(b.tool_input).questions) ? bagOf2(b.tool_input).questions : void 0;
+        const transcriptPath = str3(b.transcript_path);
+        const context = questions && transcriptPath ? await readAskContext(transcriptPath) : void 0;
+        const held = permits.hold(agent, toolName ?? "unknown", b.tool_input, timeoutMs);
         store.append(
           "needsyou",
           {
@@ -4740,12 +4842,18 @@ function createHookHandlers(deps) {
             reason: "permission",
             detail: questions ? `AskUserQuestion \u2014 ${questions.length} question(s) for you` : `${toolName ?? "unknown"} \u2014 awaiting your decision`,
             expiresAt: Date.now() + holdMsFor(timeoutMs),
-            ...questions ? { questions } : {}
+            ...questions ? { questions } : {},
+            ...context ? { context } : {}
           },
           agent
         );
+        const onGone = () => permits.withdraw(held.id);
+        signal?.addEventListener("abort", onGone, { once: true });
+        if (signal?.aborted) onGone();
         const decided = await held.promise;
+        signal?.removeEventListener("abort", onGone);
         store.append("needsyou-resolved", { id: held.id }, agent);
+        if (decided.decision === "withdrawn") return { status: 200, body: {} };
         return {
           status: 200,
           body: {
@@ -4817,7 +4925,7 @@ function createHookHandlers(deps) {
 
 // src/server/control/mailbox.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
-import { promises as fs4 } from "node:fs";
+import { promises as fs5 } from "node:fs";
 import { randomUUID as randomUUID3 } from "node:crypto";
 import os from "node:os";
 import path7 from "node:path";
@@ -4827,8 +4935,8 @@ function setTeamsRoot(root) {
 }
 async function atomicWrite(filePath, data) {
   const tmp = `${filePath}.${process.pid}.${randomUUID3()}.tmp`;
-  await fs4.writeFile(tmp, data, "utf8");
-  await fs4.rename(tmp, filePath);
+  await fs5.writeFile(tmp, data, "utf8");
+  await fs5.rename(tmp, filePath);
 }
 async function colorOf(teamName, agent) {
   const config = await readJsonSafe(path7.join(teamsRoot, teamName, "config.json"));
@@ -4845,7 +4953,7 @@ async function sendToInbox(teamName, toAgent, body) {
   if (!path7.resolve(file).startsWith(path7.resolve(dir) + path7.sep)) {
     throw new Error(`refusing to write ${file} outside ${dir}`);
   }
-  await fs4.mkdir(dir, { recursive: true });
+  await fs5.mkdir(dir, { recursive: true });
   const color = await colorOf(teamName, from);
   const msgId = randomUUID3();
   const release = await import_proper_lockfile.default.lock(file, {
@@ -5145,7 +5253,7 @@ function createStream(snapshot, coalesceMs = COALESCE_MS) {
 
 // src/server/http.ts
 import http from "node:http";
-import { promises as fs5 } from "node:fs";
+import { promises as fs6 } from "node:fs";
 import path8 from "node:path";
 var READ_ONLY_BODY = {
   error: "read-only",
@@ -5191,7 +5299,7 @@ async function serveWebBundle(res, webDist, route) {
     return;
   }
   try {
-    const data = await fs5.readFile(target);
+    const data = await fs6.readFile(target);
     res.writeHead(200, {
       "content-type": contentTypeFor(target),
       "content-length": data.length
@@ -5368,7 +5476,11 @@ function createHttpHandler(deps) {
         }
         if (method === "POST" && (route === "/hook" || route === "/statusline" || route === "/substatus")) {
           const body2 = await readBody(req);
-          const out = route === "/hook" ? await deps.hooks.hook(body2) : route === "/statusline" ? await deps.hooks.statusline(body2) : await deps.hooks.substatus(body2);
+          const gone = new AbortController();
+          res.on("close", () => {
+            if (!res.writableEnded) gone.abort();
+          });
+          const out = route === "/hook" ? await deps.hooks.hook(body2, gone.signal) : route === "/statusline" ? await deps.hooks.statusline(body2) : await deps.hooks.substatus(body2);
           deps.stream.publish();
           json(res, out.status, out.body);
           return;
@@ -5657,7 +5769,7 @@ function autoTeam(teams) {
 }
 
 // src/server/build-info.ts
-import { promises as fs6 } from "node:fs";
+import { promises as fs7 } from "node:fs";
 import path9 from "node:path";
 function isOlderBuild(running, candidate) {
   const a = running.split(".").map(Number);
@@ -5687,9 +5799,9 @@ async function installedVersion(claudeHome) {
 }
 async function shaOf(repo) {
   try {
-    const head = (await fs6.readFile(path9.join(repo, ".git", "HEAD"), "utf8")).trim();
+    const head = (await fs7.readFile(path9.join(repo, ".git", "HEAD"), "utf8")).trim();
     const ref = /^ref: (.+)$/.exec(head)?.[1];
-    const sha = ref ? (await fs6.readFile(path9.join(repo, ".git", ref), "utf8")).trim() : head;
+    const sha = ref ? (await fs7.readFile(path9.join(repo, ".git", ref), "utf8")).trim() : head;
     return /^[0-9a-f]{7,}$/.test(sha) ? sha.slice(0, 7) : void 0;
   } catch {
     return void 0;
@@ -5712,21 +5824,21 @@ async function readBuildInfo(entry, claudeHome) {
 }
 
 // src/server/console-record.ts
-import { promises as fs7 } from "node:fs";
+import { promises as fs8 } from "node:fs";
 import path10 from "node:path";
 function recordPathFor(dbPath, port) {
   return path10.join(path10.dirname(dbPath), `console-${port}.json`);
 }
 var seq = 0;
 async function writeConsoleRecord(file, record) {
-  await fs7.mkdir(path10.dirname(file), { recursive: true });
+  await fs8.mkdir(path10.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${++seq}.tmp`;
-  await fs7.writeFile(tmp, JSON.stringify(record));
-  await fs7.rename(tmp, file);
+  await fs8.writeFile(tmp, JSON.stringify(record));
+  await fs8.rename(tmp, file);
 }
 
 // src/server/setup.ts
-import { promises as fs8 } from "node:fs";
+import { promises as fs9 } from "node:fs";
 import path11 from "node:path";
 import { execFile as execFile3 } from "node:child_process";
 import { promisify as promisify2 } from "node:util";
@@ -5922,7 +6034,7 @@ async function runSetup(opts) {
   }
   let current = {};
   try {
-    current = JSON.parse(await fs8.readFile(opts.settingsPath, "utf8"));
+    current = JSON.parse(await fs9.readFile(opts.settingsPath, "utf8"));
   } catch {
     current = {};
   }
@@ -5935,7 +6047,7 @@ async function runSetup(opts) {
     return lines.join("\n");
   }
   const next = opts.uninstall ? removeHookBlock(current) : mergeHookBlock(current, opts.port);
-  await fs8.mkdir(path11.dirname(opts.settingsPath), { recursive: true });
+  await fs9.mkdir(path11.dirname(opts.settingsPath), { recursive: true });
   const backupPath = backupPathFor(opts.settingsPath);
   const saved = await readJsonSafe(backupPath);
   if (opts.uninstall) {
@@ -5952,7 +6064,7 @@ async function runSetup(opts) {
       next.subagentPromptCacheTtl = saved.subagentPromptCacheTtl;
       lines.push("put your prompt-cache TTL back the way you had it.");
     }
-    await fs8.rm(backupPath, { force: true });
+    await fs9.rm(backupPath, { force: true });
   } else {
     if (saved === null) {
       await atomicWrite(
@@ -5981,7 +6093,7 @@ import { execFile as execFile4 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
 
 // src/server/measure/load.ts
-import { promises as fs9 } from "node:fs";
+import { promises as fs10 } from "node:fs";
 import path12 from "node:path";
 
 // src/server/measure/classify.ts
@@ -6150,7 +6262,7 @@ function rolesFromLead(lines) {
   return roles;
 }
 async function readLines(file) {
-  return (await fs9.readFile(file, "utf8")).split("\n");
+  return (await fs10.readFile(file, "utf8")).split("\n");
 }
 async function firstTimestamp(file) {
   for (const line of await readLines(file)) {
@@ -6163,14 +6275,14 @@ async function findSession(claudeHome, sessionId) {
   const projects = path12.join(claudeHome, "projects");
   let dirs;
   try {
-    dirs = await fs9.readdir(projects);
+    dirs = await fs10.readdir(projects);
   } catch {
     return null;
   }
   for (const dir of dirs) {
     const lead = path12.join(projects, dir, `${sessionId}.jsonl`);
     try {
-      await fs9.access(lead);
+      await fs10.access(lead);
     } catch {
       continue;
     }
@@ -6178,7 +6290,7 @@ async function findSession(claudeHome, sessionId) {
     const subdir = path12.join(projects, dir, sessionId, "subagents");
     let files = [];
     try {
-      files = (await fs9.readdir(subdir)).filter((f) => f.endsWith(".jsonl")).sort();
+      files = (await fs10.readdir(subdir)).filter((f) => f.endsWith(".jsonl")).sort();
     } catch {
     }
     const firstAt = /* @__PURE__ */ new Map();
@@ -6190,7 +6302,7 @@ async function findSession(claudeHome, sessionId) {
       let name = SUBAGENT_FILE2.exec(file)?.[1] ?? file.replace(/\.jsonl$/, "");
       let agentType = "";
       try {
-        const meta = JSON.parse(await fs9.readFile(path12.join(subdir, file.replace(/\.jsonl$/, ".meta.json")), "utf8"));
+        const meta = JSON.parse(await fs10.readFile(path12.join(subdir, file.replace(/\.jsonl$/, ".meta.json")), "utf8"));
         if (typeof meta.name === "string") name = meta.name;
         if (typeof meta.agentType === "string") agentType = meta.agentType;
       } catch {
@@ -6210,10 +6322,10 @@ async function withoutCopiedHistory(lead, lines) {
   if (!uuids.length) return lines;
   const dir = path12.dirname(lead);
   const copied = /* @__PURE__ */ new Set();
-  for (const file of await fs9.readdir(dir)) {
+  for (const file of await fs10.readdir(dir)) {
     const sibling = path12.join(dir, file);
     if (!file.endsWith(".jsonl") || sibling === lead) continue;
-    const bytes = await fs9.readFile(sibling);
+    const bytes = await fs10.readFile(sibling);
     if (!bytes.includes(uuids[0])) continue;
     const theirs = new Set(bytes.toString("utf8").split("\n").map((l) => parseLine(l)?.uuid));
     const own = uuids.findIndex((u) => !theirs.has(u));
@@ -6584,7 +6696,7 @@ async function readSessions(sessionsRoot) {
   const facts = { live: /* @__PURE__ */ new Set(), busy: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Map(), cwds: /* @__PURE__ */ new Map() };
   let entries;
   try {
-    entries = await fs10.readdir(sessionsRoot);
+    entries = await fs11.readdir(sessionsRoot);
   } catch {
     return facts;
   }
@@ -6675,7 +6787,7 @@ var HEAD_WINDOW = 64 * 1024;
 async function transcriptMeta(file) {
   let size;
   try {
-    size = (await fs10.stat(file)).size;
+    size = (await fs11.stat(file)).size;
   } catch {
     return {};
   }
@@ -6684,7 +6796,7 @@ async function transcriptMeta(file) {
   let offset = first ? Math.max(0, size - TAIL_WINDOW) : known.offset;
   const facts = first ? {} : { ...known.facts };
   if (size > offset) {
-    const handle = await fs10.open(file, "r");
+    const handle = await fs11.open(file, "r");
     try {
       if (first && offset > 0) {
         const head = Buffer.alloc(Math.min(HEAD_WINDOW, size));
@@ -6725,7 +6837,7 @@ async function transcriptMeta(file) {
 async function branchOf(cwd) {
   if (!cwd) return void 0;
   try {
-    const head = await fs10.readFile(path13.join(cwd, ".git", "HEAD"), "utf8");
+    const head = await fs11.readFile(path13.join(cwd, ".git", "HEAD"), "utf8");
     const ref = /^ref:\s+refs\/heads\/(.+)$/m.exec(head.trim());
     return ref ? ref[1] : void 0;
   } catch {
@@ -6755,14 +6867,14 @@ async function lastActivityOf(teamDir, configMtimeMs) {
   let latest = configMtimeMs;
   let entries;
   try {
-    entries = await fs10.readdir(path13.join(teamDir, "inboxes"));
+    entries = await fs11.readdir(path13.join(teamDir, "inboxes"));
   } catch {
     return latest;
   }
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
     try {
-      const st = await fs10.stat(path13.join(teamDir, "inboxes", entry));
+      const st = await fs11.stat(path13.join(teamDir, "inboxes", entry));
       if (st.mtimeMs > latest) latest = st.mtimeMs;
     } catch {
     }
@@ -6772,7 +6884,7 @@ async function lastActivityOf(teamDir, configMtimeMs) {
 async function subagentCountOf(sessionDir) {
   if (!sessionDir) return 0;
   try {
-    const entries = await fs10.readdir(path13.join(sessionDir, "subagents"));
+    const entries = await fs11.readdir(path13.join(sessionDir, "subagents"));
     return entries.filter((e) => /^agent-.*\.jsonl$/.test(e)).length;
   } catch {
     return 0;
@@ -6783,7 +6895,7 @@ async function workflowOf(sessionDir, now) {
   const runsDir = path13.join(sessionDir, "subagents", "workflows");
   let entries;
   try {
-    entries = await fs10.readdir(runsDir);
+    entries = await fs11.readdir(runsDir);
   } catch {
     return void 0;
   }
@@ -6791,7 +6903,7 @@ async function workflowOf(sessionDir, now) {
   let journalMtimeMs = 0;
   for (const entry of entries) {
     try {
-      const st = await fs10.stat(path13.join(runsDir, entry, "journal.jsonl"));
+      const st = await fs11.stat(path13.join(runsDir, entry, "journal.jsonl"));
       if (st.mtimeMs > journalMtimeMs) {
         journalMtimeMs = st.mtimeMs;
         runId = entry;
@@ -6803,7 +6915,7 @@ async function workflowOf(sessionDir, now) {
   const snapshot = path13.join(sessionDir, "workflows", `${runId}.json`);
   let ended = false;
   try {
-    ended = (await fs10.stat(snapshot)).isFile();
+    ended = (await fs11.stat(snapshot)).isFile();
   } catch {
   }
   const name = ended ? await workflowNameOf(snapshot) : void 0;
@@ -6815,7 +6927,7 @@ async function workflowOf(sessionDir, now) {
 }
 async function workflowNameOf(snapshot) {
   try {
-    const raw = JSON.parse(await fs10.readFile(snapshot, "utf8"));
+    const raw = JSON.parse(await fs11.readFile(snapshot, "utf8"));
     return typeof raw.workflowName === "string" && raw.workflowName ? raw.workflowName : void 0;
   } catch {
     return void 0;
@@ -6823,7 +6935,7 @@ async function workflowNameOf(snapshot) {
 }
 async function entryIn(dir, match) {
   try {
-    const entry = (await fs10.readdir(dir)).find(match);
+    const entry = (await fs11.readdir(dir)).find(match);
     return entry === void 0 ? null : path13.join(dir, entry);
   } catch {
     return null;
@@ -6835,7 +6947,7 @@ async function workflowScriptOf(sessionDir, runId, knownRuns) {
   const asExecuted = await entryIn(path13.join(workflows, "scripts"), (e) => e.endsWith(`-${runId}.js`));
   if (asExecuted) {
     try {
-      return { source: "as-executed", path: asExecuted, script: await fs10.readFile(asExecuted, "utf8") };
+      return { source: "as-executed", path: asExecuted, script: await fs11.readFile(asExecuted, "utf8") };
     } catch {
     }
   }
@@ -6853,7 +6965,7 @@ async function teamsOfLiveSessions(projectsRoot, sessions) {
     const dir = path13.join(sessionDir, "subagents");
     let entries;
     try {
-      entries = await fs10.readdir(dir);
+      entries = await fs11.readdir(dir);
     } catch {
       continue;
     }
@@ -6873,14 +6985,14 @@ async function teamsOfLiveSessions(projectsRoot, sessions) {
 async function sessionProjectDir(projectsRoot, sessionId, cwd) {
   const isDir = async (dir) => {
     try {
-      return (await fs10.stat(dir)).isDirectory();
+      return (await fs11.stat(dir)).isDirectory();
     } catch {
       return false;
     }
   };
   const isFile = async (file) => {
     try {
-      return (await fs10.stat(file)).isFile();
+      return (await fs11.stat(file)).isFile();
     } catch {
       return false;
     }
@@ -6896,7 +7008,7 @@ async function sessionProjectDir(projectsRoot, sessionId, cwd) {
   }
   let slugs;
   try {
-    slugs = await fs10.readdir(projectsRoot);
+    slugs = await fs11.readdir(projectsRoot);
   } catch {
     return null;
   }
@@ -6909,7 +7021,7 @@ async function sessionProjectDir(projectsRoot, sessionId, cwd) {
 async function forkParentOf(transcript) {
   let head;
   try {
-    const fh = await fs10.open(transcript, "r");
+    const fh = await fs11.open(transcript, "r");
     try {
       const buf = Buffer.alloc(65536);
       const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
@@ -7013,7 +7125,7 @@ async function listLive(teamsRoot2, sessionsRoot, projectsRoot, current) {
 async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
   let entries = [];
   try {
-    entries = await fs10.readdir(teamsRoot2);
+    entries = await fs11.readdir(teamsRoot2);
   } catch {
   }
   const sessions = await readSessions(sessionsRoot);
@@ -7030,7 +7142,7 @@ async function walkTeams(teamsRoot2, sessionsRoot, current, projectsRoot) {
     const teamDir = path13.join(teamsRoot2, name);
     let configMtimeMs;
     try {
-      const st = await fs10.stat(path13.join(teamDir, "config.json"));
+      const st = await fs11.stat(path13.join(teamDir, "config.json"));
       if (!st.isFile()) continue;
       configMtimeMs = st.mtimeMs;
     } catch {
@@ -7313,7 +7425,7 @@ async function main(argv) {
     try {
       let exists = false;
       try {
-        exists = (await fs10.stat(path13.join(teamsRoot2, team))).isDirectory();
+        exists = (await fs11.stat(path13.join(teamsRoot2, team))).isDirectory();
       } catch {
       }
       if (!exists) return { ok: false, reason: "missing", message: `no team ${team}` };
