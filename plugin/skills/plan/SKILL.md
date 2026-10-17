@@ -365,7 +365,8 @@ pr: <url, at close>
 
 ## Run
 - executors: <name> · <model> · <effort> · track <X> · wave <n>, one line each · peak <n> at once
-- track reviews: <X> <n>/3 rounds, one entry each · residuals: <n>
+- lead: <model> · <each effort it ran at> · <n> calls · ≈$<n>
+- reviews: track <X> wave <n> · <n>/3 rounds, one entry per review · lead-verified: <n> · residuals: <n>
 - actual: ≈$<total> · per agent: <name> ≈$<n>, one entry each
 - estimate vs actual: <one line>
 - went wrong / change next time: <one line each, or "nothing">

@@ -28,7 +28,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    it now from the same table and say it in one line. Then, for teammates,
    take the waves from the closing: teammates alive at any moment are the
    tracks in the current wave, never all the tracks.
-5. **Dispatch** in that mode: see Modes below. Teammates use the contract
+5. **Dispatch** in that mode. Before the first spawn, tell the user in one
+   line to run `/effort medium` for the run phase, since your turns from here
+   to close are dispatch, relay and bookkeeping, and that you will say when the
+   run is closed so they can set it back: a notice, not a question, so
+   dispatch in the same turn. See Modes below. Teammates use the contract
    below. Spawn each one under the name `team8:tasks` set as the owner of its
    track's tasks; with every task owned before the first spawn, Claude Code's
    own auto-claim finds nothing to take. A list that came without owners gets
@@ -41,15 +45,17 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    immediately; a wrong roster is cheap to fix in the first minute and expensive
    once six agents have edited files.
 7. **Stay free.** Answer questions, relay results, and run the track review
-   below as each track lands. Never fix a finding yourself. **While any track is
-   live, do no multi-step investigation yourself** — a report waits as long as
-   your longest turn. Dispatch a subagent for it, or do it before dispatching.
+   below as each wave of a track lands. Never fix a finding yourself. **While
+   any track is live, do no multi-step investigation yourself** — a report
+   waits as long as your longest turn. Dispatch a subagent for it, or do it
+   before dispatching.
 8. **Close the run.** Run the full suite yourself once every track is clear —
    the executors only ran the tests covering their own files. Then, when the PR
    is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
    `plan`) and commit it on the branch. In teammates mode, then complete the
-   "Close the run" task.
+   "Close the run" task. Then say in one line that the run is closed and
+   `/effort` can go back up.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
@@ -202,14 +208,19 @@ contract. Never message the dead name — nothing is listening.
 ## Track Review
 
 An executor that self-verifies and pushes has had nobody read its diff. Each
-track gets one fresh reviewer when it lands, the same shape as the plan
-reviewer, and the executor stays alive until its track is clear.
+wave of a track gets one fresh reviewer when it lands, the same shape as the
+plan reviewer, and the executor stays alive until its track is clear.
 
-1. **When a teammate reports its last task completed and pushed**, write its
-   diff to a file — the branch's changes to the files it owns, from the base
-   you recorded before dispatching:
-   `git diff <base>..HEAD -- <its files> > <scratchpad>/review-<track>.diff`.
-   Never hand a reviewer the diff inline.
+1. **When a teammate reports a wave's tasks completed and pushed**, write that
+   wave's diff to a file — the branch's changes to the files those tasks own,
+   from the track's base, which starts at the one you recorded before
+   dispatching. Take `<head>` from one `git rev-parse HEAD` and use it twice:
+   `git diff <base>..<head> -- <those files> > <scratchpad>/review-<track>-<wave>.diff`,
+   then `<head>` becomes the track's base, so the next review covers only new
+   commits. Reading HEAD twice skips whatever the executor committed between
+   the two reads. A teammate with tasks in a later wave goes on to its next task
+   while this wave is reviewed; a track of one wave is reviewed once, at its
+   end. Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
    runs at high effort and carries no Edit or Write, so read-only is enforced),
    model sized like the track's biggest task (sonnet for standard, opus for
@@ -221,14 +232,27 @@ reviewer, and the executor stays alive until its track is clear.
    assert something, no duplication of a block that exists, no scope beyond
    the tasks. Findings labelled Blocking or Minor, each with file, line and the
    fix. Do not tell it what not to flag.
-3. **Blocking findings go to the executor** by `SendMessage`, verbatim. It
-   fixes, re-runs the covering tests, pushes, and reports. Then a scoped
-   re-review: the diff since the last review, the findings list, verdict per
-   finding ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only.
-   Three rounds per track. After three, rule on each open finding yourself and
-   record the ruling in the run log. Minor findings go straight to the run log.
-4. **Clear the track.** Tell the executor its track is clear and it can stop.
-   Note the rounds in the run log.
+3. **Blocking findings go to the executor** by `SendMessage`, verbatim. From
+   a wave review they reach it on a later task, and it fixes them before
+   continuing. It fixes, re-runs the covering tests, pushes, and reports the
+   fix commit's sha with the test output. Read that commit yourself,
+   `git show <sha> -- <files>`, against each Blocking finding. When every fix
+   addresses its finding, is confined to the lines that finding named, plus
+   the test that covers them, and the report shows that test passing, record
+   "lead-verified" per finding in the run log and dispatch no re-reviewer: a
+   re-reviewer for a two-line fix costs more wall time than the fix. A fix
+   that clearly misses its finding goes back to the executor as another
+   round. Dispatch a scoped re-review only
+   when a fix touches code its finding did not name, a finding needed a
+   judgment call, or you cannot tell from the diff whether it is addressed:
+   the diff since the last review, the findings list, verdict per finding
+   ADDRESSED or NOT ADDRESSED, plus new breakage in the fix only. Three
+   rounds per review. After three, rule on each open finding yourself
+   and record the ruling in the run log. Minor findings go straight to the run
+   log.
+4. **Clear the track** once the last wave's review and any fixes are done.
+   Tell the executor its track is clear and it can stop. Note the rounds and
+   the lead-verified findings in the run log.
 
 ## The Dispatch Contract
 
@@ -293,18 +317,24 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    Anything longer goes in a file in `<scratchpad>/reports/`, and the answer
    ends with its path. Do not also send the report by `SendMessage`. Then go
    idle: idle is how you stay available — never poll the task list waiting.
-   The lead's message with review findings wakes you; fix, re-run the covering
-   tests, push, and answer again. Stop only when the lead says the track is
-   clear." Write your real scratchpad path in place of `<scratchpad>`.
+   The lead's message with review findings wakes you, or arrives while you
+   are on a later task: fix first, report the fix by `SendMessage` with its
+   commit sha and test output, then continue. When woken from idle, fix,
+   re-run, push, and answer again with the fix commit's sha. Stop only when
+   the lead says the track is clear." Write your real scratchpad path in
+   place of `<scratchpad>`.
 
 ## The Run Log at Close
 
 The Run section of `docs/team8/runs/<batch>.md` takes one line per executor
-(name, model, effort, track), the review rounds per track and their residuals,
-the PR URL, and what it actually cost. `measure` has the numbers: each agent's
-cost, its model and tool minutes, model seconds per call by effort, message
-lag, review tails and idle time with work waiting. Run it from the batch's
-first dispatch on:
+(name, model, effort, track); one for the lead, with its calls and cost from
+its row in `measure`'s Agents table and each effort it ran at, so a lead that
+switched to medium mid-run lists both
+(`lead · fable · high, medium · 215 calls · ≈\$43`); the review rounds per
+review, the lead-verified findings and the residuals; the PR URL; and what it
+actually cost. `measure` has the numbers: each agent's cost, its model and
+tool minutes, model seconds per call by effort, message lag, review tails and
+idle time with work waiting. Run it from the batch's first dispatch on:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/dist/server/index.js" measure "${CLAUDE_SESSION_ID}" --since <ISO time of the first dispatch>
@@ -333,10 +363,11 @@ the PR next to the plan it describes.
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
 | `isolation: "worktree"` to keep parallel writers apart | It silently spawns a subagent, not a teammate. Isolate by file ownership |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
-| Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for the track review. Nobody else can fix its findings |
+| Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for its last wave's review. Nobody else can fix its findings |
 | Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
 | Treating a teammate's failure notice as the end of its track | A message wakes a teammate waiting on a retry — send one. Dead a second time, respawn it per After a resume |
 | Run log filled from memory a day later | The console's numbers are for this session. Fill it at close |
+| Lead at high effort through a run of dispatch and relay | Step 5 asks for `/effort medium` once; the definitions carry each agent's own effort, so only the lead's calls get cheaper |
 
 ## Red Flags
 

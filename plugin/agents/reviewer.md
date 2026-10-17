@@ -30,4 +30,6 @@ answer ends with that file's path.
 **On a re-review:** you are handed the diff since the last review and the
 prior findings list. Give a verdict per prior finding — ADDRESSED or NOT
 ADDRESSED — plus any new breakage introduced by the fix itself. Do not
-re-review ground the fix didn't touch.
+re-review ground the fix didn't touch. A re-review is dispatched only when the
+lead could not verify the fix from the diff, so expect a judgment question,
+not a line check.
