@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { consoleLink, decidedMode, modeIn, progress, type Task } from '../../plugin/hooks/team';
+import { bar, consoleLink, elapsed, isDone, modeIn, progress, skillIn, stageOf, type Task } from '../../plugin/hooks/team';
 
 const runLog = (content: string) => ({ file_path: '/repo/docs/team8/runs/2026-10-12-x.md', content });
 
@@ -22,28 +22,76 @@ describe('modeIn', () => {
   });
 });
 
-describe('decidedMode', () => {
-  it('takes the last decided mode across the messages', () => {
-    const messages = [
-      { role: 'assistant', toolUses: [{ input: runLog('mode: solo — first') }] },
-      { role: 'user' },
-      { role: 'assistant', toolUses: [{ input: { command: 'ls' } }, { input: runLog('mode: teammates — later') }] },
-    ];
-    expect(decidedMode(messages)).toBe('teammates');
-    expect(decidedMode([])).toBeUndefined();
+describe('skillIn', () => {
+  it('reads a Skill call, a typed slash command and the transcript\'s command-name', () => {
+    expect(skillIn({ skill: 'team8:plan' })).toBe('plan');
+    expect(skillIn({ text: '/team8:tasks from LIN-12' })).toBe('tasks');
+    expect(skillIn({ text: '<command-message>run</command-message>\n<command-name>/team8:run</command-name>' })).toBe('run');
+  });
+
+  it('ignores a prompt that only mentions a skill, and other skills', () => {
+    expect(skillIn({ text: 'why did team8:plan skip the spec?' })).toBeUndefined();
+    expect(skillIn({ skill: 'superpowers:brainstorming' })).toBeUndefined();
+    expect(skillIn({ text: '/team8:console' })).toBeUndefined();
+    expect(skillIn(undefined)).toBeUndefined();
+  });
+});
+
+describe('stageOf', () => {
+  const plan = { role: 'assistant', toolUses: [{ input: { skill: 'team8:plan' } }] };
+  const planFile = { role: 'assistant', toolUses: [{ input: { file_path: '/r/docs/team8/plans/p.md', content: '# Plan' } }] };
+
+  it('walks spec, planning and the decided mode', () => {
+    expect(stageOf([plan])).toEqual({ phase: 'spec' });
+    expect(stageOf([plan, planFile])).toEqual({ phase: 'planning' });
+    expect(stageOf([plan, planFile, { role: 'assistant', toolUses: [{ input: runLog('mode: teammates — x') }] }])).toEqual({ phase: 'planning', mode: 'teammates' });
+  });
+
+  it('reads a typed /team8:plan from a user message', () => {
+    expect(stageOf([{ role: 'user', text: '<command-name>/team8:plan</command-name>' }])).toEqual({ phase: 'spec' });
+  });
+
+  it('starts over at the next team8:plan, forgetting the last batch\'s mode', () => {
+    const decided = { role: 'assistant', toolUses: [{ input: runLog('mode: solo — first') }] };
+    expect(stageOf([decided, plan])).toEqual({ phase: 'spec' });
+  });
+
+  it('is empty before team8 runs', () => {
+    expect(stageOf([])).toEqual({});
+    expect(stageOf([{ role: 'user', text: 'hi' }, { role: 'assistant', toolUses: [{ input: { command: 'ls' } }] }])).toEqual({});
   });
 });
 
 describe('progress', () => {
   const task = (id: string, status: string): Task => ({ id, status });
 
-  it('counts completed tasks against the total, with the percentage', () => {
+  it('counts completed tasks against the total', () => {
     const tasks = [task('1', 'completed'), task('2', 'completed'), task('3', 'completed'), task('4', 'in_progress'), task('5', 'pending')];
-    expect(progress(tasks)).toEqual({ completed: 3, total: 5, pct: 60 });
+    expect(progress(tasks)).toEqual({ completed: 3, total: 5 });
+    expect(isDone(progress(tasks))).toBe(false);
   });
 
-  it('is zero with no tasks', () => {
-    expect(progress([])).toEqual({ completed: 0, total: 0, pct: 0 });
+  it('is done only with tasks, all completed', () => {
+    expect(isDone(progress([task('1', 'completed')]))).toBe(true);
+    expect(isDone(progress([]))).toBe(false);
+  });
+});
+
+describe('bar', () => {
+  it('fills twenty cells by the share completed, rounding down', () => {
+    expect(bar({ completed: 49, total: 101 })).toEqual({ filled: '▰'.repeat(9), empty: '▱'.repeat(11) });
+    expect(bar({ completed: 0, total: 0 })).toEqual({ filled: '', empty: '▱'.repeat(20) });
+    expect(bar({ completed: 3, total: 3 })).toEqual({ filled: '▰'.repeat(20), empty: '' });
+  });
+});
+
+describe('elapsed', () => {
+  it('reads seconds, then minutes and seconds, then hours and minutes', () => {
+    expect(elapsed(42_000)).toBe('42s');
+    expect(elapsed(402_000)).toBe('6m42s');
+    expect(elapsed(65_000)).toBe('1m05s');
+    expect(elapsed(3_900_000)).toBe('1h05m');
+    expect(elapsed(-5)).toBe('0s');
   });
 });
 
