@@ -89,5 +89,5 @@ const CONSOLE = '127.0.0.1:4823';
 
 export function consoleLink(health: Health | undefined, sessionId: string): ConsoleLink | undefined {
   if (!health?.ok || !sessionId) return undefined;
-  return { href: `http://${CONSOLE}/s/${sessionId}`, label: `${CONSOLE}/s/${sessionId.slice(0, 8)}` };
+  return { href: `http://${CONSOLE}/s/${sessionId}`, label: `team:8/s/${sessionId.slice(0, 8)}` };
 }

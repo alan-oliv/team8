@@ -45,9 +45,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await band.find({ type: 'Text', text: '▰'.repeat(10) })).toBeTruthy()
     expect(await band.find({ type: 'Text', text: '▱'.repeat(10) })).toBeTruthy()
     expect(await band.find({ type: 'Text', text: /1\/2/ })).toBeTruthy()
-    // The desktop surface draws only https or localhost links; 127.0.0.1 falls back to plain text.
+    // The desktop surface draws only https or localhost links; 127.0.0.1 falls back to its label as plain text.
     if (surface === 'terminal') expect(await band.find({ type: 'Link' })).toBeTruthy()
-    else expect(await band.find({ type: 'Text', text: /127\.0\.0\.1:4823\/s\/abcd1234/ })).toBeTruthy()
+    else expect(await band.find({ type: 'Text', text: 'team:8/s/abcd1234' })).toBeTruthy()
   })
 }
 

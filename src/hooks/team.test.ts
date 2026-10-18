@@ -99,7 +99,7 @@ describe('consoleLink', () => {
   const id = 'abcd1234-0000-0000-0000-000000000000';
 
   it('links this session while the console is up', () => {
-    expect(consoleLink({ ok: true }, id)).toEqual({ href: `http://127.0.0.1:4823/s/${id}`, label: '127.0.0.1:4823/s/abcd1234' });
+    expect(consoleLink({ ok: true }, id)).toEqual({ href: `http://127.0.0.1:4823/s/${id}`, label: 'team:8/s/abcd1234' });
   });
 
   it('gives nothing when the console is down or the session is unknown', () => {
