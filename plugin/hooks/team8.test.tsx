@@ -27,6 +27,7 @@ function stub(on: On, { messages = DECIDED, tasks = TASKS, consoleUp = true, sto
   on('session.messages', () => ({ value: live.messages }))
   on('tool.call', { tool: 'TaskList' }, () => ({ result: { tasks: live.tasks } }))
   on('tool.call', { tool: 'Write' }, () => ({ result: {} }))
+  on('tool.call', { tool: 'Edit' }, () => ({ result: {} }))
   on('tool.call', { tool: 'Skill' }, () => ({ result: {} }))
   on('http.fetch', () => ({
     value: consoleUp
@@ -178,4 +179,30 @@ test('the clock comes back from the store after a reload', async ($, on) => {
   await $.session.start(START)
   const band = await $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ type: 'Text', text: ' · 6m42s' })).toBeTruthy()
+})
+
+test('the band counts the plan\'s written tasks while the plan is being written', async ($, on) => {
+  const clock = stub(on, { messages: [], tasks: [] })
+  await $.session.start(START)
+  const mount = () => $.ui.mount({ plugin: 'team8', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+  const PLAN = '/repo/docs/team8/plans/2026-10-17-x.md'
+  await $.tool.call({ tool: 'Skill', skill: 'team8:plan' })
+  await $.tool.call({ tool: 'Write', file_path: PLAN, content: '# Plan\n\n### Task 1: A\n\n**Files:**\n\n### Task 2: B\n\n**Files:**\n' })
+  await clock.advance(1000)
+  let band = await mount()
+  expect(await band.find({ type: 'Text', text: /^○ planning\s*$/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /0\/2/ })).toBeTruthy()
+
+  await $.tool.call({ tool: 'Edit', file_path: PLAN, old_string: '### Task 1: A\n\n**Files:**\n', new_string: '### Task 1: A\n\n**Files:**\n\n- [ ] **Step 1: x**\n' })
+  await clock.advance(1000)
+  band = await mount()
+  expect(await band.find({ type: 'Text', text: /1\/2/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: '▰'.repeat(10) })).toBeTruthy()
+
+  // Once team8:tasks has put tasks on the list, the list counts.
+  await $.tool.call({ tool: 'Skill', skill: 'team8:tasks' })
+  live.tasks = [{ id: '1', status: 'pending', blockedBy: [] }, { id: '2', status: 'pending', blockedBy: [] }, { id: '3', status: 'pending', blockedBy: [] }]
+  await clock.advance(5000)
+  band = await mount()
+  expect(await band.find({ type: 'Text', text: /0\/3/ })).toBeTruthy()
 })

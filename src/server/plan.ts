@@ -1,13 +1,12 @@
 import { readFileSync, statSync } from 'node:fs';
-import type { PlanProgress, PlanTask } from '../shared/domain';
+import type { PlanProgress } from '../shared/domain';
 import type { TranscriptPayload } from './project';
 import type { StoredEvent } from './store';
+import { parsePlan, sectionOf } from '../../plugin/hooks/team';
+
+export { parsePlan, sectionOf };
 
 const PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
-const TASK_HEADING = /^### Task (\d+): (.+)$/;
-const STEP = /^- \[[ x]\] \*\*Step/;
-const FENCE = /^\s*(`{3,}|~{3,})/;
-
 type ToolUse = { type?: string; name?: string; input?: { file_path?: unknown } };
 
 /** The plan is whichever file the lead itself wrote, never a folder guess. */
@@ -28,49 +27,6 @@ export function planPathOf(events: StoredEvent[], lead: string): string | undefi
     }
   }
   return found;
-}
-
-/**
- * Per line, whether it sits inside a fenced code block. A plan that quotes
- * another plan — this repo's plans about the plan skill do — must not grow
- * tasks from its examples. A fence closes only on a bare run of the same
- * character at least as long, so ```` can wrap ```.
- */
-function fencedLines(lines: string[]): boolean[] {
-  let open: string | null = null;
-  return lines.map((line) => {
-    const fence = FENCE.exec(line)?.[1];
-    if (open === null) {
-      if (!fence) return false;
-      open = fence;
-      return true;
-    }
-    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
-    return true;
-  });
-}
-
-export function parsePlan(text: string): PlanTask[] {
-  const lines = text.split('\n');
-  const fenced = fencedLines(lines);
-  const tasks: PlanTask[] = [];
-  lines.forEach((line, i) => {
-    if (fenced[i]) return;
-    const heading = TASK_HEADING.exec(line);
-    if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
-    else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
-  });
-  return tasks;
-}
-
-export function sectionOf(text: string, n: number): string | undefined {
-  const lines = text.split('\n');
-  const fenced = fencedLines(lines);
-  const headingAt = (i: number) => (fenced[i] ? null : TASK_HEADING.exec(lines[i]));
-  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
-  if (start === -1) return undefined;
-  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
-  return lines.slice(start, next === -1 ? lines.length : next).join('\n').trimEnd();
 }
 
 export interface PlanReader {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bar, consoleLink, elapsed, isDone, modeIn, progress, skillIn, stageOf, type Task } from '../../plugin/hooks/team';
+import { bar, consoleLink, elapsed, isDone, modeIn, progress, progressOf, skillIn, stageOf, type Task } from '../../plugin/hooks/team';
 
 const runLog = (content: string) => ({ file_path: '/repo/docs/team8/runs/2026-10-12-x.md', content });
 
@@ -43,8 +43,17 @@ describe('stageOf', () => {
 
   it('walks spec, planning and the decided mode', () => {
     expect(stageOf([plan])).toEqual({ phase: 'spec' });
-    expect(stageOf([plan, planFile])).toEqual({ phase: 'planning' });
-    expect(stageOf([plan, planFile, { role: 'assistant', toolUses: [{ input: runLog('mode: teammates — x') }] }])).toEqual({ phase: 'planning', mode: 'teammates' });
+    expect(stageOf([plan, planFile])).toEqual({ phase: 'planning', plan: '# Plan' });
+    expect(stageOf([plan, planFile, { role: 'assistant', toolUses: [{ input: runLog('mode: teammates — x') }] }])).toEqual({ phase: 'planning', plan: '# Plan', mode: 'teammates' });
+  });
+
+  it('replays the plan text through its Write and each Edit, as the file has it', () => {
+    const planEdit = (input: object) => ({ role: 'assistant', toolUses: [{ input: { file_path: '/r/docs/team8/plans/p.md', ...input } }] });
+    const skeleton = '### Task 1: A\n\n**Files:** `$1`\n\n### Task 2: B\n\n**Files:** `$1`\n';
+    const steps = planEdit({ old_string: '### Task 1: A\n\n**Files:** `$1`\n', new_string: '### Task 1: A\n\n**Files:** `$1`\n\n- [ ] **Step 1: echo $&**\n' });
+    const all = planEdit({ old_string: '`$1`', new_string: '`$2`', replace_all: true });
+    expect(stageOf([plan, planEdit({ content: skeleton }), steps]).plan).toBe('### Task 1: A\n\n**Files:** `$1`\n\n- [ ] **Step 1: echo $&**\n\n### Task 2: B\n\n**Files:** `$1`\n');
+    expect(stageOf([plan, planEdit({ content: skeleton }), all]).plan).toBe('### Task 1: A\n\n**Files:** `$2`\n\n### Task 2: B\n\n**Files:** `$2`\n');
   });
 
   it('reads a typed /team8:plan from a user message', () => {
@@ -74,6 +83,16 @@ describe('progress', () => {
   it('is done only with tasks, all completed', () => {
     expect(isDone(progress([task('1', 'completed')]))).toBe(true);
     expect(isDone(progress([]))).toBe(false);
+  });
+});
+
+describe('progressOf', () => {
+  const skeleton = '### Task 1: A\n\n### Task 2: B\n\n- [ ] **Step 1: x**\n\n```md\n### Task 3: quoted\n```\n';
+
+  it('counts the plan\'s written tasks while the task list is empty, then the tasks', () => {
+    expect(progressOf({ phase: 'planning', plan: skeleton }, [])).toEqual({ completed: 1, total: 2 });
+    expect(progressOf({ phase: 'planning', plan: skeleton }, [{ id: '1', status: 'pending' }])).toEqual({ completed: 0, total: 1 });
+    expect(progressOf({}, [])).toEqual({ completed: 0, total: 0 });
   });
 });
 

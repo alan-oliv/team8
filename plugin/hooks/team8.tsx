@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as registerWave } from './wave-notify.ts'
-import { bar, consoleLink, elapsed, isDone, progress, skillIn, stageAfter, stageOf, type Health, type Stage, type Task } from './team.ts'
+import { bar, consoleLink, elapsed, isDone, progress, progressOf, skillIn, stageAfter, stageOf, type Health, type Stage, type Task } from './team.ts'
 
 type Clock = { startedAt: number; stoppedAt?: number }
 
@@ -155,7 +155,7 @@ export const register: Register = (on, options) => {
     try {
       if (e.props.hasSurvey) return rest
       const { Box, Text, Link } = $.ui.resolve(e)
-      const p = progress(tasks)
+      const p = progressOf(stage, tasks)
       const cells = bar(p)
       const label = stage.mode ?? stage.phase ?? 'team8'
       const link = consoleLink(health, sessionId)
