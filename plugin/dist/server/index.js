@@ -5664,28 +5664,11 @@ function listen(server, port) {
 
 // src/server/plan.ts
 import { readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
-var PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
+
+// plugin/hooks/team.ts
 var TASK_HEADING = /^### Task (\d+): (.+)$/;
 var STEP = /^- \[[ x]\] \*\*Step/;
 var FENCE = /^\s*(`{3,}|~{3,})/;
-function planPathOf(events, lead) {
-  let found;
-  for (const ev of events) {
-    if (ev.kind !== "transcript") continue;
-    const payload = ev.payload;
-    if (payload.agent !== lead) continue;
-    for (const rec of payload.records) {
-      const content = rec.message?.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content) {
-        if (block.type !== "tool_use" || block.name !== "Write" && block.name !== "Edit") continue;
-        const file = block.input?.file_path;
-        if (typeof file === "string" && PLAN_PATH.test(file)) found = file;
-      }
-    }
-  }
-  return found;
-}
 function fencedLines(lines) {
   let open = null;
   return lines.map((line) => {
@@ -5719,6 +5702,27 @@ function sectionOf(text, n) {
   if (start === -1) return void 0;
   const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
   return lines.slice(start, next === -1 ? lines.length : next).join("\n").trimEnd();
+}
+
+// src/server/plan.ts
+var PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
+function planPathOf(events, lead) {
+  let found;
+  for (const ev of events) {
+    if (ev.kind !== "transcript") continue;
+    const payload = ev.payload;
+    if (payload.agent !== lead) continue;
+    for (const rec of payload.records) {
+      const content = rec.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const block of content) {
+        if (block.type !== "tool_use" || block.name !== "Write" && block.name !== "Edit") continue;
+        const file = block.input?.file_path;
+        if (typeof file === "string" && PLAN_PATH.test(file)) found = file;
+      }
+    }
+  }
+  return found;
 }
 function textOf(file) {
   try {
