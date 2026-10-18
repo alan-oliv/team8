@@ -23,7 +23,8 @@ export function modeIn(input: unknown): Mode | undefined {
 }
 
 export type Phase = 'spec' | 'planning';
-export type Stage = { phase?: Phase; mode?: Mode };
+// `plan` is the plan file's text, replayed from the lead's Write and each Edit.
+export type Stage = { phase?: Phase; mode?: Mode; plan?: string };
 
 // A Skill call's `skill`, a typed `/team8:plan`, or the `<command-name>` the
 // transcript keeps for it; a prompt that only mentions a skill starts nothing.
@@ -37,13 +38,24 @@ export function skillIn(input: unknown): string | undefined {
   return SKILL.exec(said)?.[1];
 }
 
+// The file as Write leaves it, then as each Edit leaves it. A replacer function
+// keeps `$&` and `$1` in a step's shell literal.
+// ponytail: an edit the band never saw (sed, a MultiEdit) leaves the copy stale until the next Write.
+function planAfter(plan: string | undefined, input: Record<string, unknown>): string | undefined {
+  const { content, old_string, new_string, replace_all } = input;
+  if (typeof content === 'string') return content;
+  if (plan === undefined || typeof old_string !== 'string' || typeof new_string !== 'string') return plan;
+  return replace_all ? plan.split(old_string).join(new_string) : plan.replace(old_string, () => new_string);
+}
+
 // team8:plan opens a new batch at the spec; the plan file, or a straight
 // team8:tasks or team8:run, is planning; the run log's mode outranks both.
 export function stageAfter(stage: Stage, input: unknown): Stage {
   const skill = skillIn(input);
   if (skill === 'plan') return { phase: 'spec' };
-  const { file_path } = (input ?? {}) as Record<string, unknown>;
-  if (skill || (typeof file_path === 'string' && file_path.includes(PLANS))) return { ...stage, phase: 'planning' };
+  const fields = (input ?? {}) as Record<string, unknown>;
+  if (typeof fields.file_path === 'string' && fields.file_path.includes(PLANS)) return { ...stage, phase: 'planning', plan: planAfter(stage.plan, fields) };
+  if (skill) return { ...stage, phase: 'planning' };
   const mode = modeIn(input);
   return mode ? { ...stage, mode } : stage;
 }
@@ -64,6 +76,64 @@ export function progress(tasks: readonly Task[]): Progress {
 }
 
 export const isDone = (p: Progress) => p.total > 0 && p.completed === p.total;
+
+export type PlanTask = { n: number; title: string; written: boolean };
+
+const TASK_HEADING = /^### Task (\d+): (.+)$/;
+const STEP = /^- \[[ x]\] \*\*Step/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Per line, whether it sits inside a fenced code block. A plan that quotes
+ * another plan — this repo's plans about the plan skill do — must not grow
+ * tasks from its examples. A fence closes only on a bare run of the same
+ * character at least as long, so ```` can wrap ```.
+ */
+function fencedLines(lines: string[]): boolean[] {
+  let open: string | null = null;
+  return lines.map((line) => {
+    const fence = FENCE.exec(line)?.[1];
+    if (open === null) {
+      if (!fence) return false;
+      open = fence;
+      return true;
+    }
+    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
+    return true;
+  });
+}
+
+// The console's plan tab and the band count the same thing from the same rule:
+// a task is written once its section has a `- [ ] **Step` line.
+export function parsePlan(text: string): PlanTask[] {
+  const lines = text.split('\n');
+  const fenced = fencedLines(lines);
+  const tasks: PlanTask[] = [];
+  lines.forEach((line, i) => {
+    if (fenced[i]) return;
+    const heading = TASK_HEADING.exec(line);
+    if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
+    else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
+  });
+  return tasks;
+}
+
+export function sectionOf(text: string, n: number): string | undefined {
+  const lines = text.split('\n');
+  const fenced = fencedLines(lines);
+  const headingAt = (i: number) => (fenced[i] ? null : TASK_HEADING.exec(lines[i]));
+  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
+  if (start === -1) return undefined;
+  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
+  return lines.slice(start, next === -1 ? lines.length : next).join('\n').trimEnd();
+}
+
+// Until team8:tasks puts tasks on the list, the plan's written tasks are the progress.
+export function progressOf(stage: Stage, tasks: readonly Task[]): Progress {
+  if (tasks.length > 0 || !stage.plan) return progress(tasks);
+  const written = parsePlan(stage.plan);
+  return { completed: written.filter((t) => t.written).length, total: written.length };
+}
 
 const CELLS = 20;
 
