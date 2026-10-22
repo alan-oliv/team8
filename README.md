@@ -221,7 +221,9 @@ description that stands alone, real `blockedBy` dependencies, and a
 the dispatch contract, and the branch shape the dependency graph implies.
 
 `team8:multiple-code-reviews` reviews a batch of pull requests with one
-teammate per PR, then posts the reviews as yours once you've read them.
+teammate per PR, then lets you pick which comments go out on each PR and
+whether to approve, comment, request changes or post nothing. On your own PRs
+the findings you pick get fixed and pushed instead.
 
 A sixth is a plain toggle. Claude doesn't reach for it on its own, you call it
 by name: `/team8:enable-team true` or `/team8:enable-team false` flips the
