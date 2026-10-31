@@ -109,7 +109,8 @@ Whatever you decide is the answer **for the whole batch**, and every dispatch pr
 must state it explicitly. Do not decide per teammate, and do not leave it unstated
 and let each teammate choose — that is how three branches land and two sit unpushed.
 
-**Ask the user only what changes what gets built.** A question whose every answer
+**Ask the user only what changes what gets built,** and ask it with
+AskUserQuestion. A question whose every answer
 leads to the same dispatch is a round trip you spent for nothing. Worth asking: two
 readings of the work that produce different code; a destructive step outside the
 task list; a missing value you cannot derive. Not worth asking: whether to push,

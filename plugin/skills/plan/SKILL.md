@@ -65,7 +65,8 @@ override it:
   you are changing is already here to read. If there is no existing
   flow to change, the task is not bounded. Ask the clarifying
   questions that matter, present a short design IN CHAT (a few
-  sentences to a few short paragraphs), and STOP. Implementation
+  sentences to a few short paragraphs), ask with AskUserQuestion
+  (`Go ahead (Recommended)` / `Needs changes`), and STOP. Implementation
   starts only after your human partner says yes to that design — a
   bounded task's approval is as hard a gate as an architectural
   one. No spec file, no implementation plan document.
@@ -119,26 +120,26 @@ your path and complete them in order.
 **Spike:**
 1. **Explore project context** — enough to frame the probe
 2. **Present question + probe plan** — 2-3 sentences
-3. **Get approval** — a nod is enough
+3. **Get approval** — a nod is enough: one AskUserQuestion, `Run the probe (Recommended)` / `Change it`
 4. **Investigate** — as cheaply as correctness allows
 5. **Report findings** — a recommendation; label anything built as throwaway
 
 **Bounded:**
 1. **Explore project context** — check files, docs, recent commits
-2. **Ask clarifying questions** — one at a time, the ones that matter
+2. **Ask clarifying questions** — one at a time through AskUserQuestion, the ones that matter
 3. **Present short design in chat** — approach, files touched, testing
-4. **Get approval** — STOP and wait for an explicit yes; presenting the design and starting in the same breath is skipping the gate
+4. **Get approval** — STOP on an AskUserQuestion (`Go ahead (Recommended)` / `Needs changes`, corrections in Other) and go on only on `Go ahead`; presenting the design and starting in the same breath is skipping the gate
 5. **Implement** — hand the work to `team8:tasks`, then `team8:run`; no plan document
 
 **Architectural:**
 1. **Explore project context** — check files, docs, recent commits
-2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
-3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
+2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own AskUserQuestion); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
+3. **Ask clarifying questions** — one at a time through AskUserQuestion, understand purpose/constraints/success criteria
 4. **Propose 2-3 approaches** — with trade-offs and your recommendation
-5. **Present design** — in sections scaled to their complexity, get user approval after each section
+5. **Present design** — in sections scaled to their complexity, get user approval after each section through AskUserQuestion
 6. **Write design doc** — save to `docs/team8/specs/YYYY-MM-DD-<topic>-design.md` and commit
 7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
-8. **User reviews written spec** — ask user to review the spec file before proceeding
+8. **User reviews written spec** — ask with AskUserQuestion to review the spec file before proceeding
 9. **Transition to Phase 2** — the lead writes the plan
 
 ### Process Flow
@@ -204,10 +205,10 @@ is the whole process.
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
-- **The same job over many inputs is a fan-out, not a script.** "For each of these N items, produce X" (N of five or more, no decision between items) is workflow-shaped, per the table in `team8:tasks` Mode: the orchestration is the repeatable thing, and it scales to dozens of agents where a lead would improvise the same dispatch by hand. Design it as batches of inputs handled by agents, each returning its result, a verify step over the results, and one aggregation task at the end. The agents do the per-item work — do not offer a choice between agents and a hand-written parser, and do not collapse the job into one script the lead writes. Say the shape out loud in the design so `team8:tasks` reads `workflow` off the graph. If the inputs do not exist yet, stop and ask for them before designing: a fan-out sized on an empty directory is a guess.
+- **The same job over many inputs is a fan-out, not a script.** "For each of these N items, produce X" (N of five or more, no decision between items) is workflow-shaped, per the table in `team8:tasks` Mode: the orchestration is the repeatable thing, and it scales to dozens of agents where a lead would improvise the same dispatch by hand. Design it as batches of inputs handled by agents, each returning its result, a verify step over the results, and one aggregation task at the end. The agents do the per-item work — do not offer a choice between agents and a hand-written parser, and do not collapse the job into one script the lead writes. Say the shape out loud in the design so `team8:tasks` reads `workflow` off the graph. If the inputs do not exist yet, stop and ask for them through AskUserQuestion before designing (where they live comes back in Other): a fan-out sized on an empty directory is a guess.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
+- Every question is an AskUserQuestion call: 2-4 options, your recommendation first marked "(Recommended)", header 12 chars max; a free-form answer comes through its Other field, so never ask in plain reply text
+- Only one question per call - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
 
 **Exploring approaches:**
@@ -221,7 +222,7 @@ is the whole process.
 
 - Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
-- Ask after each section whether it looks right so far
+- After each section, ask with AskUserQuestion: `Looks right (Recommended)` / `Needs changes`, corrections in Other
 - Cover: architecture, components, data flow, error handling, testing
 - Be ready to go back and clarify if something doesn't make sense
 
@@ -258,11 +259,11 @@ After writing the spec document, look at it with fresh eyes:
 Fix any issues inline. No need to re-review — just fix and move on.
 
 **User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+After the spec review loop passes, ask the user with AskUserQuestion to review the written spec before proceeding:
 
-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+> "Spec written and committed to `<path>`. Please review it before we start writing out the implementation plan." — `Approved (Recommended)` / `Needs changes`, the changes in Other
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+Wait for the answer. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
 
 **Implementation:**
 
@@ -272,10 +273,10 @@ Wait for the user's response. If they request changes, make them and re-run the 
 
 A browser-based companion for showing mockups, diagrams, and visual options during brainstorming. Available as a tool — not a mode. Accepting the companion means it's available for questions that benefit from visual treatment; it does NOT mean every question goes through the browser.
 
-**Offering the companion (just-in-time):** Do NOT offer it upfront. Wait until a question would genuinely be clearer shown than told — a real mockup / layout / diagram question, not merely a UI *topic*. The first time that happens, offer it then, as its own message:
-> "This next part might be easier if I show you — I can put together mockups, diagrams, and comparisons in a browser tab as we go. It's still new and can be token-intensive. Want me to? I'll open it for you."
+**Offering the companion (just-in-time):** Do NOT offer it upfront. Wait until a question would genuinely be clearer shown than told — a real mockup / layout / diagram question, not merely a UI *topic*. The first time that happens, offer it then, as its own AskUserQuestion:
+> "This next part might be easier if I show you — I can put together mockups, diagrams, and comparisons in a browser tab as we go. It's still new and can be token-intensive. Want me to? I'll open it for you." — `Open it (Recommended)` / `Text only`
 
-**This offer MUST be its own message.** Only the offer — no clarifying question, summary, or other content. Wait for the user's response. If they accept, start the server with `--open` so their browser opens to the first screen automatically. If they decline, continue text-only and don't offer again unless they raise it.
+**This offer MUST be its own question.** Only the offer — no clarifying question, summary, or other content. Wait for the answer. If they accept, start the server with `--open` so their browser opens to the first screen automatically. If they decline, continue text-only and don't offer again unless they raise it.
 
 **Per-question decision:** Even after the user accepts, decide FOR EACH QUESTION whether to use the browser or the terminal. The test: **would the user understand this better by seeing it than reading it?**
 
@@ -315,7 +316,7 @@ exactly as it says:
    including the three checks `team8:tasks` runs before its closing.
 
 **Code in the plan is written, not run.** No builds, prototypes or scratch
-code while planning. If a step rests on something unproven, ask the user;
+code while planning. If a step rests on something unproven, ask the user with AskUserQuestion;
 settling it is a spike in Phase 1, not work in Phase 2.
 
 ## Phase 3: Run

@@ -22,16 +22,19 @@ goes straight to `team8:plan` as a bounded fix.
 1. **Read all the evidence first.** The whole ticket, its comments, every
    attachment: watch the recording, open the screenshot. **If an attachment or
    a log source won't open, ask for it, or for the symptom it shows, in your
-   first message.** Until the symptom is named (spinner, empty list, banner,
+   first message, with AskUserQuestion:** `Re-share it (Recommended)` /
+   `Describe it`, the symptom typed in Other. Until the symptom is named (spinner, empty list, banner,
    error), read code only. Repro steps name the actions, not the symptom. If
    users are hurting right now, offer a stopgap (a revert, a flag off) as
-   soon as you see one. Doing it needs a yes.
+   soon as you see one. Doing it needs a yes through AskUserQuestion:
+   `Apply the stopgap (Recommended)` / `Not yet`.
 2. **Pin the version.** Run `git log --since=<a week before the report>` on
    the paths involved, and find what production ran on the report date
    (deploy tags, the release log). If the code changed around or after the
    report, say so up front: today's code may not be what the reporter saw.
 3. **Propose the probe, then stop.** In two or three sentences: the suspected
-   path, where you'll reproduce, and the conditions you'll vary. No test or
+   path, where you'll reproduce, and the conditions you'll vary, then ask with
+   AskUserQuestion: `Run the probe (Recommended)` / `Change it`. No test or
    script is written or run until the user says yes. **That yes covers a failing test
    and a scratch script.** It does not cover the fix. Cut the fix branch
    before writing the test.

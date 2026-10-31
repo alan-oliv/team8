@@ -18,7 +18,7 @@ For a full console install use `/setup` instead; the plugin carries its own
 
 - `true`, `enabled`, `enable`, `on`, `1` → VALUE="1"
 - `false`, `disabled`, `disable`, `off`, `0` → VALUE="0"
-- Missing or anything else → show the current values (`jq '.env' ~/.claude/settings.json`) and ask which state they want.
+- Missing or anything else → show the current values (`jq '.env' ~/.claude/settings.json`) and ask with AskUserQuestion which state they want: `Enable (Recommended)` / `Disable`.
 
 ## Steps
 

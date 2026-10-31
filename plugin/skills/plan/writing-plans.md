@@ -163,7 +163,8 @@ counts written tasks from the file — a task is written once its section has a
 the template above has them.
 
 **Code in the plan is written, not run.** No builds, prototypes or scratch
-code. If a step rests on something unproven, stop and ask the user.
+code. If a step rests on something unproven, stop and ask the user with
+AskUserQuestion.
 
 The self-review runs after the last task; the tasks come after it.
 
