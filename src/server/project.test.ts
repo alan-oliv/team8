@@ -1571,6 +1571,12 @@ describe('the lead turning idle on Stop', () => {
     expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), transcript(3, afterStop)])).toBe('idle');
   });
 
+  it('a Notification after Stop keeps the lead idle', () => {
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), hook(3, T0 + 60_000, 'Notification')])).toBe(
+      'idle',
+    );
+  });
+
   it('reads working again once the next prompt arrives', () => {
     const next: TranscriptRecord = {
       type: 'user',
