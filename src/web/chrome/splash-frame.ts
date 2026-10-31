@@ -142,6 +142,16 @@ function fullFrame(t: number): Frame {
   };
 }
 
+/** The last fully assembled moment: where the splash waits while a session loads in. */
+export function holdAt(reduced: boolean): number {
+  return reduced ? REDUCED_END - 0.5 : CUE.exit;
+}
+
+/** The loading line: in over 1.2s of waiting, out over the 0.6s after the hold lets go. */
+export function waitOpacity(waited: number, t: number, hold: number): number {
+  return clamp01(waited / 1.2) * (1 - clamp01((t - hold) / 0.6));
+}
+
 /** No fly-in: the assembled mark cross-fades in over 0.5s and out over the last 0.5s. */
 function reducedFrame(t: number): Frame {
   const fade = clamp01(t / 0.5) * (1 - clamp01((t - (REDUCED_END - 0.5)) / 0.5));

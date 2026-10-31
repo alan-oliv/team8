@@ -247,6 +247,15 @@ button {
   border-radius: 0;
 }
 
+.splash-wait {
+  position: absolute;
+  left: 0;
+  top: 96px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+
 .team-trigger:hover {
   border-color: var(--color-accent-700);
   background: var(--color-accent-900);

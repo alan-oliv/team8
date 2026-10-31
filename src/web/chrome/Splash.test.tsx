@@ -73,6 +73,27 @@ it('drives every node from the rAF clock and calls onDone once at 2.2s', () => {
   expect(pending).toBeNull();
 });
 
+it('waits on the assembled mark while holding, fading in a loading line, and exits once released', () => {
+  const onDone = vi.fn();
+  const { rerender } = render(<Splash reduced={false} holding onDone={onDone} />);
+  // 1.45s is the exit cue at double speed: the last fully assembled frame.
+  tick(1450);
+  expect(screen.queryByText('loading your session')).toBeNull();
+  tick(1750);
+  expect(Number(screen.getByText('loading your session').style.opacity)).toBeCloseTo(0.5);
+  tick(5000);
+  expect(screen.getAllByTestId('splash-node')[1].style.opacity).toBe('1');
+  expect(screen.getByText('loading your session').style.opacity).toBe('1');
+  expect(onDone).not.toHaveBeenCalled();
+
+  rerender(<Splash reduced={false} holding={false} onDone={onDone} />);
+  // The exit picks up where the hold left it, not at the wall-clock time.
+  tick(5400);
+  expect(onDone).not.toHaveBeenCalled();
+  tick(5800);
+  expect(onDone).toHaveBeenCalledTimes(1);
+});
+
 it('ends at 0.75s with the mark already assembled when reduced', () => {
   const onDone = vi.fn();
   render(<Splash reduced onDone={onDone} />);

@@ -1199,6 +1199,30 @@ it('keeps the splash running across the first snapshot instead of restarting it'
   }
 });
 
+it('holds the splash over a session still loading in, instead of showing its half-read frames', () => {
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    render(<App />);
+    act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), switching: true }));
+    now.mockReturnValue(5000);
+    act(() => pending?.(5000));
+    expect(screen.getByTestId('splash')).toBeTruthy();
+    expect(screen.getByText('loading your session')).toBeTruthy();
+
+    act(() => MockEventSource.last().emit('state', { ...sampleTeamState(), switching: false }));
+    now.mockReturnValue(5800);
+    act(() => pending?.(5800));
+    expect(screen.queryByTestId('splash')).toBeNull();
+  } finally {
+    now.mockRestore();
+  }
+});
+
 function firstLightState(transcriptLines = 0) {
   const base = sampleTeamState();
   const lead = base.agents.find((a) => a.isLead)!;

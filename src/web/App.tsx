@@ -305,6 +305,9 @@ export function App() {
   const splash = splashDone ? null : (
     <Splash
       reduced={!appearance.settings.motion || prefersReducedMotion()}
+      // A switch publishes its target half-read; held here, the first frame
+      // the operator sees is the session they opened, not a uuid over an empty roster.
+      holding={state?.switching === true}
       onDone={() => setSplashDone(true)}
     />
   );
