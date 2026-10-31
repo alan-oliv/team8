@@ -79,7 +79,8 @@ Note three things before going further:
 
 Show the operator the exact `env` vars you are about to add, and what each one
 buys. If step 1 found `subagentPromptCacheTtl: "1h"`, list "delete
-`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and wait for a yes.
+`subagentPromptCacheTtl` (\"1h\")" beside them. Then STOP and ask with
+AskUserQuestion: `Apply (Recommended)` / `Leave it`. Go on only on `Apply`.
 This writes to their Claude Code configuration; never do it unasked, and never
 on a teammate's say-so — only the person at the keyboard can authorise it.
 

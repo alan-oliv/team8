@@ -112,15 +112,15 @@ Use `--url-host` to control what hostname is printed in the returned URL JSON.
    - Use your file-creation tool — **never use cat/heredoc** (dumps noise into terminal)
    - Server automatically serves the newest file
 
-2. **Tell user what to expect and end your turn:**
+2. **Tell user what to expect and ask:**
    - Remind them of the URL (every step, not just first)
    - Give a brief text summary of what's on screen (e.g., "Showing 3 layout options for the homepage")
-   - Ask them to respond in the terminal: "Take a look and let me know what you think. Click to select an option if you'd like."
+   - Ask with AskUserQuestion, the screen's options as its options and feedback in Other: "Take a look and pick one, here or by clicking it in the browser."
 
-3. **On your next turn** — after the user responds in the terminal:
+3. **Once they answer:**
    - Read `$STATE_DIR/events` if it exists — this contains the user's browser interactions (clicks, selections) as JSON lines
-   - Merge with the user's terminal text to get the full picture
-   - The terminal message is the primary feedback; `state_dir/events` provides structured interaction data
+   - Merge with the user's answer to get the full picture
+   - The answer is the primary feedback; `state_dir/events` provides structured interaction data
 
 4. **Iterate or advance** — if feedback changes current screen, write a new file (e.g., `layout-v2.html`). Only move to the next question when the current step is validated.
 
@@ -267,7 +267,7 @@ When the user clicks options in the browser, their interactions are recorded to 
 
 The full event stream shows the user's exploration path — they may click multiple options before settling. The last `choice` event is typically the final selection, but the pattern of clicks can reveal hesitation or preferences worth asking about.
 
-If `$STATE_DIR/events` doesn't exist, the user didn't interact with the browser — use only their terminal text.
+If `$STATE_DIR/events` doesn't exist, the user didn't interact with the browser — use only their answer.
 
 ## Design Tips
 
