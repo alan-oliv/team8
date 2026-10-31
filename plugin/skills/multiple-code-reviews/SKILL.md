@@ -48,7 +48,8 @@ dispatch and roster checks, `grimoire:alanizer` for every comment body,
    in the report that the skill returned. An idle notification that repeats a
    report already relayed is an echo, not new work.
 5. **Gate.** When all reports exist, print a table (PR, recommendation, finding
-   count, headline) and stop. Phase 2 starts only when the user asks to post or fix.
+   count, headline), then ask with `AskUserQuestion`, header `Phase 2`:
+   `Post or fix (Recommended)` / `Stop here`. Phase 2 starts only on `Post or fix`.
 
 ## Phase 2: anchor, voice, pick, post or fix
 
