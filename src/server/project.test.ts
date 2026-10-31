@@ -1528,3 +1528,67 @@ describe('the watched folder', () => {
     expect(project(buildLog(), false).folder).toBe('/Users/alanoliv/code/team8');
   });
 });
+
+// A solo lead never mails an idle_notification, so without the Stop hook a
+// session waiting on the user read `working` until the stale window ran out.
+describe('the lead turning idle on Stop', () => {
+  const T0 = Date.parse('2026-10-31T05:00:00.000Z');
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const transcript = (seq: number, records: TranscriptRecord[]): StoredEvent => ({
+    seq,
+    ts: 0,
+    kind: 'transcript',
+    agent: 'team-lead',
+    payload: { agent: 'team-lead', records },
+  });
+  const hook = (seq: number, ts: number, event: string, agent = 'team-lead'): StoredEvent => ({
+    seq,
+    ts,
+    kind: 'hook',
+    agent,
+    payload: { event, agent },
+  });
+  const turn: TranscriptRecord[] = [
+    { type: 'user', uuid: 'u1', timestamp: iso(T0), message: { role: 'user', content: 'go' } },
+    { type: 'assistant', uuid: 'a1', timestamp: iso(T0 + 8_000), message: { content: [{ type: 'text', text: 'done' }] } },
+  ];
+  // What Claude Code writes once the Stop hook has run, all stamped after it.
+  const afterStop: TranscriptRecord[] = [
+    { type: 'attachment', uuid: 'h1', timestamp: iso(T0 + 8_100), attachment: { type: 'hook_success' } },
+    { type: 'system', subtype: 'stop_hook_summary', uuid: 's1', timestamp: iso(T0 + 8_200) },
+    { type: 'system', subtype: 'turn_duration', uuid: 's2', timestamp: iso(T0 + 8_210) },
+    { type: 'system', subtype: 'away_summary', uuid: 's3', timestamp: iso(T0 + 60_000) },
+  ];
+  const statusOf = (log: StoredEvent[], name = 'team-lead') =>
+    project([{ seq: 0, ts: 0, kind: 'roster', payload: { config: null, sidecars: [] } }, ...log], false, T0 + 61_000)
+      .agents.find((a) => a.name === name)!.status;
+
+  it('reads idle once its turn ended with a Stop hook', () => {
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop')])).toBe('idle');
+  });
+
+  it('stays idle through the records Claude Code writes after the Stop', () => {
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), transcript(3, afterStop)])).toBe('idle');
+  });
+
+  it('reads working again once the next prompt arrives', () => {
+    const next: TranscriptRecord = {
+      type: 'user',
+      uuid: 'u2',
+      timestamp: iso(T0 + 30_000),
+      message: { role: 'user', content: 'again' },
+    };
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), transcript(3, [next])])).toBe('working');
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), hook(3, T0 + 30_000, 'UserPromptSubmit')])).toBe(
+      'working',
+    );
+  });
+
+  it('turns a team lead idle on its own Stop and leaves its teammates alone', () => {
+    const state = project([...buildLog(), hook(900, Date.now() + 60_000, 'Stop')], false);
+    const named = Object.fromEntries(state.agents.map((a) => [a.name, a.status]));
+    const before = Object.fromEntries(project(buildLog(), false).agents.map((a) => [a.name, a.status]));
+    expect(named['team-lead']).toBe('idle');
+    for (const mate of ['probe-alpha', 'probe-bravo', 'probe-charlie']) expect(named[mate]).toBe(before[mate]);
+  });
+});

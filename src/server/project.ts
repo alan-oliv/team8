@@ -253,6 +253,12 @@ function spawnEventsFor(rec: TranscriptRecord): SpawnEvent[] {
   return events;
 }
 
+// Claude Code writes these once a turn is over, stamped after its Stop hook
+// (and away_summary minutes later), so as activity they flip an idle lead back.
+const AFTER_STOP = new Set(['stop_hook_summary', 'turn_duration', 'away_summary']);
+const isAfterStop = (rec: TranscriptRecord) =>
+  (rec.type === 'system' && AFTER_STOP.has(rec.subtype ?? '')) || rec.attachment?.type === 'hook_success';
+
 /**
  * Every line the log still holds for one agent, oldest first.
  *
@@ -357,6 +363,10 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
   const bump = (agent: string, ts: number) => {
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
   };
+  const lastIdle = new Map<string, number>();
+  const idleAt = (agent: string, ts: number) => {
+    if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
+  };
 
   for (const ev of events) {
     switch (ev.kind) {
@@ -406,7 +416,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
           }
           applySpawnEvents(spawns, spawnEventsFor(rec));
           const ts = rec.timestamp ? Date.parse(rec.timestamp) : NaN;
-          if (!Number.isNaN(ts)) bump(p.agent, ts);
+          if (!Number.isNaN(ts) && !isAfterStop(rec)) bump(p.agent, ts);
         }
         records.set(p.agent, list);
         seenRecords.set(p.agent, seen);
@@ -447,7 +457,10 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
         if (p.event === 'PreToolUse' && p.toolName) currentTool.set(p.agent, p.toolName);
         if (p.event === 'PostToolUse') currentTool.set(p.agent, undefined);
         if (p.error) errors.set(p.agent, p.error);
-        bump(p.agent, ev.ts);
+        // Only the main session posts Stop, at the end of every turn: a lead
+        // never mails the idle_notification its teammates' idleness comes from.
+        if (p.event === 'Stop') idleAt(p.agent, ev.ts);
+        else bump(p.agent, ev.ts);
         break;
       }
       case 'statusline': {
@@ -481,12 +494,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     }
   }
 
-  const lastIdle = new Map<string, number>();
-  for (const m of mail) {
-    if (m.protocol?.type === 'idle_notification' && m.ts > (lastIdle.get(m.from) ?? -1)) {
-      lastIdle.set(m.from, m.ts);
-    }
-  }
+  for (const m of mail) if (m.protocol?.type === 'idle_notification') idleAt(m.from, m.ts);
 
   // The team's own most recent pulse, not the wall clock: project() is a pure
   // fold over the log elsewhere, and a replayed historical log (a fixture, a
