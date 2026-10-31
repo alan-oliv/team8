@@ -8,6 +8,9 @@ import { answerText, answersPayload, emptyAnswer, previewLines, showsTabs, type 
 export interface QuestionModalProps {
   item: NeedsYouItem | null;
   leadName: string;
+  /** Disables allow / deny on a plain permission hold; questions are unchanged. */
+  readOnly: boolean;
+  now: number;
   /** `2. Cancel` on the review tab: the call stays pending, only hidden here. */
   onCancel(id: string): void;
   onDeclined(agent: string): void;
@@ -22,11 +25,130 @@ const CURSOR: CSSProperties = { color: ACCENT, width: 14, flex: 'none' };
 const NUMBER: CSSProperties = { color: MUTED, width: 20, flex: 'none' };
 const CHECK: CSSProperties = { color: ACCENT, width: 30, flex: 'none' };
 const STEP: CSSProperties = { color: 'var(--color-neutral-500)', padding: '0 4px', cursor: 'pointer' };
+const SCRIM: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  zIndex: 40,
+  background: 'rgba(18,20,31,.55)',
+  backdropFilter: 'blur(6px)',
+  WebkitBackdropFilter: 'blur(6px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+const DIALOG: CSSProperties = {
+  outline: 'none',
+  width: 760,
+  maxWidth: 'calc(100% - 32px)',
+  maxHeight: 'calc(100% - 40px)',
+  display: 'flex',
+  flexDirection: 'column',
+  background: 'var(--color-bg)',
+  border: '1px solid var(--color-neutral-800)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: '0 24px 60px rgba(0,0,0,.6)',
+  overflow: 'hidden',
+};
+const action = (accent: boolean, on: boolean): CSSProperties => ({
+  padding: '5px 16px',
+  border: `1px solid var(--color-${accent && on ? 'accent-700' : 'neutral-800'})`,
+  color: on ? (accent ? ACCENT : TEXT) : MUTED,
+  background: 'transparent',
+  borderRadius: 'var(--radius-sm)',
+  fontSize: 12,
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
+  cursor: on ? 'pointer' : 'not-allowed',
+});
 
-export function QuestionModal({ item, ...rest }: QuestionModalProps) {
-  if (!item?.questions?.length) return null;
+/** A key a menu already took, or one typed into a field behind the scrim, is not the modal's. */
+function notOurs(e: globalThis.KeyboardEvent, dialog: HTMLElement | null): boolean {
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return true;
+  const el = e.target;
+  return (
+    el instanceof HTMLElement &&
+    (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) &&
+    !dialog?.contains(el)
+  );
+}
+
+export function QuestionModal({ item, readOnly, now, ...rest }: QuestionModalProps) {
+  if (!item) return null;
   // Keyed by the call, so the next question never inherits this one's answers.
+  if (!item.questions?.length) return <Permit key={item.id} item={item} readOnly={readOnly} now={now} onCancel={rest.onCancel} />;
   return <Asking key={item.id} item={item} questions={item.questions} {...rest} />;
+}
+
+function Permit({
+  item,
+  readOnly,
+  now,
+  onCancel,
+}: Pick<QuestionModalProps, 'readOnly' | 'now' | 'onCancel'> & { item: NeedsYouItem }) {
+  const who = useCast().asChar(item.agent).display;
+  const [reason, setReason] = useState('');
+  const dialog = useRef<HTMLDivElement>(null);
+
+  useEffect(() => dialog.current?.focus(), []);
+  useEffect(() => {
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key !== 'Escape' || notOurs(e, dialog.current)) return;
+      e.preventDefault();
+      onCancel(item.id);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [item.id, onCancel]);
+
+  return (
+    <div data-testid="question-modal" style={SCRIM}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={`${who} needs permission`} tabIndex={-1} style={DIALOG}>
+        <div style={{ padding: '12px 20px', display: 'flex', gap: 10, alignItems: 'baseline', borderBottom: RULE }}>
+          <span style={{ color: 'var(--warn)', fontSize: 12, whiteSpace: 'nowrap', flex: 'none' }}>{`${who} · permission`}</span>
+          <span style={{ flex: 1 }} />
+          {item.expiresAt !== undefined && (
+            <span data-testid="permit-countdown" style={{ color: MUTED, fontSize: 11, whiteSpace: 'nowrap', flex: 'none' }}>
+              {`${Math.max(0, Math.ceil((item.expiresAt - now) / 1000))}s`}
+            </span>
+          )}
+        </div>
+        <div className="tscroll" style={{ padding: '16px 20px', overflow: 'auto', minHeight: 0, flex: '1 1 auto' }}>
+          <span style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{item.detail}</span>
+        </div>
+        <div style={{ padding: '10px 20px 12px', display: 'flex', gap: 8, alignItems: 'center', flex: 'none', borderTop: RULE }}>
+          <input
+            data-testid="permit-reason"
+            className="question-other"
+            type="text"
+            value={reason}
+            placeholder="Reason, if you deny"
+            disabled={readOnly}
+            onChange={(e) => setReason(e.target.value)}
+            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 0, outline: 0, color: TEXT, fontFamily: 'inherit', fontSize: 12.5, padding: 0 }}
+          />
+          <span style={{ color: MUTED, fontSize: 10.5, whiteSpace: 'nowrap' }}>esc hide</span>
+          <button
+            type="button"
+            className="btn-neutral"
+            disabled={readOnly}
+            onClick={() => void postJson(`/api/permits/${item.id}/deny`, { reason })}
+            style={action(false, !readOnly)}
+          >
+            deny
+          </button>
+          <button
+            type="button"
+            className="btn-approve"
+            disabled={readOnly}
+            onClick={() => void postJson(`/api/permits/${item.id}/allow`)}
+            style={action(true, !readOnly)}
+          >
+            allow
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Tab({ label, on, onClick }: { label: string; on: boolean; onClick(): void }) {
@@ -54,7 +176,7 @@ function Asking({
   leadName,
   onCancel,
   onDeclined,
-}: Omit<QuestionModalProps, 'item'> & { item: NeedsYouItem; questions: AskQuestion[] }) {
+}: Omit<QuestionModalProps, 'item' | 'readOnly' | 'now'> & { item: NeedsYouItem; questions: AskQuestion[] }) {
   const who = useCast().asChar(item.agent).display;
   const n = questions.length;
   const tabs = showsTabs(questions);
@@ -116,16 +238,8 @@ function Asking({
   // Re-bound every render, so the handler always reads this render's state.
   useEffect(() => {
     function onKeyDown(e: globalThis.KeyboardEvent) {
-      // A key a menu already took, or one typed into a field behind the scrim
-      // (the asker's composer, focused on decline), is not this modal's.
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
-      const el = e.target;
-      if (
-        el instanceof HTMLElement &&
-        (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) &&
-        !dialog.current?.contains(el)
-      )
-        return;
+      // The asker's composer, focused on decline, sits behind the scrim.
+      if (notOurs(e, dialog.current)) return;
       const typing = field.current !== null && e.target === field.current;
       const rows = review ? 2 : k + 2;
       if (e.key === 'Escape') {
@@ -173,40 +287,8 @@ function Asking({
   const keys = `${q.multiSelect && !review ? 'space toggle' : '⏎ select'} · ↑↓ move${tabs ? ' · ←→ tabs' : ''} · esc decline`;
 
   return (
-    <div
-      data-testid="question-modal"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 40,
-        background: 'rgba(18,20,31,.55)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Claude is asking"
-        tabIndex={-1}
-        style={{
-          outline: 'none',
-          width: 760,
-          maxWidth: 'calc(100% - 32px)',
-          maxHeight: 'calc(100% - 40px)',
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--color-bg)',
-          border: '1px solid var(--color-neutral-800)',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: '0 24px 60px rgba(0,0,0,.6)',
-          overflow: 'hidden',
-        }}
-      >
+    <div data-testid="question-modal" style={SCRIM}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Claude is asking" tabIndex={-1} style={DIALOG}>
         <div style={{ padding: '12px 20px', display: 'flex', gap: 10, alignItems: 'baseline', borderBottom: RULE }}>
           <span style={{ color: 'var(--warn)', fontSize: 12, whiteSpace: 'nowrap', flex: 'none' }}>● Claude is asking</span>
           <span style={{ flex: 1 }} />

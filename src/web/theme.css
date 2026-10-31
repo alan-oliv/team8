@@ -145,7 +145,7 @@ button {
    a flex item at `min-width: auto`, so it cannot shrink below the widest
    unwrapped line inside it: the rail and the overview both grew past 7000px on
    a real transcript, scrolling the whole PAGE sideways and dragging the
-   needs-you strip and the panel off screen. The panes clip and ellipsise
+   panel off screen. The panes clip and ellipsise
    correctly once the slot holds them to its width. */
 .console-body > * {
   min-width: 0;

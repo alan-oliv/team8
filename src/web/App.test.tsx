@@ -102,21 +102,19 @@ it('holds every view to the width of the body slot', async () => {
   expect(css).toContain('height: 9px;');
 });
 
-it('mounts status bar, body, needs-you strip and panel once the snapshot lands', () => {
+it('mounts status bar, body and panel once the snapshot lands', () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
   expect(screen.getByRole('tablist')).toBeTruthy();
   expect(screen.getByText('session-98b0b4a7')).toBeTruthy();
   expect(screen.getByRole('main')).toBeTruthy();
-  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
   expect(screen.getByText('PANEL')).toBeTruthy();
   expect(screen.getAllByTestId('agent-chip')).toHaveLength(4);
 });
 
 function expectChromeMounted() {
   expect(screen.getByRole('tablist')).toBeTruthy();
-  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
   expect(screen.getByText('PANEL')).toBeTruthy();
   expect(screen.getAllByTestId('agent-chip')).toHaveLength(4);
 }
@@ -694,7 +692,7 @@ it('lists the other live sessions on the machine and switches to one on click', 
 });
 
 // Workflow mode replaces the whole shell, not the body: `RUN` in place of
-// `TEAM`, and none of the team chrome — no roster, no needs-you, no composer.
+// `TEAM`, and none of the team chrome — no roster, no composer.
 it('draws workflow mode instead of the team shell when the frame says so', () => {
   render(<App />);
   act(() =>
@@ -720,7 +718,6 @@ it('draws workflow mode instead of the team shell when the frame says so', () =>
 
   expect(screen.getByTestId('team-mode').textContent).toBe('workflow');
   expect(screen.getByTestId('workflow-run')).toBeTruthy();
-  expect(screen.queryByText('NEEDS YOU · 0')).toBeNull();
   // The shell is the shared one, so the way out of a run and the way to the
   // theme are both still on screen.
   expect(screen.getByTestId('team-trigger')).toBeTruthy();
@@ -736,7 +733,7 @@ const QUESTION_CARD = {
   questions: [{ question: 'Ship today?', header: 'Ship', multiSelect: false, options: [{ label: 'yes' }, { label: 'no' }] }],
 };
 
-it('opens the question modal over the wall, keeps it off the strip, and gives it Esc', () => {
+it('opens the question modal over the wall and gives it Esc', () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
   // A focused agent, or the wall's Esc never reaches its interrupt to be suspended.
@@ -749,7 +746,6 @@ it('opens the question modal over the wall, keeps it off the strip, and gives it
   act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [QUESTION_CARD] }));
 
   expect(screen.getByTestId('question-modal')).toBeTruthy();
-  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
   fireEvent.keyDown(window, { key: 'Escape' });
   const urls = fetchMock.mock.calls.map(([url]) => String(url));
   expect(urls).toContain('/api/permits/permit-q/deny');
@@ -788,7 +784,19 @@ it('hides a question cancelled on the review tab, the call still pending', () =>
   fireEvent.click(screen.getByText('✔ Submit'));
   fireEvent.click(screen.getByTestId('question-cancel'));
   expect(screen.queryByTestId('question-modal')).toBeNull();
-  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
+});
+
+it('opens a plain permission hold in the modal, and esc hides it here without answering', () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App />);
+  const bash = { id: 'permit-b', kind: 'permission' as const, agent: 'probe-alpha', reason: 'permission', detail: 'Bash(npm test)' };
+  act(() => MockEventSource.last().emit('snapshot', { ...sampleTeamState(), needsYou: [bash] }));
+
+  expect(screen.getByText('Bash(npm test)')).toBeTruthy();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByTestId('question-modal')).toBeNull();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/permits/'))).toBe(false);
 });
 
 it('opens the question modal over the workflow shell too', () => {
@@ -826,7 +834,6 @@ it('stays in the team shell when a roster exists, runs or not', () => {
   );
 
   expect(screen.getByTestId('team-mode').textContent).toBe('teammates');
-  expect(screen.getByText('NEEDS YOU · 0')).toBeTruthy();
 });
 
 const RUNS = [
@@ -1211,15 +1218,11 @@ it('opens on first light while the session is one agent with nothing said, and c
   expect(screen.queryByTestId('wall')).toBeNull();
   expect(screen.queryByTestId('composer-solo')).toBeNull();
   expect(screen.getByTestId('bar').style.opacity).toBe('0.35');
-  expect(screen.getByTestId('needs-you').style.opacity).toBe('0.35');
-  expect(screen.getByTestId('needs-you-note').textContent).toBe('messages go to lead until a teammate joins');
 
   act(() => MockEventSource.last().emit('state', firstLightState(1)));
   expect(screen.queryByTestId('first-light')).toBeNull();
   expect(screen.getByTestId('wall')).toBeTruthy();
   expect(screen.getByTestId('bar').style.opacity).toBe('');
-  expect(screen.getByTestId('needs-you').style.opacity).toBe('');
-  expect(screen.queryByTestId('needs-you-note')).toBeNull();
 });
 
 it('cuts from first light to the wall when the first teammate joins', () => {
@@ -1239,15 +1242,14 @@ it('shows first light only on the wall view; the overview is itself, undimmed', 
   expect(screen.getByTestId('bar').style.opacity).toBe('');
 });
 
-it('names the lead by character in the strip note under a film', () => {
+it('names the lead by character on first light under a film', () => {
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ movieTheme: 'breakingbad' }));
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
-  expect(screen.getByTestId('needs-you-note').textContent).toBe('messages go to Heisenberg until a teammate joins');
   expect(screen.getByTestId('first-light-head').textContent).toBe('Heisenberg is here. The lab is still an RV.');
 });
 
-it('does not dim the chrome or note the strip once the operator has stopped watching a first-light session', async () => {
+it('does not dim the chrome once the operator has stopped watching a first-light session', async () => {
   stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', firstLightState(0)));
@@ -1257,6 +1259,4 @@ it('does not dim the chrome or note the strip once the operator has stopped watc
   expect(screen.getByTestId('left-session-heading')).toBeTruthy();
   expect(screen.queryByTestId('first-light')).toBeNull();
   expect(screen.getByTestId('bar').style.opacity).toBe('');
-  expect(screen.getByTestId('needs-you').style.opacity).toBe('');
-  expect(screen.queryByTestId('needs-you-note')).toBeNull();
 });

@@ -47,6 +47,16 @@ const card = (questions: AskQuestion[], extra: Partial<NeedsYouItem> = {}): Need
   ...extra,
 });
 
+const NOW = 1_000_000;
+const BASH: NeedsYouItem = {
+  id: 'permit-9',
+  kind: 'permission',
+  agent: 'probe-alpha',
+  reason: 'permission',
+  detail: 'Bash(rm -rf migrations/legacy)',
+  expiresAt: NOW + 90_000,
+};
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -62,10 +72,12 @@ afterEach(() => {
 const posted = () =>
   fetchMock.mock.calls.map(([url, init]) => [url, JSON.parse((init as RequestInit).body as string)]);
 
-function show(item: NeedsYouItem | null) {
+function show(item: NeedsYouItem | null, readOnly = false) {
   const onCancel = vi.fn();
   const onDeclined = vi.fn();
-  const view = render(<QuestionModal item={item} leadName="team-lead" onCancel={onCancel} onDeclined={onDeclined} />);
+  const view = render(
+    <QuestionModal item={item} leadName="team-lead" readOnly={readOnly} now={NOW} onCancel={onCancel} onDeclined={onDeclined} />,
+  );
   return { onCancel, onDeclined, ...view };
 }
 
@@ -259,7 +271,7 @@ describe('QuestionModal', () => {
     const { rerender } = show(card([STORAGE]));
     fireEvent.click(options()[1]);
     rerender(
-      <QuestionModal item={card([STORAGE], { id: 'q2' })} leadName="team-lead" onCancel={() => {}} onDeclined={() => {}} />,
+      <QuestionModal item={card([STORAGE], { id: 'q2' })} leadName="team-lead" readOnly={false} now={NOW} onCancel={() => {}} onDeclined={() => {}} />,
     );
     expect((screen.getByTestId('question-submit') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -275,7 +287,7 @@ describe('QuestionModal', () => {
     render(
       <PendingQuestionsContext.Provider value={[item]}>
         <Composer agent={asker} variant="wall" />
-        <QuestionModal item={item} leadName="team-lead" onCancel={() => {}} onDeclined={() => {}} />
+        <QuestionModal item={item} leadName="team-lead" readOnly={false} now={NOW} onCancel={() => {}} onDeclined={() => {}} />
       </PendingQuestionsContext.Provider>,
     );
     const input = screen.getByTestId('composer-input');
@@ -300,7 +312,49 @@ describe('QuestionModal', () => {
 
   it('closes when its card leaves', () => {
     const { rerender } = show(card([STORAGE]));
-    rerender(<QuestionModal item={null} leadName="team-lead" onCancel={() => {}} onDeclined={() => {}} />);
+    rerender(<QuestionModal item={null} leadName="team-lead" readOnly={false} now={NOW} onCancel={() => {}} onDeclined={() => {}} />);
     expect(screen.queryByTestId('question-modal')).toBeNull();
+  });
+});
+
+describe('QuestionModal permission hold', () => {
+  const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+
+  it('names the asker, shows the call and counts down to expiresAt', () => {
+    show(BASH);
+    expect(screen.getByText('probe-alpha · permission')).toBeTruthy();
+    expect(screen.getByText('Bash(rm -rf migrations/legacy)')).toBeTruthy();
+    expect(screen.getByTestId('permit-countdown').textContent).toBe('90s');
+    cleanup();
+    render(<QuestionModal item={BASH} leadName="team-lead" readOnly={false} now={NOW + 89_400} onCancel={() => {}} onDeclined={() => {}} />);
+    expect(screen.getByTestId('permit-countdown').textContent).toBe('1s');
+  });
+
+  it('posts allow on its own id', () => {
+    show(BASH);
+    fireEvent.click(button('allow'));
+    expect(posted()).toEqual([['/api/permits/permit-9/allow', {}]]);
+  });
+
+  it('posts the reason typed in the modal on deny', () => {
+    show(BASH);
+    fireEvent.change(screen.getByTestId('permit-reason'), { target: { value: 'not that folder' } });
+    fireEvent.click(button('deny'));
+    expect(posted()).toEqual([['/api/permits/permit-9/deny', { reason: 'not that folder' }]]);
+  });
+
+  it('hides on esc without answering', () => {
+    const { onCancel } = show(BASH);
+    press('Escape');
+    expect(onCancel).toHaveBeenCalledWith('permit-9');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('disables both actions in read-only mode', () => {
+    show(BASH, true);
+    expect(button('allow').disabled).toBe(true);
+    expect(button('deny').disabled).toBe(true);
+    fireEvent.click(button('allow'));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

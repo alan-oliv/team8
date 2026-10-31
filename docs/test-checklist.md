@@ -37,7 +37,7 @@ and anything that felt slow (which view, roughly how long).
 - [ ] The lead never offers to skip the pipeline, and "no git" only skips the branch and commits
 - [ ] No spec or plan file: small work goes straight to tasks
 - [ ] Closing says `mode: solo`: one mechanical task, one file
-- [ ] The approval question shows as a `NEEDS YOU` card, answerable from the console
+- [ ] The approval question shows in the question modal, answerable from the console
 - [ ] The lead fixes it itself, test first, no roster
 - [ ] The picker row and the trigger show no kind pill for this bare session
 - [ ] Console offers `stream` and `overview` only
@@ -106,7 +106,7 @@ with 20 and go up to 100 once the run works.
 - [ ] `rail`: arrow keys move between agents
 - [ ] `grid`: one pane per agent, up to 6
 - [ ] `usage`: spend by model, cache-hit ratio, cost per task
-- [ ] `NEEDS YOU`: a permission card when a teammate runs `npm install` or tests, allowed from the console
+- [ ] Permission modal: opens when a teammate runs `npm install` or tests, allowed from the console
 - [ ] Message a teammate from the composer, and it arrives
 - [ ] Stop a teammate with ⏻, and the confirm prompt appears
 - [ ] Run log records the mode and its reason
@@ -118,11 +118,10 @@ with 20 and go up to 100 once the run works.
 
 ## Known gaps
 
-- `NEEDS YOU` only ever shows permission cards. The `plan` and `failure` card
-  kinds are defined and drawn, but nothing emits them
-  (`src/server/ingest/hooks.ts` is the only emitter), so no scenario can raise
-  them. A teammate hitting an API error shows as `failed` on the agent, not as
-  a card.
+- Only permission holds reach the console, in the question modal. The `plan`
+  and `failure` needs-you kinds are defined, but nothing emits or draws them
+  (`src/server/ingest/hooks.ts` is the only emitter). A teammate hitting an API
+  error shows as `failed` on the agent.
 - `trace` nests by call depth only when a subagent spawns its own subagent,
   which none of these scenarios do.
 - A full `grid` needs 5 teammates; `todo-lab` usually gets about 4.
