@@ -49,13 +49,16 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    any track is live, do no multi-step investigation yourself** — a report
    waits as long as your longest turn. Dispatch a subagent for it, or do it
    before dispatching.
-8. **Close the run.** Run the full suite yourself once every track is clear —
-   the executors only ran the tests covering their own files. Then, when the PR
-   is up, fill the Run section of `docs/team8/runs/<batch>.md` (opened by
+8. **Close the run.** Start it when the last task completes, not when the
+   last review clears: executors complete before their review. In that turn
+   start the full suite with `run_in_background` — the executors only ran the
+   tests covering their own files — and while the last reviews run, fill what
+   the Run section of `docs/team8/runs/<batch>.md` already knows (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
-   `plan`) and commit it on the branch. In teammates mode, then complete the
-   "Close the run" task. Then say in one line that the run is closed and
-   `/effort` can go back up.
+   `plan`). Once every track is clear, re-run the suite only if a fix landed
+   after it started, run `measure`, finish the Run section and commit it on
+   the branch. Then say in one line that the run is closed and `/effort` can
+   go back up.
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
