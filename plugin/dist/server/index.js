@@ -3126,6 +3126,8 @@ function spawnEventsFor(rec) {
   }
   return events;
 }
+var AFTER_STOP = /* @__PURE__ */ new Set(["stop_hook_summary", "turn_duration", "away_summary"]);
+var isAfterStop = (rec) => rec.type === "system" && AFTER_STOP.has(rec.subtype ?? "") || rec.attachment?.type === "hook_success";
 function transcriptHistory(events, agent) {
   const records = [];
   const seen = /* @__PURE__ */ new Set();
@@ -3191,6 +3193,10 @@ function project(events, readOnly, now = Date.now()) {
   const bump = (agent, ts) => {
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
   };
+  const lastIdle = /* @__PURE__ */ new Map();
+  const idleAt = (agent, ts) => {
+    if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
+  };
   for (const ev of events) {
     switch (ev.kind) {
       case "roster": {
@@ -3230,7 +3236,7 @@ function project(events, readOnly, now = Date.now()) {
           }
           applySpawnEvents(spawns, spawnEventsFor(rec));
           const ts = rec.timestamp ? Date.parse(rec.timestamp) : NaN;
-          if (!Number.isNaN(ts)) bump(p.agent, ts);
+          if (!Number.isNaN(ts) && !isAfterStop(rec)) bump(p.agent, ts);
         }
         records.set(p.agent, list);
         seenRecords.set(p.agent, seen);
@@ -3270,7 +3276,8 @@ function project(events, readOnly, now = Date.now()) {
         if (p.event === "PreToolUse" && p.toolName) currentTool.set(p.agent, p.toolName);
         if (p.event === "PostToolUse") currentTool.set(p.agent, void 0);
         if (p.error) errors.set(p.agent, p.error);
-        bump(p.agent, ev.ts);
+        if (p.event === "Stop") idleAt(p.agent, ev.ts);
+        else if (p.event !== "Notification") bump(p.agent, ev.ts);
         break;
       }
       case "statusline": {
@@ -3303,12 +3310,7 @@ function project(events, readOnly, now = Date.now()) {
       }
     }
   }
-  const lastIdle = /* @__PURE__ */ new Map();
-  for (const m of mail) {
-    if (m.protocol?.type === "idle_notification" && m.ts > (lastIdle.get(m.from) ?? -1)) {
-      lastIdle.set(m.from, m.ts);
-    }
-  }
+  for (const m of mail) if (m.protocol?.type === "idle_notification") idleAt(m.from, m.ts);
   let latestActivity = -1;
   for (const ts of lastActivity.values()) if (ts > latestActivity) latestActivity = ts;
   const cards = [...needsYou.values()].filter(
