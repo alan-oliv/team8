@@ -4,7 +4,7 @@ import {
   answerText,
   answersPayload,
   emptyAnswer,
-  firstQuestion,
+  firstPermit,
   previewLines,
   showsTabs,
 } from './question-answers';
@@ -75,21 +75,20 @@ describe('previewLines', () => {
   });
 });
 
-describe('firstQuestion', () => {
-  const card = (id: string, questions?: AskQuestion[]): NeedsYouItem => ({
+describe('firstPermit', () => {
+  const card = (id: string, extra: Partial<NeedsYouItem> = {}): NeedsYouItem => ({
     id,
     kind: 'permission',
     agent: 'team-lead',
     reason: 'permission',
     detail: '',
-    ...(questions ? { questions } : {}),
+    ...extra,
   });
 
-  it('picks the oldest card that asks something and was not cancelled here', () => {
-    const items = [card('bash'), card('q1', [single]), card('q2', [multi])];
-    expect(firstQuestion(items, new Set())!.id).toBe('q1');
-    expect(firstQuestion(items, new Set(['q1']))!.id).toBe('q2');
-    expect(firstQuestion(items, new Set(['q1', 'q2']))).toBeNull();
-    expect(firstQuestion([card('empty', [])], new Set())).toBeNull();
+  it('picks the oldest permission hold, question or not, that was not cancelled here', () => {
+    const items = [card('plan', { kind: 'plan' }), card('bash'), card('q1', { questions: [single] })];
+    expect(firstPermit(items, new Set())!.id).toBe('bash');
+    expect(firstPermit(items, new Set(['bash']))!.id).toBe('q1');
+    expect(firstPermit(items, new Set(['bash', 'q1']))).toBeNull();
   });
 });

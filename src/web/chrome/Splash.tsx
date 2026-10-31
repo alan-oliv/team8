@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BLOOM, COLORS, MARK, UNIT, splashFrame } from './splash-frame';
+import { BLOOM, COLORS, MARK, UNIT, holdAt, splashFrame, waitOpacity } from './splash-frame';
 
 /** The OS-level preference. jsdom has no matchMedia, so its absence reads as off. */
 export function prefersReducedMotion(): boolean {
@@ -21,21 +21,33 @@ function fitScale(): number {
  * property is read off `splashFrame(t)` each frame, so the timeline lives in
  * one pure function and this component only keeps the clock.
  */
-export function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => void }) {
-  const [t, setT] = useState(0);
+export function Splash({ reduced, holding = false, onDone }: { reduced: boolean; holding?: boolean; onDone: () => void }) {
+  const [clock, setClock] = useState({ t: 0, waited: 0 });
   const [fit] = useState(fitScale);
   // Read through a ref so the loop is started once and never restarted by a
   // parent re-render handing down a fresh callback.
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const holdingRef = useRef(holding);
+  holdingRef.current = holding;
+  const hold = holdAt(reduced);
 
   useEffect(() => {
     const start = performance.now();
     let handle = 0;
+    let t = 0;
+    let waited = 0;
     const step = (now: number) => {
       const elapsed = ((now - start) / 1000) * SPEED;
-      setT(elapsed);
-      if (splashFrame(elapsed, reduced).done) {
+      // A session still loading keeps the mark assembled, unless its exit already began.
+      if (holdingRef.current && t <= hold && elapsed - waited > hold) {
+        waited = elapsed - hold;
+        t = hold;
+      } else {
+        t = elapsed - waited;
+      }
+      setClock({ t, waited });
+      if (splashFrame(t, reduced).done) {
         onDoneRef.current();
         return;
       }
@@ -43,9 +55,9 @@ export function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => vo
     };
     handle = requestAnimationFrame(step);
     return () => cancelAnimationFrame(handle);
-  }, [reduced]);
+  }, [reduced, hold]);
 
-  const frame = splashFrame(t, reduced);
+  const frame = splashFrame(clock.t, reduced);
 
   return (
     <div className="splash" data-testid="splash" aria-hidden="true" style={{ backgroundColor: COLORS.bg }}>
@@ -89,6 +101,14 @@ export function Splash({ reduced, onDone }: { reduced: boolean; onDone: () => vo
             />
           ))}
         </div>
+        {clock.waited > 0 && (
+          <div
+            className="splash-wait"
+            style={{ color: COLORS.teammate, opacity: waitOpacity(clock.waited, clock.t, hold) }}
+          >
+            loading your session
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,10 +4,9 @@ import { buildCast } from '../shared/cast';
 import type { Agent } from '../shared/domain';
 import { wallOrder as rosterOrder } from '../shared/roster';
 import { postJson } from './api';
-import { NeedsYou } from './chrome/NeedsYou';
 import { Panel } from './chrome/Panel';
 import { QuestionModal } from './chrome/QuestionModal';
-import { firstQuestion } from './chrome/question-answers';
+import { firstPermit } from './chrome/question-answers';
 import { Splash, prefersReducedMotion } from './chrome/Splash';
 import { StatusBar } from './chrome/StatusBar';
 import { StopConfirm, WatchConfirm } from './chrome/StopConfirm';
@@ -22,7 +21,7 @@ import { useSpendSamples } from './state/useSpendSamples';
 import { DiffContext, useTeamState } from './state/useTeamState';
 import { WatchContext } from './state/useWatch';
 import { Comms } from './views/Comms';
-import { FirstLight, leadNameOf } from './views/FirstLight';
+import { FirstLight } from './views/FirstLight';
 import { Grid } from './views/Grid';
 import { LeftSession } from './views/LeftSession';
 import { NoSessions } from './views/NoSessions';
@@ -261,7 +260,6 @@ export function App() {
   // wall — both a cut. Wall view only: the other views are themselves.
   const firstLight =
     state !== null && state.agents.length === 1 && state.agents[0].transcript.length === 0 && view === 'wall' && !dismissed;
-  const firstLightNote = firstLight ? `messages go to ${leadNameOf(cast, state.agents[0])} until a teammate joins` : undefined;
 
   // Above the `!state` return: every hook has to run on the frame before the
   // first snapshot lands too, or the hook order changes between renders.
@@ -275,11 +273,11 @@ export function App() {
     [stopRequested, state?.readOnly],
   );
 
-  // Questions closed with Cancel on the review tab: still pending, only hidden
+  // Holds closed with Cancel or esc: still pending, only hidden
   // in this tab, so a reload brings them back as the handoff asks.
   const [cancelledQuestions, setCancelledQuestions] = useState<ReadonlySet<string>>(() => new Set());
   const cancelQuestion = useCallback((id: string) => setCancelledQuestions((s) => new Set(s).add(id)), []);
-  const question = firstQuestion(state?.needsYou ?? [], cancelledQuestions);
+  const question = firstPermit(state?.needsYou ?? [], cancelledQuestions);
   const pendingQuestions = useMemo(
     () => (state?.needsYou ?? []).filter((item) => (item.questions?.length ?? 0) > 0),
     [state?.needsYou],
@@ -307,6 +305,9 @@ export function App() {
   const splash = splashDone ? null : (
     <Splash
       reduced={!appearance.settings.motion || prefersReducedMotion()}
+      // A switch publishes its target half-read; held here, the first frame
+      // the operator sees is the session they opened, not a uuid over an empty roster.
+      holding={state?.switching === true}
       onDone={() => setSplashDone(true)}
     />
   );
@@ -356,7 +357,14 @@ export function App() {
           build={state.build}
           sessions={state.sessions ?? []}
         />
-        <QuestionModal item={question} leadName={questionLead} onCancel={cancelQuestion} onDeclined={focusComposer} />
+        <QuestionModal
+          item={question}
+          leadName={questionLead}
+          readOnly={state.readOnly}
+          now={now}
+          onCancel={cancelQuestion}
+          onDeclined={focusComposer}
+        />
       </div>
       </WatchContext.Provider>
       </SettingsContext.Provider>
@@ -518,6 +526,8 @@ export function App() {
       <QuestionModal
         item={store.openDiff ? null : question}
         leadName={questionLead}
+        readOnly={state.readOnly}
+        now={now}
         onCancel={cancelQuestion}
         onDeclined={focusComposer}
       />
@@ -531,7 +541,6 @@ export function App() {
         }}
         onCancel={() => setPendingDismiss(false)}
       />
-      <NeedsYou items={state.needsYou} readOnly={state.readOnly} now={now} dimmed={firstLight} note={firstLightNote} />
       <Panel agents={state.agents} focusedAgent={store.agent} onFocusAgent={store.setAgent} />
     </div>
     </PendingQuestionsContext.Provider>

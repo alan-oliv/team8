@@ -38,7 +38,7 @@ export function previewLines(md: string): { text: string; code: boolean }[] {
   });
 }
 
-/** One modal at a time, oldest call first; a cancelled one stays pending but hidden. */
-export function firstQuestion(items: NeedsYouItem[], cancelled: ReadonlySet<string>): NeedsYouItem | null {
-  return items.find((i) => (i.questions?.length ?? 0) > 0 && !cancelled.has(i.id)) ?? null;
+/** One modal at a time, oldest hold first; a cancelled one stays pending but hidden. */
+export function firstPermit(items: NeedsYouItem[], cancelled: ReadonlySet<string>): NeedsYouItem | null {
+  return items.find((i) => i.kind === 'permission' && !cancelled.has(i.id)) ?? null;
 }
