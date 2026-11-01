@@ -447,7 +447,7 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, swi
           </span>
           <span
             style={{
-              color: 'var(--color-neutral-600)',
+              color: row.needsYou ? 'var(--color-accent-400)' : 'var(--color-neutral-600)',
               fontSize: '10px',
               whiteSpace: 'nowrap',
               flex: 'none',
@@ -459,7 +459,9 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, swi
                 `9 of 10 slots`. */}
             {notWatching
               ? 'running · not watching'
-              : run
+              : row.needsYou
+                ? 'needs you'
+                : run
                 ? run.live
                   ? 'running'
                   : 'ended'

@@ -17,9 +17,12 @@ function stubPermits(): Permits & { held: HeldPermit[] } {
   const settlers = new Map<string, (d: Settled) => void>();
   return {
     held,
-    hold(agent, toolName, input, timeoutMs) {
+    hold(agent, toolName, input, timeoutMs, foreign) {
       const id = `permit-${held.length + 1}`;
-      held.push({ id, agent, toolName, input, expiresAt: Date.now() + timeoutMs });
+      held.push({
+        id, agent, toolName, input, expiresAt: Date.now() + timeoutMs,
+        ...(foreign ? { session: foreign.session, card: { ...foreign.card, id } } : {}),
+      });
       const promise = new Promise<Settled>((settle) => {
         settlers.set(id, settle);
       });
@@ -468,6 +471,60 @@ describe('hooks from a foreign session with no agent_id', () => {
     const events = of(store.replay(), 'hook');
     expect(events).toHaveLength(1);
     expect(events[0].agent).toBe('team-lead');
+  });
+
+  it('holds a PermissionRequest tagged with its session and appends nothing, so the card surfaces when the console shows that session', async () => {
+    const published: number[] = [];
+    const withLead = createHookHandlers({
+      store,
+      permits,
+      leadSessionId: () => 'lead-session-id',
+      publish: () => published.push(1),
+    });
+    const questions = [{ question: 'Ship it?', header: 'Ship', options: [{ label: 'Yes', description: '' }], multiSelect: false }];
+
+    const pending = withLead.hook({
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions },
+      session_id: 'some-other-session',
+      timeout: 10000,
+    });
+
+    const [held] = permits.list();
+    expect(held).toMatchObject({ session: 'some-other-session', toolName: 'AskUserQuestion', agent: 'team-lead' });
+    expect(held.card).toMatchObject({ id: held.id, kind: 'permission', questions, detail: 'AskUserQuestion — 1 question(s) for you' });
+    expect(store.replay()).toEqual([]);
+    expect(published).toHaveLength(1);
+
+    permits.resolve(held.id, 'allow', undefined, { questions, answers: { Ship: 'Yes' } });
+    expect(await pending).toEqual({
+      status: 200,
+      body: {
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision: { behavior: 'allow', updatedInput: { questions, answers: { Ship: 'Yes' } } },
+        },
+      },
+    });
+    expect(store.replay()).toEqual([]);
+    expect(published).toHaveLength(2);
+  });
+
+  it("leaves a foreign hold alone on the lead's own PostToolUse and prompt, and settles it on that session's once it is the lead", async () => {
+    let lead = 'lead-session-id';
+    const withLead = createHookHandlers({ store, permits, leadSessionId: () => lead });
+    const ask = { hook_event_name: 'PermissionRequest', tool_name: 'AskUserQuestion', tool_input: { questions: [] }, timeout: 10000 };
+    const pending = withLead.hook({ ...ask, session_id: 'some-other-session' });
+
+    await withLead.hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: 'lead-session-id' });
+    await withLead.hook({ hook_event_name: 'UserPromptSubmit', prompt: 'carry on', session_id: 'lead-session-id' });
+    expect(permits.list()).toHaveLength(1);
+
+    lead = 'some-other-session';
+    await withLead.hook({ hook_event_name: 'UserPromptSubmit', prompt: 'never mind', session_id: 'some-other-session' });
+    expect(permits.list()).toEqual([]);
+    expect(await pending).toEqual({ status: 200, body: {} });
   });
 
   it('is not dropped for a SessionEnd, so a foreign session end still reaches the SessionEnd branch', async () => {

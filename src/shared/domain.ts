@@ -506,6 +506,8 @@ export interface SessionRow {
   subagents?: number;
   /** Uncommitted work in the tree, against HEAD. Absent on a clean tree. */
   diffstat?: { added: number; removed: number };
+  /** The console holds a permission request of this session for the operator. */
+  needsYou?: true;
 }
 
 /**
