@@ -80,21 +80,13 @@ spawn, before it reads its prompt and without telling the model, and again
 whenever it goes idle. It never takes a task that has an owner.
 
 The mode is derived in the closing, after the tasks exist. Once it comes out as
-teammates, set the owners and add "Close the run" before the closing; in any
-other mode, neither.
+teammates, set the owners before the closing; in any other mode, don't.
 
 - **Name each track's teammate** when you draw the tracks: short, lowercase,
   from what the track builds (`gate`, `skills`, `prices`). `team8:run` spawns
   it under exactly that name.
 - **Make it the `owner` of every task in its track** right after creating the
   tasks, in the same `TaskUpdate` that adds `blockedBy` where there is one.
-- **Add "Close the run" last.** Subject `Close the run`; description "Lead
-  only: complete this once the run log's Run section is committed."; `owner`
-  `team-lead`; blocked by every other task; no `metadata`, so the four-field
-  contract above does not apply to it. While it is open the list is never
-  all-completed, and Claude Code clears an all-completed list: mid-review,
-  that loses round-2 and round-3 `verified` updates. In the table it is the
-  lead's row, with no model and no estimate.
 
 ## Before the closing: three checks
 
@@ -110,8 +102,8 @@ task list only, never a plan.
 2. **Every consumer waits on its producer.** A task that reads a type, field,
    route, file or decision another task produces has that task in its
    `blockedBy`. Missing: `TaskUpdate` with `addBlockedBy`.
-3. **Teammates mode: every task has an owner** — its track's teammate, or
-   `team-lead` for "Close the run". Missing: `TaskUpdate` with `owner`.
+3. **Teammates mode: every task has an owner** — its track's teammate.
+   Missing: `TaskUpdate` with `owner`.
 
 Say the result in the notes: `checks: tracks disjoint · blockers complete · owners set`,
 or what was fixed.
