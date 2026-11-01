@@ -164,6 +164,14 @@ it('reads working / at prompt / N subagents in the state cell, with a live glyph
   expect(metas.some((m) => m?.includes('2 subagents'))).toBe(true);
 });
 
+it('reads needs you in the state cell for a row whose session is waiting on a question', () => {
+  renderSelect({
+    sessions: SESSIONS.map((r) => ({ ...r, folder: '/Users/dev/code/octo', ...(r.id === B5 ? { needsYou: true as const } : {}) })),
+  });
+  const metas = screen.getAllByTestId('team-meta').map((el) => el.textContent);
+  expect(metas.filter((m) => m?.includes('needs you'))).toHaveLength(1);
+});
+
 it('says what to do when nothing is live anywhere', () => {
   renderSelect({ sessions: [], current: '' });
   expect(screen.getByText(/resume a session from your terminal/i)).toBeTruthy();

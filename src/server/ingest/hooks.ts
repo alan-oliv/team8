@@ -1,6 +1,6 @@
 import type { Store, StoredEvent } from '../store';
 import type { TaskPayload, TaskRemovedPayload } from '../project';
-import { holdMsFor, type Permits } from '../control/permits';
+import { holdMsFor, type HeldPermit, type Permits } from '../control/permits';
 import { logError } from '../log';
 import { readAskContext } from './ask-context';
 import type { AskQuestion } from '../../shared/domain';
@@ -37,6 +37,8 @@ export interface HookDeps {
   onAgentActivity?: (agent: string) => void;
   /** A session ended, by its id. The console decides whether anything is left to watch. */
   onSessionEnd?: (sessionId: string) => void;
+  /** The frame changed with no store append: a hold for a session this console is not showing came or went. */
+  publish?: () => void;
 }
 
 export interface HookHandlers {
@@ -96,6 +98,10 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
   const { store, permits } = deps;
   const leadName = deps.leadName ?? 'team-lead';
   const remindedAt = new Map<string, number>();
+  // A foreign hold carries the lead's name too, so only its own session's
+  // hooks — which reach here once that session is the lead — may settle it.
+  const ownsHold = (p: HeldPermit, agent: string, sid: string | undefined) =>
+    p.agent === agent && (p.session === undefined || p.session === sid);
   const touched = (agent: string) => {
     try {
       deps.onAgentActivity?.(agent);
@@ -103,6 +109,73 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
       logError('drain on hook', err); // never throw into the turn
     }
   };
+  /**
+   * Holds a PermissionRequest until the operator decides or the hold expires.
+   * `session` names a session the console is not showing: the card then rides
+   * on the permit rather than this session's log, and index.ts surfaces it
+   * once that session is on screen.
+   */
+  const holdPermission = async (
+    b: Bag,
+    agent: string,
+    toolName: string | undefined,
+    signal: AbortSignal | undefined,
+    session?: string,
+  ): Promise<HookResponse> => {
+    // Holding in read-only mode is the worst of both worlds: the card
+    // renders with its buttons disabled, /api/permits 409s, and nobody can
+    // resolve it, so the agent stalls for the full auto-deny window.
+    // Answering with no decision hands the prompt back to Claude Code.
+    if (deps.readOnly) return { status: 200, body: {} };
+
+    const timeoutMs = num(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
+    const questions =
+      toolName === 'AskUserQuestion' && Array.isArray(bagOf(b.tool_input).questions)
+        ? (bagOf(b.tool_input).questions as AskQuestion[])
+        : undefined;
+    // Only a question with a transcript awaits here, so every other hold
+    // still lands its card before hook() first yields.
+    const transcriptPath = str(b.transcript_path);
+    const context = questions && transcriptPath ? await readAskContext(transcriptPath) : undefined;
+    const card = {
+      kind: 'permission' as const,
+      agent,
+      reason: 'permission',
+      detail: questions
+        ? `AskUserQuestion — ${questions.length} question(s) for you`
+        : `${toolName ?? 'unknown'} — awaiting your decision`,
+      expiresAt: Date.now() + holdMsFor(timeoutMs),
+      ...(questions ? { questions } : {}),
+      ...(context ? { context } : {}),
+    };
+    const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs, session ? { session, card } : undefined);
+    if (session) deps.publish?.();
+    else store.append('needsyou', { id: held.id, ...card }, agent);
+
+    // The hook's curl being killed (interrupt, a terminal-side answer, a
+    // dying session) closes the request while the hold is still up.
+    const onGone = () => permits.withdraw(held.id);
+    signal?.addEventListener('abort', onGone, { once: true });
+    if (signal?.aborted) onGone();
+    const decided = await held.promise;
+    signal?.removeEventListener('abort', onGone);
+    if (session) deps.publish?.();
+    else store.append('needsyou-resolved', { id: held.id }, agent);
+    if (decided.decision === 'withdrawn') return { status: 200, body: {} };
+    return {
+      status: 200,
+      body: {
+        hookSpecificOutput: {
+          hookEventName: 'PermissionRequest',
+          decision:
+            decided.decision === 'allow'
+              ? { behavior: 'allow', ...(decided.updatedInput ? { updatedInput: decided.updatedInput } : {}) }
+              : { behavior: 'deny', message: decided.reason ?? '' },
+        },
+      },
+    };
+  };
+
   return {
     async hook(body, signal) {
       // A thrown error or a hang here is a 10-minute stall of the agent's turn,
@@ -116,17 +189,21 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         // here. A hook with no agent_id is either the lead's or a foreign
         // session's own lead-shaped hooks — only the former belongs to this
         // console. Teammates always carry an agent_id (see agentNameFrom below).
-        if (!str(b.agent_id) && lead && sid && sid !== lead && event !== 'SessionEnd') {
-          return { status: 200, body: {} };
-        }
+        const foreign = !str(b.agent_id) && !!lead && !!sid && sid !== lead;
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str(b.tool_name);
+        // A foreign session's permission request is the one hook the console
+        // answers for a session it is not showing: held and tagged with that
+        // session, and kept off this session's log, so its card surfaces when
+        // the operator switches there (see publish in index.ts).
+        if (foreign && event === 'PermissionRequest') return holdPermission(b, agent, toolName, signal, sid);
+        if (foreign && event !== 'SessionEnd') return { status: 200, body: {} };
         const text = str(b.message) ?? str(b.prompt);
         store.append('hook', { event, agent, toolName, text }, agent);
         if (event === 'SessionEnd' && sid) deps.onSessionEnd?.(sid);
-        // Before the PermissionRequest branch below, which can await the
-        // operator for ten minutes: the transcript explaining why the agent is
-        // asking has to be on screen while they decide.
+        // Before the hold below, which can await the operator for ten minutes:
+        // the transcript explaining why the agent is asking has to be on
+        // screen while they decide.
         touched(agent);
 
         // A held PermissionRequest only clears when the console's own
@@ -138,7 +215,7 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         // resolution regardless of how it got answered.
         if (event === 'PostToolUse') {
           for (const permit of permits.list()) {
-            if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, 'allow');
+            if (ownsHold(permit, agent, sid) && permit.toolName === toolName) permits.resolve(permit.id, 'allow');
           }
           const now = Date.now();
           const stalled =
@@ -168,65 +245,11 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         // it is the lead's own session (or no lead is known yet).
         const sessionOver = event === 'SessionEnd' && (str(b.agent_id) !== undefined || !lead || sid === lead);
         if (event === 'UserPromptSubmit' || sessionOver) {
-          for (const permit of permits.list()) if (permit.agent === agent) permits.withdraw(permit.id);
+          for (const permit of permits.list()) if (ownsHold(permit, agent, sid)) permits.withdraw(permit.id);
         }
 
         if (event !== 'PermissionRequest') return { status: 200, body: {} };
-
-        // Holding in read-only mode is the worst of both worlds: the card
-        // renders with its buttons disabled, /api/permits 409s, and nobody can
-        // resolve it, so the agent stalls for the full auto-deny window.
-        // Answering with no decision hands the prompt back to Claude Code.
-        if (deps.readOnly) return { status: 200, body: {} };
-
-        const timeoutMs = num(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
-        const questions =
-          toolName === 'AskUserQuestion' && Array.isArray(bagOf(b.tool_input).questions)
-            ? (bagOf(b.tool_input).questions as AskQuestion[])
-            : undefined;
-        // Only a question with a transcript awaits here, so every other hold
-        // still lands its card before hook() first yields.
-        const transcriptPath = str(b.transcript_path);
-        const context = questions && transcriptPath ? await readAskContext(transcriptPath) : undefined;
-        const held = permits.hold(agent, toolName ?? 'unknown', b.tool_input, timeoutMs);
-        store.append(
-          'needsyou',
-          {
-            id: held.id,
-            kind: 'permission',
-            agent,
-            reason: 'permission',
-            detail: questions
-              ? `AskUserQuestion — ${questions.length} question(s) for you`
-              : `${toolName ?? 'unknown'} — awaiting your decision`,
-            expiresAt: Date.now() + holdMsFor(timeoutMs),
-            ...(questions ? { questions } : {}),
-            ...(context ? { context } : {}),
-          },
-          agent,
-        );
-
-        // The hook's curl being killed (interrupt, a terminal-side answer, a
-        // dying session) closes the request while the hold is still up.
-        const onGone = () => permits.withdraw(held.id);
-        signal?.addEventListener('abort', onGone, { once: true });
-        if (signal?.aborted) onGone();
-        const decided = await held.promise;
-        signal?.removeEventListener('abort', onGone);
-        store.append('needsyou-resolved', { id: held.id }, agent);
-        if (decided.decision === 'withdrawn') return { status: 200, body: {} };
-        return {
-          status: 200,
-          body: {
-            hookSpecificOutput: {
-              hookEventName: 'PermissionRequest',
-              decision:
-                decided.decision === 'allow'
-                  ? { behavior: 'allow', ...(decided.updatedInput ? { updatedInput: decided.updatedInput } : {}) }
-                  : { behavior: 'deny', message: decided.reason ?? '' },
-            },
-          },
-        };
+        return holdPermission(b, agent, toolName, signal);
       } catch (err) {
         logError('hook', err);
         return { status: 200, body: {} };

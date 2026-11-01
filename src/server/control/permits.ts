@@ -1,6 +1,7 @@
 // Task 15 appends createPermits to this file. Task 14 only needs the port
 // type: hooks.ts holds a PermissionRequest against it and awaits the decision.
 import { randomUUID } from 'node:crypto';
+import type { NeedsYouItem } from '../../shared/domain';
 
 export interface HeldPermit {
   id: string;
@@ -8,6 +9,15 @@ export interface HeldPermit {
   toolName: string;
   input: unknown;
   expiresAt: number;
+  /** Set on a hold for a session the console was not showing — see hooks.ts. */
+  session?: string;
+  card?: NeedsYouItem;
+}
+
+/** A hold for a session the console is not showing: its card rides here, not on that session's log. */
+export interface ForeignHold {
+  session: string;
+  card: Omit<NeedsYouItem, 'id'>;
 }
 
 /**
@@ -26,6 +36,7 @@ export interface Permits {
     toolName: string,
     input: unknown,
     timeoutMs: number,
+    foreign?: ForeignHold,
   ): {
     id: string;
     promise: Promise<PermitOutcome>;
@@ -73,7 +84,7 @@ export function createPermits(): Permits {
   };
 
   return {
-    hold(agent, toolName, input, timeoutMs) {
+    hold(agent, toolName, input, timeoutMs, foreign) {
       const id = randomUUID();
       const holdMs = holdMsFor(timeoutMs);
       let settle!: (v: PermitOutcome) => void;
@@ -83,12 +94,21 @@ export function createPermits(): Permits {
 
       const timer = setTimeout(() => {
         held.delete(id);
-        settle({ decision: 'deny', reason: autoDenyReason(timeoutMs) });
+        // A foreign hold's card may never have been on screen, so its expiry
+        // hands the prompt back to the terminal instead of denying it.
+        settle(foreign ? { decision: 'withdrawn' } : { decision: 'deny', reason: autoDenyReason(timeoutMs) });
       }, holdMs);
       timer.unref?.();
 
       held.set(id, {
-        permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
+        permit: {
+          id,
+          agent,
+          toolName,
+          input,
+          expiresAt: Date.now() + holdMs,
+          ...(foreign ? { session: foreign.session, card: { id, ...foreign.card } } : {}),
+        },
         timer,
         settle,
       });

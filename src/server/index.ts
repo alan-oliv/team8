@@ -1257,8 +1257,13 @@ export async function main(argv: string[]): Promise<number> {
     // list exists. It is a signature comparison per frame and a no-op until
     // somebody has asked for a brief at all.
     briefs.observe({ agents: team.agents, tasks: team.tasks }, hub.clients > 0);
+    // Holds taken for sessions the console was not showing ride on the permits,
+    // not the log (see hooks.ts): the ones for the session on screen join its
+    // cards, and every one marks its picker row.
+    const foreign = permits.list().filter((p) => p.session !== undefined);
     return {
       ...team,
+      needsYou: [...team.needsYou, ...foreign.flatMap((p) => (p.session === leadSessionId && p.card ? [p.card] : []))],
       // Hook-supplied values win; the disk-derived ones are the floor, so the
       // header is right whether or not the status line is installed.
       sessionName: team.sessionName ?? leadFacts.sessionName,
@@ -1268,7 +1273,9 @@ export async function main(argv: string[]): Promise<number> {
       leadSessionId: team.leadSessionId || (leadSessionId ?? ''),
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
-      ...(liveRows ? { sessions: liveRows } : {}),
+      ...(liveRows
+        ? { sessions: liveRows.map((r) => (foreign.some((p) => p.session === r.id) ? { ...r, needsYou: true as const } : r)) }
+        : {}),
       switching,
       watching,
       build,
@@ -1548,6 +1555,7 @@ export async function main(argv: string[]): Promise<number> {
       permits,
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
+      publish: () => hub.publish(),
       onAgentActivity: (agent) => void ingest.drainAgent(agent),
       // Respond first: the hook's curl treats a dropped reply as a crash and
       // runs console-restart.sh, which would bring this console straight back.

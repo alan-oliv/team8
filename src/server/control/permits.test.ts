@@ -62,6 +62,15 @@ describe('createPermits', () => {
     expect(await held.promise).toEqual({ decision: 'allow', reason: undefined, updatedInput });
   });
 
+  it('a foreign hold carries its session and card, and expires with no decision instead of a deny', async () => {
+    const permits = createPermits();
+    const card = { kind: 'permission' as const, agent: 'team-lead', reason: 'permission', detail: 'AskUserQuestion — 1 question(s) for you' };
+    const held = permits.hold('team-lead', 'AskUserQuestion', { questions: [] }, 100, { session: 'other-session', card });
+    expect(permits.list()[0]).toMatchObject({ id: held.id, session: 'other-session', card: { ...card, id: held.id } });
+    expect(await held.promise).toEqual({ decision: 'withdrawn' });
+    expect(permits.list()).toEqual([]);
+  });
+
   it('withdraws a hold with no decision, clearing its timer', async () => {
     const permits = createPermits();
     const held = permits.hold('probe-alpha', 'AskUserQuestion', { questions: [] }, 100);
