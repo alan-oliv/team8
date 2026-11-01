@@ -4638,7 +4638,7 @@ function createPermits() {
     return entry;
   };
   return {
-    hold(agent, toolName, input, timeoutMs) {
+    hold(agent, toolName, input, timeoutMs, foreign) {
       const id = randomUUID2();
       const holdMs = holdMsFor(timeoutMs);
       let settle;
@@ -4647,11 +4647,18 @@ function createPermits() {
       });
       const timer = setTimeout(() => {
         held.delete(id);
-        settle({ decision: "deny", reason: autoDenyReason(timeoutMs) });
+        settle(foreign ? { decision: "withdrawn" } : { decision: "deny", reason: autoDenyReason(timeoutMs) });
       }, holdMs);
       timer.unref?.();
       held.set(id, {
-        permit: { id, agent, toolName, input, expiresAt: Date.now() + holdMs },
+        permit: {
+          id,
+          agent,
+          toolName,
+          input,
+          expiresAt: Date.now() + holdMs,
+          ...foreign ? { session: foreign.session, card: { id, ...foreign.card } } : {}
+        },
         timer,
         settle
       });
@@ -4781,12 +4788,49 @@ function createHookHandlers(deps) {
   const { store, permits } = deps;
   const leadName = deps.leadName ?? "team-lead";
   const remindedAt = /* @__PURE__ */ new Map();
+  const ownsHold = (p, agent, sid) => p.agent === agent && (p.session === void 0 || p.session === sid);
   const touched = (agent) => {
     try {
       deps.onAgentActivity?.(agent);
     } catch (err) {
       logError("drain on hook", err);
     }
+  };
+  const holdPermission = async (b, agent, toolName, signal, session) => {
+    if (deps.readOnly) return { status: 200, body: {} };
+    const timeoutMs = num2(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
+    const questions = toolName === "AskUserQuestion" && Array.isArray(bagOf2(b.tool_input).questions) ? bagOf2(b.tool_input).questions : void 0;
+    const transcriptPath = str3(b.transcript_path);
+    const context = questions && transcriptPath ? await readAskContext(transcriptPath) : void 0;
+    const card = {
+      kind: "permission",
+      agent,
+      reason: "permission",
+      detail: questions ? `AskUserQuestion \u2014 ${questions.length} question(s) for you` : `${toolName ?? "unknown"} \u2014 awaiting your decision`,
+      expiresAt: Date.now() + holdMsFor(timeoutMs),
+      ...questions ? { questions } : {},
+      ...context ? { context } : {}
+    };
+    const held = permits.hold(agent, toolName ?? "unknown", b.tool_input, timeoutMs, session ? { session, card } : void 0);
+    if (session) deps.publish?.();
+    else store.append("needsyou", { id: held.id, ...card }, agent);
+    const onGone = () => permits.withdraw(held.id);
+    signal?.addEventListener("abort", onGone, { once: true });
+    if (signal?.aborted) onGone();
+    const decided = await held.promise;
+    signal?.removeEventListener("abort", onGone);
+    if (session) deps.publish?.();
+    else store.append("needsyou-resolved", { id: held.id }, agent);
+    if (decided.decision === "withdrawn") return { status: 200, body: {} };
+    return {
+      status: 200,
+      body: {
+        hookSpecificOutput: {
+          hookEventName: "PermissionRequest",
+          decision: decided.decision === "allow" ? { behavior: "allow", ...decided.updatedInput ? { updatedInput: decided.updatedInput } : {} } : { behavior: "deny", message: decided.reason ?? "" }
+        }
+      }
+    };
   };
   return {
     async hook(body, signal) {
@@ -4795,18 +4839,18 @@ function createHookHandlers(deps) {
         const event = str3(b.hook_event_name) ?? "";
         const sid = str3(b.session_id);
         const lead = deps.leadSessionId?.();
-        if (!str3(b.agent_id) && lead && sid && sid !== lead && event !== "SessionEnd") {
-          return { status: 200, body: {} };
-        }
+        const foreign = !str3(b.agent_id) && !!lead && !!sid && sid !== lead;
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str3(b.tool_name);
+        if (foreign && event === "PermissionRequest") return holdPermission(b, agent, toolName, signal, sid);
+        if (foreign && event !== "SessionEnd") return { status: 200, body: {} };
         const text = str3(b.message) ?? str3(b.prompt);
         store.append("hook", { event, agent, toolName, text }, agent);
         if (event === "SessionEnd" && sid) deps.onSessionEnd?.(sid);
         touched(agent);
         if (event === "PostToolUse") {
           for (const permit of permits.list()) {
-            if (permit.agent === agent && permit.toolName === toolName) permits.resolve(permit.id, "allow");
+            if (ownsHold(permit, agent, sid) && permit.toolName === toolName) permits.resolve(permit.id, "allow");
           }
           const now = Date.now();
           const stalled = str3(b.agent_id) && !deps.readOnly && now - (remindedAt.get(agent) ?? -Infinity) >= PROGRESS_STALL_MS ? stalledTask(store.replay(), agent, now) : void 0;
@@ -4826,45 +4870,10 @@ function createHookHandlers(deps) {
         }
         const sessionOver = event === "SessionEnd" && (str3(b.agent_id) !== void 0 || !lead || sid === lead);
         if (event === "UserPromptSubmit" || sessionOver) {
-          for (const permit of permits.list()) if (permit.agent === agent) permits.withdraw(permit.id);
+          for (const permit of permits.list()) if (ownsHold(permit, agent, sid)) permits.withdraw(permit.id);
         }
         if (event !== "PermissionRequest") return { status: 200, body: {} };
-        if (deps.readOnly) return { status: 200, body: {} };
-        const timeoutMs = num2(b.timeout) ?? deps.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
-        const questions = toolName === "AskUserQuestion" && Array.isArray(bagOf2(b.tool_input).questions) ? bagOf2(b.tool_input).questions : void 0;
-        const transcriptPath = str3(b.transcript_path);
-        const context = questions && transcriptPath ? await readAskContext(transcriptPath) : void 0;
-        const held = permits.hold(agent, toolName ?? "unknown", b.tool_input, timeoutMs);
-        store.append(
-          "needsyou",
-          {
-            id: held.id,
-            kind: "permission",
-            agent,
-            reason: "permission",
-            detail: questions ? `AskUserQuestion \u2014 ${questions.length} question(s) for you` : `${toolName ?? "unknown"} \u2014 awaiting your decision`,
-            expiresAt: Date.now() + holdMsFor(timeoutMs),
-            ...questions ? { questions } : {},
-            ...context ? { context } : {}
-          },
-          agent
-        );
-        const onGone = () => permits.withdraw(held.id);
-        signal?.addEventListener("abort", onGone, { once: true });
-        if (signal?.aborted) onGone();
-        const decided = await held.promise;
-        signal?.removeEventListener("abort", onGone);
-        store.append("needsyou-resolved", { id: held.id }, agent);
-        if (decided.decision === "withdrawn") return { status: 200, body: {} };
-        return {
-          status: 200,
-          body: {
-            hookSpecificOutput: {
-              hookEventName: "PermissionRequest",
-              decision: decided.decision === "allow" ? { behavior: "allow", ...decided.updatedInput ? { updatedInput: decided.updatedInput } : {} } : { behavior: "deny", message: decided.reason ?? "" }
-            }
-          }
-        };
+        return holdPermission(b, agent, toolName, signal);
       } catch (err) {
         logError("hook", err);
         return { status: 200, body: {} };
@@ -7335,8 +7344,10 @@ async function main(argv) {
     const workflows = foldWorkflows(events);
     const lead = (team.agents.find((a) => a.isLead) ?? team.agents[0])?.name;
     briefs.observe({ agents: team.agents, tasks: team.tasks }, hub.clients > 0);
+    const foreign = permits.list().filter((p) => p.session !== void 0);
     return {
       ...team,
+      needsYou: [...team.needsYou, ...foreign.flatMap((p) => p.session === leadSessionId && p.card ? [p.card] : [])],
       // Hook-supplied values win; the disk-derived ones are the floor, so the
       // header is right whether or not the status line is installed.
       sessionName: team.sessionName ?? leadFacts.sessionName,
@@ -7346,7 +7357,7 @@ async function main(argv) {
       leadSessionId: team.leadSessionId || (leadSessionId ?? ""),
       mode: modeOf(team.agents.length, workflows),
       decidedMode: leadFacts.mode,
-      ...liveRows ? { sessions: liveRows } : {},
+      ...liveRows ? { sessions: liveRows.map((r) => foreign.some((p) => p.session === r.id) ? { ...r, needsYou: true } : r) } : {},
       switching,
       watching,
       build,
@@ -7529,6 +7540,7 @@ async function main(argv) {
       permits,
       readOnly: cli.readOnly,
       leadSessionId: () => leadSessionId,
+      publish: () => hub.publish(),
       onAgentActivity: (agent) => void ingest.drainAgent(agent),
       // Respond first: the hook's curl treats a dropped reply as a crash and
       // runs console-restart.sh, which would bring this console straight back.
