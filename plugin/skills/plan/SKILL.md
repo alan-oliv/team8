@@ -25,6 +25,11 @@ waits on.
 who ran, on what model, how many rounds, what it was estimated at, what it
 cost. It is how a past session gets debugged. See The run log below.
 
+**Did `team8:tasks` send you one item from a batch?** Plan only that item, and
+stop once its tasks land. Hand back to `team8:tasks` instead of running Phase 3,
+so the batch gets one closing and one `team8:run`. Only the first item planned
+in the batch cuts the branch and opens the run log. Later items reuse both.
+
 ## Phase 1: Brainstorm
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
@@ -320,6 +325,9 @@ code while planning. If a step rests on something unproven, ask the user with As
 settling it is a spike in Phase 1, not work in Phase 2.
 
 ## Phase 3: Run
+
+If `team8:tasks` sent you one item from a batch, skip this phase and hand back
+to it (see Overview).
 
 The spec approval in Phase 1 was the gate. A finished plan runs at once; the
 user adjusts a model, a task or the mode by interrupting, and every teammate
