@@ -23,6 +23,35 @@ The `model` set here goes on each dispatch's `Agent` call, and the `effort` pick
 executor definition it spawns: `team8:executor-low`, `team8:executor`,
 `team8:executor-high` or `team8:executor-xhigh`.
 
+## No plan first? Check each item
+
+This applies when the items are tickets from ADO, Jira or Linear, a pasted list,
+or the user's own list, and `team8:plan` hasn't run on them this session. Check
+every item before it becomes a task. It's ready when its ticket and a few greps
+of the repo answer all four:
+
+1. **Outcome:** what's observably true once its PR merges. "Investigate X" doesn't name one.
+2. **Place:** the files or flow it changes.
+3. **Proof:** the test, command or check that shows it's done.
+4. **No open call:** no product or design decision and no choice between approaches left open. A bug needs a confirmed cause.
+
+Show the verdict before the first `TaskCreate`:
+
+| Item | Ready | Missing |
+|---|---|---|
+| AB#1234 Hide the class price for members | yes | — |
+| AB#1240 Investigate gift card add errors | no | outcome, cause |
+
+A ready item becomes tasks as written, and its descriptions carry what the
+greps found. An item that isn't ready goes through `team8:plan` by itself, one
+item at a time, before the closing. It gets its own classification and its own
+approval, and a bug with no confirmed cause goes to `team8:reproduce` first.
+Its tasks join this list, then control comes back here. The batch gets one
+closing and one `team8:run`. If an item's plan ends as a spike, it has an
+answer instead of tasks; say so in the notes.
+
+Tasks that `team8:plan` itself hands over skip this check.
+
 ## The contract: four fields, every task
 
 Every `TaskCreate` carries all four. A task missing the fourth is not finished.
@@ -228,6 +257,7 @@ in the same direction, change the factor instead.
 
 | Mistake | Fix |
 |---|---|
+| A ticket turned into a task without the readiness check | Check it against the four questions first. Any "no" means it goes through `team8:plan` by itself. |
 | One model for the whole list | Model is per-task. A list of nine usually spans two or three tiers. |
 | Mode left implicit, or left to `run` | It is part 1 of the closing. Read it off the tracks and say it with its reason. |
 | Teammates by habit for a one-track list | One track is subagents. Count the tracks before naming the mode. |

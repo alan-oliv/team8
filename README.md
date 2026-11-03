@@ -215,7 +215,9 @@ you can re-run after the fix.
 
 `team8:tasks` sets the contract a task needs before it's handed off: a
 description that stands alone, real `blockedBy` dependencies, and a
-`model`/`effort` sized to the work.
+`model`/`effort` sized to the work. If tickets arrive without a plan, it first
+checks whether each one has enough to go straight to a PR, and sends any that
+don't through `team8:plan` on their own.
 
 `team8:run` turns settled work into tasks and teammates: how many teammates,
 the dispatch contract, and the branch shape the dependency graph implies.
