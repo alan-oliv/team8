@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, SettingsContext } from '../state/useSettings';
 import { buildCast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
 import { TranscriptFeed } from './TranscriptFeed';
+import { NowContext } from './Elapsed';
 
 afterEach(cleanup);
 
@@ -1049,6 +1050,42 @@ describe('the stream size', () => {
     children: [],
   };
 
+  describe('the stream closing row', () => {
+    const T = 1787843000000;
+
+    it('is a working line while the turn runs', () => {
+      render(
+        <NowContext value={T + 65000}>
+          <TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} currentTool="Read" />
+        </NowContext>,
+      );
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toBe('Read · 1m 05s');
+      expect(screen.queryByTestId('stream-prompt')).toBeNull();
+    });
+
+    it('says working when no tool is current', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} />);
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toMatch(/^working · \dm \d\ds$/);
+    });
+
+    it('shows no elapsed time before the turn has a start', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working />);
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toBe('working');
+    });
+
+    it('is the cursor row when the agent is not working', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
+      expect(screen.getByTestId('stream-prompt')).toBeTruthy();
+      expect(screen.queryByTestId('stream-working')).toBeNull();
+    });
+
+    it('is absent from a wall column', () => {
+      render(<TranscriptFeed lines={LINES} size="wall" working />);
+      expect(screen.queryByTestId('stream-working')).toBeNull();
+      expect(screen.queryByTestId('stream-prompt')).toBeNull();
+    });
+  });
+
   it('takes the canvas stream metrics, not the wall column ones', () => {
     const { rerender } = render(<TranscriptFeed lines={LINES} size="stream" />);
     const feed = screen.getByTestId('transcript-feed');
@@ -1150,13 +1187,8 @@ describe('the stream size', () => {
     expect(caret.className).toBe('');
   });
 
-  // The canvas draws the prompt row on a bar reading `working · 4m 08s`, so it
-  // is the terminal's own cursor rather than a readout of whether a turn runs.
-  it('closes the stream with a prompt cursor at any status', () => {
-    const { rerender } = render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
-    expect(screen.getByTestId('stream-prompt').textContent).toBe('❯');
-
-    rerender(<TranscriptFeed lines={LINES} size="stream" working />);
+  it('closes an idle stream with a prompt cursor', () => {
+    render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
     expect(screen.getByTestId('stream-prompt').textContent).toBe('❯');
   });
 

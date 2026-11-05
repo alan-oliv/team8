@@ -167,6 +167,34 @@ describe('Wall', () => {
     expect(screen.getByTestId('composer-solo')).toBeTruthy();
   });
 
+  // The lead's session runs the plugin's module and polls the console, so a
+  // message typed here enters its terminal as the operator's own prompt.
+  it('gives a solo roster the composer once its lead is reachable', () => {
+    render(
+      <Wall agents={[agents[0]]} focused={agents[0].name} onFocus={vi.fn()} now={FIXTURE_NOW} leadReachable />,
+    );
+    expect(screen.getByTestId('composer-input')).toBeTruthy();
+    expect(screen.queryByTestId('composer-solo')).toBeNull();
+  });
+
+  it('shows the solo lead a working line while it works and the cursor row when idle', () => {
+    const solo = (status: 'working' | 'idle') => (
+      <Wall
+        agents={[{ ...agents[0], status, turnStartedAt: FIXTURE_NOW - 5000 }]}
+        focused={agents[0].name}
+        onFocus={vi.fn()}
+        now={FIXTURE_NOW}
+        leadReachable
+      />
+    );
+    const { rerender } = render(solo('working'));
+    expect(screen.getByTestId('stream-working')).toBeTruthy();
+    expect(screen.queryByTestId('stream-prompt')).toBeNull();
+    rerender(solo('idle'));
+    expect(screen.getByTestId('stream-prompt')).toBeTruthy();
+    expect(screen.queryByTestId('stream-working')).toBeNull();
+  });
+
   // At rest it is a prompt and a hint. No @ means the lead, which is the common
   // case, so there is nothing to pick and nothing on screen to pick it with.
   it('shows no chip and no picker until an @ is typed', () => {

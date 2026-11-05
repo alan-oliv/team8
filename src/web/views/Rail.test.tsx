@@ -261,6 +261,18 @@ describe('Rail row memoisation', () => {
     expect(row.renders).toBe(0);
     expect(elapsed()).toBe('0m 43s');
   });
+
+  it('gives a solo roster a note while its lead is not reachable', () => {
+    render(<Rail agents={[agents[0]]} focused={agents[0].name} onFocus={vi.fn()} now={FIXTURE_NOW} />);
+    expect(screen.getByTestId('composer-solo')).toBeTruthy();
+    expect(screen.queryByTestId('composer-input')).toBeNull();
+  });
+
+  it('gives a solo roster the composer once its lead is reachable', () => {
+    render(<Rail agents={[agents[0]]} focused={agents[0].name} onFocus={vi.fn()} now={FIXTURE_NOW} leadReachable />);
+    expect(screen.getByTestId('composer-input')).toBeTruthy();
+    expect(screen.queryByTestId('composer-solo')).toBeNull();
+  });
 });
 
 describe('Rail attached-pane memoisation', () => {

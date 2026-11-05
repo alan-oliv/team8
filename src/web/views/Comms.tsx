@@ -333,7 +333,7 @@ function Bubble({
 }
 
 export function Comms({
-  agents, mail, tasks, openThread, onFocus, onShowInWall, now, readOnly = false,
+  agents, mail, tasks, openThread, onFocus, onShowInWall, now, readOnly = false, leadReachable = false,
 }: {
   agents: Agent[];
   mail: MailMessage[];
@@ -345,6 +345,8 @@ export function Comms({
   onShowInWall: (name: string, alsoReveal?: string) => void;
   now: number;
   readOnly?: boolean;
+  /** The lead's session polls the console for the operator's messages: see `TeamState.leadReachable`. */
+  leadReachable?: boolean;
 }) {
   // `read` arrives settled and is taken as it comes. The one artefact that
   // proves a read is a <teammate-message> frame in the recipient's own
@@ -631,6 +633,7 @@ export function Comms({
           tasks={tasks}
           now={now}
           readOnly={readOnly}
+          leadReachable={leadReachable}
           onShowInWall={() => onShowInWall(focusTargetOf(open, agents), alsoRevealOf(open, agents))}
         />
       )}
@@ -639,13 +642,14 @@ export function Comms({
 }
 
 function ThreadPane({
-  thread, agents, tasks, now, readOnly, onShowInWall,
+  thread, agents, tasks, now, readOnly, leadReachable, onShowInWall,
 }: {
   thread: Thread;
   agents: Agent[];
   tasks: Task[];
   now: number;
   readOnly: boolean;
+  leadReachable: boolean;
   onShowInWall: () => void;
 }) {
   const cast = useCast();
@@ -656,10 +660,11 @@ function ThreadPane({
   const [first, second] = [thread.a, thread.b]
     .map((name) => agents.find((a) => a.name === name))
     .filter((a): a is Agent => a !== undefined);
-  // See Composer: the lead's inbox is drained by the team loop, not by the lead.
-  const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed');
-  // No teammate ever, departed or otherwise: the composer becomes a note.
-  const solo = !agents.some((a) => !a.isLead);
+  // See Composer: the lead's inbox is drained by the team loop, not by the lead —
+  // unless the lead's session polls the console itself (`leadReachable`).
+  const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed') || leadReachable;
+  // No teammate ever and no module polling: the composer becomes a note.
+  const solo = !agents.some((a) => !a.isLead) && !teamLive;
   // The whole roster goes to the composer, which drops the departed itself:
   // a team with no reader left gets a DISABLED composer, not a vanished one —
   // taking it away reads as the console having lost the thread, where disabled

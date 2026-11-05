@@ -1,5 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { register as registerWave } from './wave-notify.ts'
+import { poll as pollOutbox, start as startOutbox } from './outbox.ts'
 import { bar, consoleLink, elapsed, isDone, progress, progressOf, skillIn, stageAfter, stageOf, type Health, type Stage, type Task } from './team.ts'
 
 type Clock = { startedAt: number; stoppedAt?: number }
@@ -117,6 +118,7 @@ export const register: Register = (on, options) => {
       if (!ticking) {
         $.clock.every(5000, () => void refresh($))
         $.clock.every(1000, () => void tick($))
+        startOutbox($)
         ticking = true
       }
     } catch {}
@@ -144,6 +146,8 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     try {
       refreshSoon($)
+      // The lead's own turn ending: a message queued mid-turn lands without the poll's lag.
+      if (e.agentId === undefined) void pollOutbox($)
     } catch {}
     return next(e)
   })

@@ -5,6 +5,7 @@ import path from 'node:path';
 import http, { type Server } from 'node:http';
 import { openStore, type Store } from './store';
 import { createPermits, type Permits } from './control/permits';
+import { createOutbox } from './control/outbox';
 import { createHookHandlers } from './ingest/hooks';
 import { createStream, type StreamHub } from './stream';
 import {
@@ -48,6 +49,7 @@ async function boot(): Promise<{ server: Server; url: string }> {
   selectCalls = [];
   const server = createHttpServer({
     permits,
+    outbox: createOutbox(),
     hooks: createHookHandlers({ store, permits }),
     stream: hub,
     state: () => state,

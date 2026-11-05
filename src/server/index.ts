@@ -9,6 +9,7 @@ import { project, transcriptHistory, transcriptLineText } from './project';
 import { startFileIngest, type FileIngest } from './ingest/files';
 import { createHookHandlers } from './ingest/hooks';
 import { createPermits } from './control/permits';
+import { createOutbox } from './control/outbox';
 import { setTeamsRoot } from './control/mailbox';
 import { createBriefs } from './brief';
 import { createStream } from './stream';
@@ -1214,6 +1215,7 @@ export async function main(argv: string[]): Promise<number> {
 
   const store = openStore(cli.dbPath, teamName ?? '');
   const permits = createPermits();
+  const outbox = createOutbox();
 
   /**
    * The published frame. `project()` folds a TEAM and knows nothing about
@@ -1277,6 +1279,7 @@ export async function main(argv: string[]): Promise<number> {
         ? { sessions: liveRows.map((r) => (foreign.some((p) => p.session === r.id) ? { ...r, needsYou: true as const } : r)) }
         : {}),
       switching,
+      leadReachable: leadSessionId !== undefined && outbox.reachable(leadSessionId),
       watching,
       build,
       workflows,
@@ -1550,6 +1553,8 @@ export async function main(argv: string[]): Promise<number> {
   server.removeAllListeners('request');
   server.on('request', createHttpHandler({
     permits,
+    outbox,
+    leadSessionId: () => leadSessionId,
     hooks: createHookHandlers({
       store: live,
       permits,

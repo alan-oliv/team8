@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Server } from 'node:http';
 import { openStore, type Store } from './store';
 import { createPermits, type Permits } from './control/permits';
+import { createOutbox, type Outbox } from './control/outbox';
 import { createHookHandlers } from './ingest/hooks';
 import { createStream, type StreamHub } from './stream';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,7 @@ const TEAM = 'session-98b0b4a7';
 let dir: string;
 let store: Store;
 let permits: Permits;
+let outbox: Outbox;
 let hub: StreamHub;
 let state: TeamState;
 
@@ -78,6 +80,8 @@ async function boot(readOnly: boolean, webDist?: string): Promise<{ server: Serv
   hub = createStream(() => state, 50);
   const server = createHttpServer({
     permits,
+    outbox,
+    leadSessionId: () => state.leadSessionId,
     hooks: createHookHandlers({ store, permits }),
     stream: hub,
     state: () => state,
@@ -143,6 +147,7 @@ beforeEach(async () => {
   setTeamsRoot(dir);
   store = openStore(path.join(dir, 'events.db'));
   permits = createPermits();
+  outbox = createOutbox();
 });
 
 afterEach(async () => {
@@ -187,6 +192,7 @@ describe('GET /stream', () => {
     }, 50);
     const server = createHttpServer({
       permits,
+      outbox,
       hooks: createHookHandlers({ store, permits }),
       stream: failing,
       state: () => emptyState(false),
@@ -356,6 +362,53 @@ describe('control routes', () => {
       // what the operator's own message to the lead used to become.
       expect(entries.at(-1)!.from).not.toBe('team-lead');
       expect(entries.at(-1)!.text).toBe('from the console');
+    } finally {
+      await shutdown(server);
+    }
+  });
+
+  it('GET /api/outbox/:session serves the queue, makes the lead reachable, and routes its messages there', async () => {
+    const { server, url } = await boot(false);
+    try {
+      const session = state.leadSessionId;
+      const publishes = vi.spyOn(hub, 'publish');
+
+      const first = await fetch(`${url}/api/outbox/${session}`);
+      expect(first.status).toBe(200);
+      expect(await first.json()).toEqual({ messages: [] });
+      expect(outbox.reachable(session)).toBe(true);
+      // The first poll flips the frame's flag; a second one changes nothing.
+      expect(publishes).toHaveBeenCalledTimes(1);
+      await fetch(`${url}/api/outbox/${session}`);
+      expect(publishes).toHaveBeenCalledTimes(1);
+
+      const sent = await fetch(`${url}/api/agents/team-lead/message`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'from the console' }),
+      });
+      expect(sent.status).toBe(200);
+      const { msgId } = (await sent.json()) as { msgId: string };
+
+      const second = await fetch(`${url}/api/outbox/${session}`);
+      const { messages } = (await second.json()) as { messages: { id: string; text: string; ts: number }[] };
+      expect(messages.map((m) => [m.id, m.text])).toEqual([[msgId, 'from the console']]);
+      // The module delivers this one: nothing reached the inbox file.
+      await expect(fs.access(path.join(dir, TEAM, 'inboxes', 'team-lead.json'))).rejects.toThrow();
+
+      expect((await post(`${url}/api/outbox/${msgId}/ack`)).status).toBe(200);
+      expect(await (await fetch(`${url}/api/outbox/${session}`)).json()).toEqual({ messages: [] });
+      expect((await post(`${url}/api/outbox/${msgId}/ack`)).status).toBe(404);
+    } finally {
+      await shutdown(server);
+    }
+  });
+
+  it('GET /api/outbox/:session rejects a hostile segment and is not gated by read-only', async () => {
+    const { server, url } = await boot(true);
+    try {
+      expect((await fetch(`${url}/api/outbox/..%2F..%2Fetc%2Fpasswd`)).status).toBe(400);
+      expect((await fetch(`${url}/api/outbox/${state.leadSessionId}`)).status).toBe(200);
     } finally {
       await shutdown(server);
     }

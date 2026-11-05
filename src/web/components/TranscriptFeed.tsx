@@ -18,7 +18,9 @@ import { useAppearance } from '../state/useSettings';
 import { useCast } from '../state/useCast';
 import { DENSITY } from '../themes';
 import { codeTokens, segments, toolCodeLang, type CodeTokenKind } from '../../shared/code';
+import { AGENT_STATUS } from '../../shared/status';
 import { Prose } from './Prose';
+import { Elapsed } from './Elapsed';
 import {
   jsonRows,
   jsonSummary,
@@ -712,6 +714,8 @@ export function TranscriptFeed({
   size,
   agent,
   working = true,
+  turnStartedAt,
+  currentTool,
   subagents,
 }: {
   lines: TranscriptLine[];
@@ -720,6 +724,10 @@ export function TranscriptFeed({
   agent?: string;
   /** Dims the whole ladder when this agent is not the one working. */
   working?: boolean;
+  /** When the running turn began; the stream's working line counts from it. */
+  turnStartedAt?: number;
+  /** The tool the stream's working line names; "working" when there is none. */
+  currentTool?: string;
   /** This agent's own Task/Agent dispatches, in spawn order. */
   subagents?: Subagent[];
 }) {
@@ -1369,12 +1377,36 @@ export function TranscriptFeed({
         );
       })}
 
-      {/* The canvas closes its stream with a prompt row, and draws it on a bar
-          reading `working · 4m 08s` — so it is the terminal's own cursor,
-          always there, not a readout of whether a turn is running. The composer
+      {/* The canvas closes its stream with the terminal's own cursor row, and
+          while a turn runs that row is the working line instead. The composer
           below carries the same glyph but is the place to type; this is where
           the session is. */}
-      {s.wrap && (
+      {s.wrap && working && (
+        <div
+          data-testid="stream-working"
+          style={{ display: 'flex', gap: `${s.gap}px`, alignItems: 'center', paddingTop: '4px' }}
+        >
+          <span
+            style={{
+              color: AGENT_STATUS.working.color,
+              fontSize: '11px',
+              animation: 'pulse 1.2s ease-in-out infinite',
+            }}
+          >
+            {AGENT_STATUS.working.glyph}
+          </span>
+          <span style={{ color: 'var(--color-neutral-600)', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
+            {currentTool ?? 'working'}
+            {turnStartedAt !== undefined && (
+              <>
+                {' · '}
+                <Elapsed startedAt={turnStartedAt} />
+              </>
+            )}
+          </span>
+        </div>
+      )}
+      {s.wrap && !working && (
         <div
           data-testid="stream-prompt"
           aria-hidden

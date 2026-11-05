@@ -426,6 +426,7 @@ export function App() {
             onFocus={store.setAgent}
             now={now}
             readOnly={state.readOnly}
+            leadReachable={state.leadReachable ?? false}
             widths={store.widths}
             onWidthChange={store.setWidth}
             tasks={state.tasks}
@@ -470,6 +471,7 @@ export function App() {
             }}
             now={now}
             readOnly={state.readOnly}
+            leadReachable={state.leadReachable ?? false}
           />
         )}
         {view === 'tasks' && <Tasks tasks={state.tasks} teamName={state.teamName} />}
@@ -493,6 +495,7 @@ export function App() {
             onFocus={store.setAgent}
             now={now}
             readOnly={state.readOnly}
+            leadReachable={state.leadReachable ?? false}
             subagents={state.subagents}
           />
         )}
