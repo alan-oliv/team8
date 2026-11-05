@@ -49,10 +49,11 @@ and anything that felt slow (which view, roughly how long).
 /team8:plan I need a tiny key-value store for Node with get, set and delete. It has to be saved to disk and loaded back on startup, and it shouldn't corrupt the file if the machine dies in the middle of a write.
 ```
 
-- [ ] Closing says `mode: subagents`: a peak of 1 with at least one standard task. One task is enough — a single standard task is subagents, not solo
+- [ ] The ask offers `subagents (Recommended)` first, then `teammates`: one small store is a single track of standard tasks, not a feature in pieces. Answer subagents
+- [ ] Closing says `mode: subagents`. One task is enough — a single standard task is subagents, not solo
 - [ ] Whether it wrote a spec and plan. If it did: `plan` appears as the second tab once the skeleton is written, rows fill in one per Edit, matching the `Plan ▓▓░░ n/N` lines in the terminal, and opening a row shows that task's section
 - [ ] After "start the work", `trace` appears with one lane per implementer and reviewer
-- [ ] Never two implementers at the same time in `trace`
+- [ ] One implementer at a time in `trace`, since this is a single track; separate tickets would run one lane per track at once, each in its own worktree
 - [ ] Run log records the mode and its reason
 
 ## 3. Workflow: `pdf-lab`
@@ -96,6 +97,7 @@ with 20 and go up to 100 once the run works.
 /team8:plan I want a simple todo app I can run locally: a small Node API that saves to a file, a React page to add, check off and delete todos, and a command-line client for when I'm in the terminal. It should come with a test that goes through the whole thing end to end.
 ```
 
+- [ ] The ask offers `teammates (Recommended)` first, then `subagents`: one app split into API, web and CLI that build at once. Answer teammates
 - [ ] Closing says `mode: teammates` with a peak of 2 or more: the API contract first, then API, web and CLI at once in files that don't overlap, the end-to-end test last
 - [ ] Whether it wrote a spec and plan. If it did, the plan tab fills in while planning
 - [ ] `wall`: one column per teammate, lead on the left

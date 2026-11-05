@@ -338,7 +338,8 @@ is stopped and re-dispatched from the edited list.
    the batch branch, so every executor can read them.
 2. **Close with the `team8:tasks` ending**: the plan path, the table (task,
    blocked by, model, estimate) with its total, and the notes (the mode and
-   its reason per `team8:tasks` Mode, tracks, what starts now, sizing you were
+   its reason per `team8:tasks` Mode — which asked the user where the choice
+   was subagents or teammates — tracks, what starts now, sizing you were
    unsure about, any residual ruling). No question follows it.
 3. **In the same turn, invoke `team8:run`** in the stated mode. The tasks and
    the branch exist; `run` skips its own task creation and branch cut. Ending

@@ -24,10 +24,11 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    task has to carry, and the model each one is worth.
    If `team8:plan` already landed them, skip this step and its branch cut.
 4. **Take the mode from the task list's closing notes** — solo, subagents,
-   teammates or workflow, per `team8:tasks` Mode. If no mode was stated, derive
-   it now from the same table and say it in one line. Then, for teammates,
-   take the waves from the closing: teammates alive at any moment are the
-   tracks in the current wave, never all the tracks.
+   teammates or workflow, per `team8:tasks` Mode. If no mode was stated, settle
+   it now as that Mode does — read it off the graph, and between subagents and
+   teammates ask with the recommendation first — and say it in one line. Then
+   take the waves from the closing: the agents alive at any moment, teammates
+   or subagents, are the tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode. Before the first spawn, tell the user in one
    line to run `/effort medium` for the run phase, since your turns from here
    to close are dispatch, relay and bookkeeping, and that you will say when the
@@ -52,7 +53,8 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
 8. **Close the run.** Start it when the last task completes, not when the
    last review clears: executors complete before their review. In that turn
    start the full suite with `run_in_background` — the executors only ran the
-   tests covering their own files — and while the last reviews run, fill what
+   tests covering their own files; in subagents mode run it in each worktree,
+   since each branch stands alone — and while the last reviews run, fill what
    the Run section of `docs/team8/runs/<batch>.md` already knows (opened by
    `team8:plan`; create it from that skill's template if this batch skipped
    `plan`). Once every track is clear, re-run the suite only if a fix landed
@@ -62,28 +64,32 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
 
 ## Step 2a: Derive the Branch Shape — Don't Ask
 
-The task graph already answers this. Read it off the blockers, state your decision
-in one line, and move on. Asking the user to pick a branching strategy pushes a
-question at them that only you have the dependency graph to answer.
+The mode and the task graph already answer this. Read it off them, state your
+decision in one line, and move on. Asking the user to pick a branching strategy
+pushes a question at them that only you have the dependency graph to answer.
 
-| What the graph says | Branch shape |
+| The mode and the graph say | Branch shape |
 |---|---|
-| Any two tracks run at the same time | **One shared branch, one PR for the batch.** The only option |
-| Every task is blocked by the previous one — one track, one teammate | One branch per task, stacked, a PR each, IF you want reviewable slices |
-| Sequential tasks inside a track, parallel tracks beside it | Still one shared branch. The concurrency decides it |
+| teammates — any two tracks run at the same time in one checkout | **One shared branch, one PR for the batch.** The only option |
+| subagents — each track in a worktree of its own | **A branch per track, a PR each.** The only option the other way: every worktree arrives on its own branch off the default branch |
+| solo — every task blocked by the previous one | One branch per task, stacked, a PR each, IF you want reviewable slices |
+| Sequential tasks inside a track, parallel tracks beside it | The mode decides it: the shared branch for teammates, a branch per track for subagents |
 
-**Why concurrency forecloses the choice:** teammates share one checkout, so they
+**Why concurrency forecloses the choice for teammates:** they share one checkout, so they
 share HEAD. Two teammates cannot sit on two branches — a `git checkout -b` moves
 everyone. Per-task PRs need per-task branches, and per-task branches need no
 concurrency, so the moment two tracks overlap the stacked-branch option is gone.
-Do not discover this by trying it.
+Do not discover this by trying it. Subagents in worktrees have the opposite
+constraint: each worktree is its own checkout on its own branch, and git aimed
+at your checkout is refused, so nothing they do can land on a shared branch.
 
-**Cut the branch yourself before dispatching**, and tell every teammate it is
+**Teammates: cut the branch yourself before dispatching**, and tell every teammate it is
 already checked out and not to run `git checkout -b`. Sequential tasks in one track
 land as successive commits on it; parallel tracks stay apart by file ownership, not
-by branch.
+by branch. **Subagents: cut nothing.** Each worktree branches from the default
+branch by itself; the dispatch names the branch the subagent renames its own to.
 
-**One PR, opened by whoever finishes first.** Every dispatch prompt says: open a PR
+**Teammates: one PR, opened by whoever finishes first.** Every teammate's dispatch prompt says: open a PR
 against `main` if none exists for the branch yet and report its URL, otherwise your
 push lands in the existing one — just report that. Without that sentence, either
 everyone tries to open a PR or nobody does.
@@ -101,12 +107,16 @@ dispatch:
 > 5 tasks, 4 teammates, one shared branch `handoff-v4`. First one green opens the
 > PR against `main`; the rest push into it.
 
+or
+
+> 5 tickets, 5 subagents, a worktree each: a branch and a PR each against `main`.
+
 How many PRs is yours to decide too, and the origin of the work decides it:
 
 | Where the work came from | PRs |
 |---|---|
-| One batch tackled together — a plan, a handoff drop, a review's findings | One PR for the batch |
-| Separate tickets, separate identifications, separate asks | A PR each — but only if step 2a left you a single track; concurrency forecloses per-task branches |
+| One batch tackled together — a plan, a handoff drop, a review's findings | One PR for the batch, in teammates or solo mode. In subagents mode the worktrees decide: a PR per track |
+| Separate tickets, separate identifications, separate asks | A PR each — subagents mode gives it for free; in teammates mode only if step 2a left you a single track, since concurrency forecloses per-task branches |
 
 Whatever you decide is the answer **for the whole batch**, and every dispatch prompt
 must state it explicitly. Do not decide per teammate, and do not leave it unstated
@@ -137,17 +147,26 @@ same way: the terminal deliverable from step 2b, the run log filled at close.
 TDD, one commit per task by pathspec. Mark each task `in_progress`
 and `completed` as you go. No dispatch, no roster.
 
-**subagents.** One track, nothing parallel. For each task in dependency order:
-record BASE (`git rev-parse HEAD`), dispatch one fresh subagent (`Agent`,
-`subagent_type` from the task's `effort` as The Dispatch Contract maps it, `model` from the task's metadata — never omit
-either) with the seven-part contract below minus part 1 and part 7's `TaskUpdate`
-sentences, since subagents have no task tools — tell it so in the prompt,
-because its definition says to claim its own tasks: you claim the task with
-`TaskUpdate` on its behalf and close it from the reported output, `verified`
-metadata included, the one case where that is right. It commits and reports.
-Then the Track Review below on `BASE..HEAD`, findings back to the same subagent
-by resuming it, three rounds. Never dispatch two implementers at once in this mode. The
-lead opens the PR when the last task is clear.
+**subagents.** A worker per track, every track of the wave at once, each in a
+worktree of its own. Dispatch each track whose blockers are closed: one fresh
+subagent (`Agent` with `isolation: "worktree"` on the call — with agent teams
+on, that is what keeps a named spawn a subagent — named after its track,
+`subagent_type` from the track's biggest `effort` as The Dispatch Contract maps
+it, `model` from that task's metadata — never omit either) with the seven-part
+contract below minus part 1 and part 7's `TaskUpdate` sentences, since
+subagents have no task tools — tell it so in the prompt, because its definition
+says to claim its own tasks: you claim its first task with `TaskUpdate` when
+you dispatch it and close each from the reported output, `verified` metadata
+included, the one case where that is right. Its worktree arrives on a fresh
+branch off the default branch, its Bash runs inside it and git aimed at your
+checkout is refused, so there is no branch to cut and no file ownership to
+draw: it works its track's tasks in order, commits, pushes its branch, opens
+the track's PR and reports (part 6). Then the Track Review below on the
+branch, findings back to the same subagent by `SendMessage` to its name, three
+rounds. A track that waits on another track's output starts when that track is
+clear, and its prompt says to `git merge <that branch>` first, so its PR stacks
+on the other. A clear track's worktree goes with `git worktree remove <path>`
+(`git worktree list` has the path); the branch stays for its PR.
 
 **teammates.** A peak of two or more. Dispatch by wave, from the closing's
 wave lines: every track in wave 1 now, one teammate each; each later wave
@@ -179,7 +198,8 @@ workflow in its own mode; agents in it never join the roster.
 `Agent` call down the ordinary-subagent path, and what comes back is not a
 teammate at all: it never enters `members[]`, gets no `TaskGet`/`TaskUpdate`, has
 no mailbox, and never appears in the console. Nothing errors. You find out when a
-"teammate" messages you saying it cannot read the task list.
+"teammate" messages you saying it cannot read the task list. Subagents mode
+takes that path on purpose.
 
 There is no per-teammate worktree to reach for. Isolation comes from **disjoint
 file ownership**, and the dispatch prompt is where you create it:
@@ -215,10 +235,12 @@ An executor that self-verifies and pushes has had nobody read its diff. Each
 wave of a track gets one fresh reviewer when it lands, the same shape as the
 plan reviewer, and the executor stays alive until its track is clear.
 
-1. **When a teammate reports a wave's tasks completed and pushed**, write that
+1. **When an executor reports a wave's tasks completed and pushed**, write that
    wave's diff to a file — the branch's changes to the files those tasks own,
    from the track's base, which starts at the one you recorded before
-   dispatching. Take `<head>` from one `git rev-parse HEAD` and use it twice:
+   dispatching, or for a subagent's track at `git merge-base <default> <branch>`.
+   Take `<head>` from one `git rev-parse HEAD` (`git rev-parse <branch>` for a
+   subagent's track) and use it twice:
    `git diff <base>..<head> -- <those files> > <scratchpad>/review-<track>-<wave>.diff`,
    then `<head>` becomes the track's base, so the next review covers only new
    commits. Reading HEAD twice skips whatever the executor committed between
@@ -236,7 +258,8 @@ plan reviewer, and the executor stays alive until its track is clear.
    assert something, no duplication of a block that exists, no scope beyond
    the tasks. Findings labelled Blocking or Minor, each with file, line and the
    fix. Do not tell it what not to flag.
-3. **Blocking findings go to the executor** by `SendMessage`, verbatim. From
+3. **Blocking findings go to the executor** by `SendMessage`, verbatim — to a
+   subagent too, by its name, which resumes it with its context. From
    a wave review they reach it on a later task, and it fixes them before
    continuing. It fixes, re-runs the covering tests, pushes, and reports the
    fix commit's sha with the test output. Read that commit yourself,
@@ -310,6 +333,11 @@ Every dispatch prompt has these seven parts, in this order. Parts 1, 2, 4, 5 and
    for this branch yet, open one and report its URL; if one already exists, your
    push lands in it and you just report that."
    For the commit case: "Commit on `<branch>` the same way. Do not push."
+   For a subagent in its worktree: "You are alone in a worktree of your own, on
+   a branch of your own: `git branch -m <track>` before your first commit, then
+   commit as your definition says, push with `git push -u origin <track>`, open
+   a PR against `<default branch>` and report the branch and the URL. Git aimed
+   at the main checkout is refused; stay in your worktree."
    Add: "No AI attribution or 'generated with' footer in the commit or the PR body."
 7. **Close out.** "Close each task with one `TaskUpdate` that sets
    `status: "completed"` and `metadata.verified: "<command> → <result>"`
@@ -359,13 +387,15 @@ the PR next to the plan it describes.
 | "Pushing is the user's call, so I'll stop at a commit" | Running `run` authorised it. Step 2b decided it. Carry that into part 6 |
 | Asking whether to open the PR, or how to branch | Both are step 2a/2b decisions. Ask only what changes what gets built |
 | Asking the user to choose a branching strategy | Step 2a derives it from the blockers. Only you have the graph |
-| Per-task branches or PRs while tracks run in parallel | One checkout, one HEAD. Concurrency already foreclosed it |
+| Per-task branches or PRs while teammates run in parallel | One checkout, one HEAD. Concurrency already foreclosed it; a branch per track is subagents mode's, where each has a worktree |
 | Keeping the small task for yourself | Delegate it. A busy lead can't review or unblock |
 | Calling `TaskUpdate` on a teammate's behalf | Part 1 makes claiming theirs. Owners are set when the tasks are created, before any spawn, never after it |
 | One teammate per task, mechanically | Count tracks. Two teammates in one file is a merge conflict |
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
-| `isolation: "worktree"` to keep parallel writers apart | It silently spawns a subagent, not a teammate. Isolate by file ownership |
+| `isolation: "worktree"` on a teammate spawn | It silently spawns a subagent, not a teammate. Teammates isolate by file ownership; worktrees are how subagents mode isolates |
+| Subagents dispatched one at a time | Separate tickets in separate worktrees have nothing to wait for. Every track whose blockers are closed starts now |
+| A subagent told to work on a shared branch | Its worktree branches from the default branch and refuses git into your checkout. A branch and a PR per track |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
 | Executor stops the moment its tasks are `completed` | Part 7 keeps it alive for its last wave's review. Nobody else can fix its findings |
 | Reviewer handed the diff inline | It sits in your context for the session. Diff to a file, path in the prompt |
