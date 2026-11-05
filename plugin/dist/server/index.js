@@ -4934,10 +4934,52 @@ function createHookHandlers(deps) {
   };
 }
 
+// src/server/control/outbox.ts
+import { randomUUID as randomUUID3 } from "node:crypto";
+var HEARTBEAT_MS = 15e3;
+var DROP_AFTER_MS = 6e4;
+function createOutbox() {
+  const queued = /* @__PURE__ */ new Map();
+  const polledAt = /* @__PURE__ */ new Map();
+  const prune = (session, now) => {
+    const last = polledAt.get(session);
+    if (last === void 0 || now - last < DROP_AFTER_MS) return;
+    queued.delete(session);
+    polledAt.delete(session);
+  };
+  return {
+    send(session, text, now = Date.now()) {
+      prune(session, now);
+      const msg = { id: randomUUID3(), session, text, ts: now };
+      queued.set(session, [...queued.get(session) ?? [], msg]);
+      return { msgId: msg.id };
+    },
+    take(session, now = Date.now()) {
+      prune(session, now);
+      polledAt.set(session, now);
+      return [...queued.get(session) ?? []];
+    },
+    ack(id) {
+      for (const [session, list] of queued) {
+        const rest = list.filter((m) => m.id !== id);
+        if (rest.length === list.length) continue;
+        if (rest.length === 0) queued.delete(session);
+        else queued.set(session, rest);
+        return true;
+      }
+      return false;
+    },
+    reachable(session, now = Date.now()) {
+      const last = polledAt.get(session);
+      return last !== void 0 && now - last < HEARTBEAT_MS;
+    }
+  };
+}
+
 // src/server/control/mailbox.ts
 var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
 import { promises as fs5 } from "node:fs";
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 import os from "node:os";
 import path7 from "node:path";
 var teamsRoot = path7.join(os.homedir(), ".claude", "teams");
@@ -4945,7 +4987,7 @@ function setTeamsRoot(root) {
   teamsRoot = root;
 }
 async function atomicWrite(filePath, data) {
-  const tmp = `${filePath}.${process.pid}.${randomUUID3()}.tmp`;
+  const tmp = `${filePath}.${process.pid}.${randomUUID4()}.tmp`;
   await fs5.writeFile(tmp, data, "utf8");
   await fs5.rename(tmp, filePath);
 }
@@ -4966,7 +5008,7 @@ async function sendToInbox(teamName, toAgent, body) {
   }
   await fs5.mkdir(dir, { recursive: true });
   const color = await colorOf(teamName, from);
-  const msgId = randomUUID3();
+  const msgId = randomUUID4();
   const release = await import_proper_lockfile.default.lock(file, {
     lockfilePath: `${file}.lock`,
     realpath: false,
@@ -5197,7 +5239,7 @@ function createBriefs(deps) {
 
 // src/server/stream.ts
 var COALESCE_MS = 250;
-var HEARTBEAT_MS = 15e3;
+var HEARTBEAT_MS2 = 15e3;
 function frame(event, state) {
   return `event: ${event}
 data: ${JSON.stringify(state)}
@@ -5220,7 +5262,7 @@ function createStream(snapshot, coalesceMs = COALESCE_MS) {
   };
   const heartbeat = setInterval(() => {
     for (const res of clients) res.write(": keepalive\n\n");
-  }, HEARTBEAT_MS);
+  }, HEARTBEAT_MS2);
   heartbeat.unref?.();
   return {
     subscribe(res) {
@@ -5327,6 +5369,8 @@ async function serveWebBundle(res, webDist, route) {
 var AGENT_ROUTE = /^\/api\/agents\/([^/]+)\/(message|interrupt|stop|respawn)$/;
 var PLAN_ROUTE = /^\/api\/plans\/([^/]+)\/(approve|reject)$/;
 var PERMIT_ROUTE = /^\/api\/permits\/([^/]+)\/(allow|deny)$/;
+var OUTBOX_ROUTE = /^\/api\/outbox\/([^/]+)$/;
+var OUTBOX_ACK_ROUTE = /^\/api\/outbox\/([^/]+)\/ack$/;
 var WORKFLOW_SCRIPT_ROUTE = /^\/api\/workflow\/([^/]+)\/script$/;
 var TEAM_SELECT_ROUTE = /^\/api\/teams\/([^/]+)\/select$/;
 var SESSION_SELECT_ROUTE = /^\/api\/select-session\/([^/]+)$/;
@@ -5496,6 +5540,19 @@ function createHttpHandler(deps) {
           json(res, out.status, out.body);
           return;
         }
+        const outboxMatch = method === "GET" ? OUTBOX_ROUTE.exec(route) : null;
+        if (outboxMatch) {
+          const session = decodeSegment(outboxMatch[1]);
+          if (session === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          const was = deps.outbox.reachable(session);
+          const messages = deps.outbox.take(session).map(({ id, text, ts }) => ({ id, text, ts }));
+          if (!was) deps.stream.publish();
+          json(res, 200, { messages });
+          return;
+        }
         if (method === "GET" && !route.startsWith("/api/")) {
           await serveWebBundle(res, webDist, route);
           return;
@@ -5549,6 +5606,20 @@ function createHttpHandler(deps) {
         }
         const body = await readBody(req);
         const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+        const ackMatch = OUTBOX_ACK_ROUTE.exec(route);
+        if (ackMatch) {
+          const id = decodeSegment(ackMatch[1]);
+          if (id === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          if (!deps.outbox.ack(id)) {
+            json(res, 404, { error: "not found", message: `no queued message ${id}` });
+            return;
+          }
+          json(res, 200, {});
+          return;
+        }
         const agentMatch = AGENT_ROUTE.exec(route);
         if (agentMatch) {
           const name = decodeSegment(agentMatch[1]);
@@ -5561,6 +5632,13 @@ function createHttpHandler(deps) {
             const text = str4(body.text);
             if (!text) {
               json(res, 400, { error: "bad request", message: "text is required" });
+              return;
+            }
+            const session = deps.leadSessionId?.();
+            if (name === leadName && session && deps.outbox.reachable(session)) {
+              const out3 = deps.outbox.send(session, text);
+              deps.stream.publish();
+              json(res, 200, out3);
               return;
             }
             const out2 = await sendToInbox(team(), name, {
@@ -7325,6 +7403,7 @@ async function main(argv) {
   let leadSessionId = discovered?.leadSessionId ?? cli.session;
   const store = openStore(cli.dbPath, teamName ?? "");
   const permits = createPermits();
+  const outbox = createOutbox();
   const briefs = createBriefs({ publish: () => hub.publish() });
   const plans = createPlanReader();
   let switching = false;
@@ -7359,6 +7438,7 @@ async function main(argv) {
       decidedMode: leadFacts.mode,
       ...liveRows ? { sessions: liveRows.map((r) => foreign.some((p) => p.session === r.id) ? { ...r, needsYou: true } : r) } : {},
       switching,
+      leadReachable: leadSessionId !== void 0 && outbox.reachable(leadSessionId),
       watching,
       build,
       workflows,
@@ -7535,6 +7615,8 @@ async function main(argv) {
   server.removeAllListeners("request");
   server.on("request", createHttpHandler({
     permits,
+    outbox,
+    leadSessionId: () => leadSessionId,
     hooks: createHookHandlers({
       store: live,
       permits,
