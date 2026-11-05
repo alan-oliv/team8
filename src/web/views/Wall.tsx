@@ -371,7 +371,8 @@ const Column = memo(function Column({
           readOnly={readOnly}
           teamLive={teamLive}
           // Only the lead's column is routed, so a roster of one here is a lead
-          // with nobody to drain its inbox — see Composer's `solo`.
+          // with nobody to drain its inbox, unless its session polls the console
+          // (`leadReachable` makes the team live) — see Composer's `solo`.
           solo={soloStream && !teamLive}
         />
       ) : (
@@ -522,7 +523,8 @@ export function Wall({
 
   // A teammate drains its own inbox; the LEAD's is drained by the team loop,
   // which stops with the last teammate. The composer says so rather than
-  // queueing in silence.
+  // queueing in silence. A lead whose session polls the console itself
+  // (`leadReachable`) drains its own inbox, so it counts as live.
   const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed') || leadReachable;
 
   /**
