@@ -403,6 +403,13 @@ export interface TeamState {
    * frame built before the first tick.
    */
   sessions?: SessionRow[];
+  /**
+   * The lead's session runs the plugin's module and has polled the console's
+   * outbox within its heartbeat window, so a message to the lead enters its
+   * terminal as the operator's own prompt. Absent or false: the inbox path
+   * when a teammate is live, the "solo session" note otherwise.
+   */
+  leadReachable?: boolean;
 }
 
 /** The four ways `team8:tasks` can decide a batch runs — the console's four pills. */
