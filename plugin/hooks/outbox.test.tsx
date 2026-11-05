@@ -41,12 +41,12 @@ test("a queued message enters as the person's own prompt and is acked", async ($
   expect(acked).toEqual(['m1'])
 })
 
-test('a message the console serves again is not submitted twice', async ($, on) => {
+test('a message the console serves again is acked again but not submitted twice', async ($, on) => {
   const { clock, submitted, acked } = stub(on, [{ id: 'm1', text: 'use sqlite' }])
   await $.session.start(START)
   await clock.advance(4000)
   expect(submitted).toHaveLength(1)
-  expect(acked).toEqual(['m1'])
+  expect(acked).toEqual(['m1', 'm1'])
 })
 
 test("the lead's own turn ending polls without waiting for the timer", async ($, on) => {

@@ -7,7 +7,6 @@ const POLL_MS = 2000
 // Module memory, like wave-notify's `notified`: a message the console serves
 // again (its ack was lost) is never submitted twice in this process.
 const acked = new Set<string>()
-let polling = false
 
 type Served = { messages: { id: string; text: string }[] }
 
@@ -18,10 +17,12 @@ export async function poll($: EngineInterface) {
     if (!r.ok) return
     const { messages } = JSON.parse(r.text) as Served
     for (const m of messages) {
-      if (acked.has(m.id)) continue
-      acked.add(m.id)
-      // The engine runs this once the session is idle; the ack must not wait on it.
-      void $.prompt.submit({ text: m.text, asUser: true })
+      // Served again means the ack was lost: ack again, never submit again.
+      if (!acked.has(m.id)) {
+        acked.add(m.id)
+        // The engine runs this once the session is idle; the ack must not wait on it.
+        void $.prompt.submit({ text: m.text, asUser: true })
+      }
       await $.http.fetch(`${CONSOLE}/api/outbox/${m.id}/ack`, { method: 'POST' })
     }
   } catch {
@@ -32,8 +33,5 @@ export async function poll($: EngineInterface) {
 // team8.tsx calls this from its session.start and poll from its own
 // turn.complete: the engine allows one unmatched hook per event in a module.
 export function start($: EngineInterface) {
-  // session.start can fire again in the same module; one timer is enough.
-  if (polling) return
-  polling = true
   $.clock.every(POLL_MS, () => void poll($))
 }

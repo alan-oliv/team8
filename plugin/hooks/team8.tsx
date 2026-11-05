@@ -118,9 +118,9 @@ export const register: Register = (on, options) => {
       if (!ticking) {
         $.clock.every(5000, () => void refresh($))
         $.clock.every(1000, () => void tick($))
+        startOutbox($)
         ticking = true
       }
-      startOutbox($)
     } catch {}
     await readStage($)
     await refresh($)
