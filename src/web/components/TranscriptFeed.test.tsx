@@ -1049,6 +1049,33 @@ describe('the stream size', () => {
     children: [],
   };
 
+  describe('the stream closing row', () => {
+    const T = 1787843000000;
+
+    it('is a working line while the turn runs', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} currentTool="Read" />);
+      expect(screen.getByTestId('stream-working').textContent).toContain('Read · ');
+      expect(screen.queryByTestId('stream-prompt')).toBeNull();
+    });
+
+    it('says working when no tool is current', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} />);
+      expect(screen.getByTestId('stream-working').textContent).toContain('working · ');
+    });
+
+    it('is the cursor row when the agent is not working', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
+      expect(screen.getByTestId('stream-prompt')).toBeTruthy();
+      expect(screen.queryByTestId('stream-working')).toBeNull();
+    });
+
+    it('is absent from a wall column', () => {
+      render(<TranscriptFeed lines={LINES} size="wall" working />);
+      expect(screen.queryByTestId('stream-working')).toBeNull();
+      expect(screen.queryByTestId('stream-prompt')).toBeNull();
+    });
+  });
+
   it('takes the canvas stream metrics, not the wall column ones', () => {
     const { rerender } = render(<TranscriptFeed lines={LINES} size="stream" />);
     const feed = screen.getByTestId('transcript-feed');

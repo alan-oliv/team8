@@ -338,6 +338,8 @@ const Column = memo(function Column({
         size={soloStream ? 'stream' : 'wall'}
         agent={agent.name}
         working={agent.status === 'working'}
+        turnStartedAt={agent.turnStartedAt}
+        currentTool={agent.currentTool}
         subagents={subagents}
       />
 
