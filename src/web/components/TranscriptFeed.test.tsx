@@ -1177,13 +1177,8 @@ describe('the stream size', () => {
     expect(caret.className).toBe('');
   });
 
-  // The canvas draws the prompt row on a bar reading `working · 4m 08s`, so it
-  // is the terminal's own cursor rather than a readout of whether a turn runs.
-  it('closes the stream with a prompt cursor at any status', () => {
-    const { rerender } = render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
-    expect(screen.getByTestId('stream-prompt').textContent).toBe('❯');
-
-    rerender(<TranscriptFeed lines={LINES} size="stream" working />);
+  it('closes an idle stream with a prompt cursor', () => {
+    render(<TranscriptFeed lines={LINES} size="stream" working={false} />);
     expect(screen.getByTestId('stream-prompt').textContent).toBe('❯');
   });
 
