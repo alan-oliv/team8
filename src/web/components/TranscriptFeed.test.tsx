@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, SettingsContext } from '../state/useSettings';
 import { buildCast } from '../../shared/cast';
 import { CastContext } from '../state/useCast';
 import { TranscriptFeed } from './TranscriptFeed';
+import { NowContext } from './Elapsed';
 
 afterEach(cleanup);
 
@@ -1053,14 +1054,23 @@ describe('the stream size', () => {
     const T = 1787843000000;
 
     it('is a working line while the turn runs', () => {
-      render(<TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} currentTool="Read" />);
-      expect(screen.getByTestId('stream-working').textContent).toContain('Read · ');
+      render(
+        <NowContext value={T + 65000}>
+          <TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} currentTool="Read" />
+        </NowContext>,
+      );
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toBe('Read · 1m 05s');
       expect(screen.queryByTestId('stream-prompt')).toBeNull();
     });
 
     it('says working when no tool is current', () => {
       render(<TranscriptFeed lines={LINES} size="stream" working turnStartedAt={T} />);
-      expect(screen.getByTestId('stream-working').textContent).toContain('working · ');
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toMatch(/^working · \dm \d\ds$/);
+    });
+
+    it('shows no elapsed time before the turn has a start', () => {
+      render(<TranscriptFeed lines={LINES} size="stream" working />);
+      expect(screen.getByTestId('stream-working').lastElementChild?.textContent).toBe('working');
     });
 
     it('is the cursor row when the agent is not working', () => {

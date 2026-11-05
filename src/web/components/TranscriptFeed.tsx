@@ -1384,7 +1384,6 @@ export function TranscriptFeed({
       {s.wrap && working && (
         <div
           data-testid="stream-working"
-          aria-hidden
           style={{ display: 'flex', gap: `${s.gap}px`, alignItems: 'center', paddingTop: '4px' }}
         >
           <span
