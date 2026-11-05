@@ -809,12 +809,26 @@ it('Chat about this on a team hands the keyboard to the asker\'s composer', () =
   expect(active.dataset.composerFor).toBe('team-lead');
 });
 
-it('Chat about this on a solo session leaves the operator somewhere to type', () => {
+it("Chat about this on a solo session whose lead is reachable hands the keyboard to its composer", () => {
+  const fetchMock = stubFetch();
+  render(<App />);
+  act(() =>
+    MockEventSource.last().emit('snapshot', { ...bareState(), leadReachable: true, needsYou: [QUESTION_CARD] }),
+  );
+  fireEvent.click(screen.getByTestId('question-chat'));
+  const active = document.activeElement as HTMLElement;
+  expect(active.tagName).toBe('TEXTAREA');
+  expect(active.dataset.composerFor).toBe('team-lead');
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('/api/permits/permit-q/deny');
+});
+
+it('Chat about this on a solo session whose lead is not reachable has no composer to hand to', () => {
   stubFetch();
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', { ...bareState(), needsYou: [QUESTION_CARD] }));
   fireEvent.click(screen.getByTestId('question-chat'));
-  expect(['TEXTAREA', 'INPUT']).toContain((document.activeElement as HTMLElement).tagName);
+  expect(screen.queryByTestId('composer-input')).toBeNull();
+  expect(screen.getByTestId('composer-solo')).toBeTruthy();
 });
 
 it('opens the question modal over the workflow shell too', () => {

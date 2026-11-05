@@ -242,7 +242,7 @@ const Attached = memo(function Attached(
 });
 
 export function Rail({
-  agents, focused, onFocus, now, readOnly = false, subagents,
+  agents, focused, onFocus, now, readOnly = false, subagents, leadReachable = false,
 }: {
   agents: Agent[];
   focused: string | null;
@@ -251,6 +251,8 @@ export function Rail({
   readOnly?: boolean;
   /** Every roster agent's Task/Agent dispatches, keyed by dispatcher name. */
   subagents?: SubagentTree;
+  /** The lead's session polls the console for the operator's messages: see `TeamState.leadReachable`. */
+  leadReachable?: boolean;
 }) {
   const ordered = wallOrder(agents);
   const startAt = Math.max(0, ordered.findIndex((a) => a.name === focused));
@@ -259,10 +261,11 @@ export function Rail({
   if (ordered.length === 0) return null;
 
   const attached = ordered.find((a) => a.name === focused) ?? ordered[0];
-  // See Composer: the lead's inbox is drained by the team loop, not by the lead.
-  const teamLive = ordered.some((a) => !a.isLead && a.status !== 'departed');
-  // No teammate ever, departed or otherwise: the composer becomes a note.
-  const solo = !ordered.some((a) => !a.isLead);
+  // See Composer: the lead's inbox is drained by the team loop, not by the lead —
+  // unless the lead's session polls the console itself (`leadReachable`).
+  const teamLive = ordered.some((a) => !a.isLead && a.status !== 'departed') || leadReachable;
+  // No teammate ever and no module polling: the composer becomes a note.
+  const solo = !ordered.some((a) => !a.isLead) && !teamLive;
   const cursorAgent = ordered[Math.min(cursor, ordered.length - 1)];
 
   function onListKeyDown(e: KeyboardEvent<HTMLDivElement>) {

@@ -372,7 +372,7 @@ const Column = memo(function Column({
           teamLive={teamLive}
           // Only the lead's column is routed, so a roster of one here is a lead
           // with nobody to drain its inbox — see Composer's `solo`.
-          solo={soloStream}
+          solo={soloStream && !teamLive}
         />
       ) : (
         <div
@@ -445,7 +445,7 @@ export function taskListSummary(tasks: readonly Task[]): string {
 
 export function Wall({
   agents, focused, revealAlso = null, onFocus, now, readOnly = false, widths = {}, onWidthChange,
-  onOpenMail, subagents, tasks,
+  onOpenMail, subagents, tasks, leadReachable = false,
 }: {
   agents: Agent[];
   focused: string | null;
@@ -462,6 +462,8 @@ export function Wall({
   subagents?: SubagentTree;
   /** The shared list, summarised in the lead column's strip. */
   tasks?: readonly Task[];
+  /** The lead's session polls the console for the operator's messages: see `TeamState.leadReachable`. */
+  leadReachable?: boolean;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -521,7 +523,7 @@ export function Wall({
   // A teammate drains its own inbox; the LEAD's is drained by the team loop,
   // which stops with the last teammate. The composer says so rather than
   // queueing in silence.
-  const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed');
+  const teamLive = agents.some((a) => !a.isLead && a.status !== 'departed') || leadReachable;
 
   /**
    * A roster of one IS the parent's stream (canvas `8b`), and the stream is a
