@@ -34,7 +34,9 @@ export function createOutbox(): Outbox {
 
   const prune = (session: string, now: number): void => {
     const last = polledAt.get(session);
-    if (last !== undefined && now - last >= DROP_AFTER_MS) queued.delete(session);
+    if (last === undefined || now - last < DROP_AFTER_MS) return;
+    queued.delete(session);
+    polledAt.delete(session);
   };
 
   return {

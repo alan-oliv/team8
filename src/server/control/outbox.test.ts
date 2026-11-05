@@ -42,4 +42,12 @@ describe('createOutbox', () => {
     // That take refreshed the heartbeat; a full window of silence after it drops the queue.
     expect(outbox.take(S, 1000 + DROP_AFTER_MS - 1 + DROP_AFTER_MS)).toEqual([]);
   });
+
+  it('serves a message sent after a long silence', () => {
+    const outbox = createOutbox();
+    outbox.take(S, 0);
+    outbox.send(S, 'new', DROP_AFTER_MS + 10);
+    expect(outbox.reachable(S, DROP_AFTER_MS + 10)).toBe(false);
+    expect(outbox.take(S, DROP_AFTER_MS + 12).map((m) => m.text)).toEqual(['new']);
+  });
 });
