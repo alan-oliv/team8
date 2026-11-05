@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Permits } from './control/permits';
+import type { Outbox } from './control/outbox';
 import type { HookHandlers } from './ingest/hooks';
 import type { StreamHub } from './stream';
 import { sendToInbox } from './control/mailbox';
@@ -106,6 +107,9 @@ export type SelectTeamOutcome =
 
 export interface HttpDeps {
   permits: Permits;
+  outbox: Outbox;
+  /** The session on screen, whose lead the outbox serves. */
+  leadSessionId?: () => string | undefined;
   hooks: HookHandlers;
   stream: StreamHub;
   state: () => TeamState;
@@ -143,6 +147,8 @@ export interface HttpDeps {
 const AGENT_ROUTE = /^\/api\/agents\/([^/]+)\/(message|interrupt|stop|respawn)$/;
 const PLAN_ROUTE = /^\/api\/plans\/([^/]+)\/(approve|reject)$/;
 const PERMIT_ROUTE = /^\/api\/permits\/([^/]+)\/(allow|deny)$/;
+const OUTBOX_ROUTE = /^\/api\/outbox\/([^/]+)$/;
+const OUTBOX_ACK_ROUTE = /^\/api\/outbox\/([^/]+)\/ack$/;
 const WORKFLOW_SCRIPT_ROUTE = /^\/api\/workflow\/([^/]+)\/script$/;
 const TEAM_SELECT_ROUTE = /^\/api\/teams\/([^/]+)\/select$/;
 const SESSION_SELECT_ROUTE = /^\/api\/select-session\/([^/]+)$/;
@@ -373,6 +379,23 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
           return;
         }
 
+        // The plugin's module, inside the lead's session, polling for the
+        // operator's messages. The poll is the heartbeat `leadReachable` reads,
+        // so the first one publishes a frame and the composer goes live at once.
+        const outboxMatch = method === 'GET' ? OUTBOX_ROUTE.exec(route) : null;
+        if (outboxMatch) {
+          const session = decodeSegment(outboxMatch[1]);
+          if (session === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          const was = deps.outbox.reachable(session);
+          const messages = deps.outbox.take(session).map(({ id, text, ts }) => ({ id, text, ts }));
+          if (!was) deps.stream.publish();
+          json(res, 200, { messages });
+          return;
+        }
+
         // Every other non-API GET is the built web bundle — `/` and any
         // client-side route the SPA owns (e.g. a deep-linked `?view=...`).
         if (method === 'GET' && !route.startsWith('/api/')) {
@@ -449,6 +472,21 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
         const body = await readBody(req);
         const timestamp = new Date().toISOString();
 
+        const ackMatch = OUTBOX_ACK_ROUTE.exec(route);
+        if (ackMatch) {
+          const id = decodeSegment(ackMatch[1]);
+          if (id === null) {
+            json(res, 400, BAD_SEGMENT_BODY);
+            return;
+          }
+          if (!deps.outbox.ack(id)) {
+            json(res, 404, { error: 'not found', message: `no queued message ${id}` });
+            return;
+          }
+          json(res, 200, {});
+          return;
+        }
+
         const agentMatch = AGENT_ROUTE.exec(route);
         if (agentMatch) {
           const name = decodeSegment(agentMatch[1]);
@@ -461,6 +499,16 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
             const text = str(body.text);
             if (!text) {
               json(res, 400, { error: 'bad request', message: 'text is required' });
+              return;
+            }
+            // The lead's session runs the plugin's module and is polling: the
+            // text enters its terminal as the operator's own prompt. Otherwise
+            // the inbox, drained by the team loop, as before.
+            const session = deps.leadSessionId?.();
+            if (name === leadName && session && deps.outbox.reachable(session)) {
+              const out = deps.outbox.send(session, text);
+              deps.stream.publish();
+              json(res, 200, out);
               return;
             }
             // The operator is not the lead. Messaging a teammate still arrives
