@@ -10,18 +10,16 @@ type Block = { type?: string; text?: unknown; name?: unknown; id?: unknown; tool
 const blocksOf = (rec: TranscriptRecord): Block[] =>
   rec.type === 'assistant' && Array.isArray(rec.message?.content) ? (rec.message.content as Block[]) : [];
 
-function lastParagraph(text: string): string {
-  const paragraphs = text.trim().split(/\n\s*\n/);
-  return paragraphs[paragraphs.length - 1].trim();
-}
-
 /**
- * Claude's own words just before its latest AskUserQuestion call: the last
- * paragraph of the nearest assistant text block in the same step. Undefined
- * when there is no call, or no text between the call and the step's start.
+ * Claude's own words just before its latest AskUserQuestion call: the nearest
+ * assistant text block in the same step, whole. The hook usually fires before
+ * the call's own record is flushed, so with no unanswered call in the tail the
+ * step is the one the tail ends in. Undefined when there is no text between
+ * the call, or the tail's end, and the step's start.
  */
 export function askContext(lines: string[]): string | undefined {
   const recs = lines.map(parseLine).filter((r): r is TranscriptRecord => r !== null);
+  if (recs.length === 0) return undefined;
 
   // The hook can fire before the current call is flushed to the transcript; the
   // latest call in the tail is then an answered one, whose text is stale.
@@ -43,14 +41,17 @@ export function askContext(lines: string[]): string | undefined {
       }
     }
   }
-  if (at < 0) return undefined;
+  if (at < 0) {
+    at = recs.length - 1;
+    blockAt = blocksOf(recs[at]).length;
+  }
 
   for (let i = at; i >= 0; i--) {
     if (recs[i].type === 'user') return undefined;
     const blocks = blocksOf(recs[i]);
     for (let k = (i === at ? blockAt : blocks.length) - 1; k >= 0; k--) {
       const b = blocks[k];
-      if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) return lastParagraph(b.text);
+      if (b?.type === 'text' && typeof b.text === 'string' && b.text.trim()) return b.text.trim();
     }
   }
   return undefined;

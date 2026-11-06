@@ -5,6 +5,7 @@ import {
   answersPayload,
   emptyAnswer,
   firstPermit,
+  parseMessage,
   previewLines,
   showsTabs,
 } from './question-answers';
@@ -72,6 +73,56 @@ describe('previewLines', () => {
       { text: '```', code: true },
       { text: 'Doubles each time.', code: false },
     ]);
+  });
+});
+
+describe('parseMessage', () => {
+  const md = [
+    'Both drafts are below.',
+    '**VLP-1: Add the consumer**',
+    '## Test',
+    '- [ ] `yarn test` passes',
+    '- [x] CI is green',
+    '',
+    '## Deployment',
+    '- **Safe?** Yes, see [the runbook](https://example.com).',
+    '**VLP-2: Add the backfill**',
+    '## Test',
+    'Manual only.',
+  ].join('\n');
+
+  it('reads titles, headings, list items and inline code, bold and links', () => {
+    const { lines, hits } = parseMessage(md, []);
+    expect(lines.map((l) => l.kind)).toEqual(['p', 'title', 'h', 'li', 'li', 'blank', 'h', 'li', 'title', 'h', 'p']);
+    expect(lines[3].segs).toEqual([
+      { text: '☐ ', kind: 'marker' },
+      { text: 'yarn test', kind: 'code' },
+      { text: ' passes', kind: 'text' },
+    ]);
+    expect(lines[4].segs[0]).toEqual({ text: '☒ ', kind: 'marker' });
+    expect(lines[7].segs).toEqual([
+      { text: '– ', kind: 'marker' },
+      { text: 'Safe?', kind: 'bold' },
+      { text: ' Yes, see ', kind: 'text' },
+      { text: 'the runbook', kind: 'link' },
+      { text: '.', kind: 'text' },
+    ]);
+    expect(lines.some((l) => l.marked)).toBe(false);
+    expect(hits).toEqual([]);
+  });
+
+  it('marks the lines under each heading in refs, one hit per run, named after the title above it', () => {
+    const { lines, hits } = parseMessage(md, ['Test']);
+    expect(hits).toEqual(['Test · VLP-1', 'Test · VLP-2']);
+    expect(lines.map((l) => l.marked)).toEqual([false, false, true, true, true, false, false, false, false, true, true]);
+    expect(lines.map((l) => l.hit)).toEqual([undefined, undefined, 0, undefined, undefined, undefined, undefined, undefined, undefined, 1, undefined]);
+    expect(parseMessage('## Test\nok', ['Test']).hits).toEqual(['Test']);
+  });
+
+  it('reaches the titles themselves as PR', () => {
+    const { lines, hits } = parseMessage(md, ['PR']);
+    expect(hits).toEqual(['VLP-1', 'VLP-2']);
+    expect(lines.filter((l) => l.marked).map((l) => l.kind)).toEqual(['title', 'title']);
   });
 });
 

@@ -37,6 +37,60 @@ const BACKOFF: AskQuestion = {
   ],
 };
 
+const DRAFTS = [
+  'Both PR descriptions are drafted. Here they are in full so you can check them before I open anything.',
+  '',
+  '**VLP-10256: Write the encounter CarePlan to Medplum when an encounter locks**',
+  '',
+  '[VLP-10256](https://example.atlassian.net/browse/VLP-10256)',
+  '',
+  '## Summary',
+  '',
+  'When an encounter locks, we also save the care plan to Medplum.',
+  '',
+  '## Test',
+  '',
+  '- [ ] `yarn test ./test/streams/encounter` passes (9 tests)',
+  '- [ ] Submit a note with no care plan items: no CarePlan and no error log',
+  '',
+  '## Deployment',
+  '',
+  '- **Safe for production?** Yes, an additive consumer.',
+  '',
+  '**VLP-10257: Write the encounter CarePlan to Medplum at the end of both CCN submission paths**',
+  '',
+  '## Test',
+  '',
+  '- [ ] `yarn test ./test/services/ccn` passes (16 tests)',
+  '',
+  '## Deployment',
+  '',
+  '- **Rollback-safe?** Yes, nothing reads the CarePlans yet.',
+  '',
+  'Three things to confirm before I open the PRs.',
+].join('\n');
+const TESTS: AskQuestion = {
+  question: 'Are the two Test checklists right?',
+  header: 'Test',
+  multiSelect: false,
+  refs: ['Test'],
+  options: [{ label: 'Look right (Recommended)' }, { label: 'Need changes' }],
+};
+const DEPLOY: AskQuestion = {
+  question: 'Are the two Deployment assessments right?',
+  header: 'Deployment',
+  multiSelect: false,
+  refs: ['Deployment'],
+  options: [{ label: 'Look right (Recommended)' }, { label: 'Need changes' }],
+};
+const OPEN: AskQuestion = {
+  question: 'How should I open the two PRs?',
+  header: 'Open PRs',
+  multiSelect: false,
+  refs: ['PR'],
+  options: [{ label: 'Draft PRs (Recommended)' }, { label: 'Ready for review' }, { label: 'Not yet' }],
+};
+
 const card = (questions: AskQuestion[], extra: Partial<NeedsYouItem> = {}): NeedsYouItem => ({
   id: 'q1',
   kind: 'permission',
@@ -95,9 +149,11 @@ describe('QuestionModal', () => {
     expect(screen.getByText('● Claude is asking')).toBeTruthy();
     expect(screen.getByText('1 question')).toBeTruthy();
     expect(screen.queryByTestId('question-tabs')).toBeNull();
+    expect(screen.getByTestId('question-context-who').textContent).toBe('team-lead (lead)');
     expect(screen.getByTestId('question-context').textContent).toBe(
       'That decides where she writes it, so I would rather ask.',
     );
+    expect(screen.queryByTestId('question-reader')).toBeNull();
     expect(screen.getByText('3.')).toBeTruthy(); // "Type something."
     expect(screen.getByTestId('question-chat').textContent).toContain('4.Chat about this');
 
@@ -195,6 +251,71 @@ describe('QuestionModal', () => {
     expect(within(preview()).getByText('Doubles each retry.').style.color).toBe('var(--color-neutral-400)');
   });
 
+  it('1e: a long message gets its own pane, marked for each tab, with chips that jump to each part', () => {
+    const scrollTo = vi.fn();
+    Element.prototype.scrollTo = scrollTo;
+    show(card([TESTS, DEPLOY, OPEN], { context: DRAFTS }));
+    expect(screen.getByRole('dialog').style.width).toBe('1120px');
+    expect(screen.queryByTestId('question-context')).toBeNull();
+    const reader = screen.getByTestId('question-reader');
+    expect(reader.textContent).toContain('Three things to confirm before I open the PRs.');
+    const words = DRAFTS.split(/\s+/).filter(Boolean).length;
+    expect(screen.getByText(`${words} words · 2 marked for this question`)).toBeTruthy();
+
+    const chips = () => screen.queryAllByTestId('question-ref').map((c) => c.textContent);
+    const marked = () =>
+      Array.from(reader.querySelectorAll<HTMLElement>('div'))
+        .filter((d) => d.style.background === 'var(--color-accent-900)')
+        .map((d) => d.textContent);
+    expect(chips()).toEqual(['↖ Test · VLP-10256', '↖ Test · VLP-10257']);
+    expect(marked()).toEqual([
+      'Test',
+      '☐ yarn test ./test/streams/encounter passes (9 tests)',
+      '☐ Submit a note with no care plan items: no CarePlan and no error log',
+      'Test',
+      '☐ yarn test ./test/services/ccn passes (16 tests)',
+    ]);
+    expect(reader.querySelectorAll('[data-hit]')).toHaveLength(2);
+    expect(scrollTo).toHaveBeenCalledTimes(1); // on open
+
+    fireEvent.click(screen.getByText('☐ Deployment'));
+    expect(chips()).toEqual(['↖ Deployment · VLP-10256', '↖ Deployment · VLP-10257']);
+    expect(marked()[0]).toBe('Deployment');
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByText('☐ Open PRs'));
+    expect(chips()).toEqual(['↖ VLP-10256', '↖ VLP-10257']);
+    expect(marked()).toEqual([
+      'VLP-10256: Write the encounter CarePlan to Medplum when an encounter locks',
+      'VLP-10256',
+      'VLP-10257: Write the encounter CarePlan to Medplum at the end of both CCN submission paths',
+    ]);
+    fireEvent.click(screen.getAllByTestId('question-ref')[1]);
+    expect(scrollTo).toHaveBeenCalledTimes(4);
+
+    fireEvent.click(screen.getByText('✔ Submit'));
+    expect(chips()).toEqual([]);
+    expect(marked()).toEqual([]);
+    expect(screen.getByText(`${words} words`)).toBeTruthy();
+    delete (Element.prototype as { scrollTo?: unknown }).scrollTo;
+  });
+
+  it('gives a message over six lines the pane even without refs, with nothing marked', () => {
+    show(card([BACKOFF], { context: ['one', 'two', 'three', 'four', 'five', 'six', 'seven'].join('\n') }));
+    expect(screen.getByRole('dialog').style.width).toBe('1120px');
+    expect(screen.getByTestId('question-reader').textContent).toBe('onetwothreefourfivesixseven');
+    expect(screen.queryByTestId('question-ref')).toBeNull();
+    expect(screen.getByText('7 words')).toBeTruthy();
+    expect(screen.getByTestId('question-preview').style.width).toBe('auto'); // under the options, not beside them
+  });
+
+  it('keeps a message of six lines above the question', () => {
+    show(card([STORAGE], { context: ['one', 'two', 'three', 'four', 'five', 'six'].join('\n') }));
+    expect(screen.getByRole('dialog').style.width).toBe('760px');
+    expect(screen.queryByTestId('question-reader')).toBeNull();
+    expect(screen.getByTestId('question-context').textContent).toBe('onetwothreefourfivesix');
+  });
+
   it('moves with the arrows and submits a lone single select on Enter', () => {
     show(card([STORAGE]));
     expect(options()[0].textContent).toContain('❯');
@@ -255,11 +376,11 @@ describe('QuestionModal', () => {
     expect(onCancel).toHaveBeenCalledWith('q1');
   });
 
-  it('names an asker other than the lead in the context line', () => {
-    show(card([BACKOFF], { agent: 'fix-2', context: 'fix-1 and fix-2 both rewrote the backoff.' }));
-    expect(screen.getByTestId('question-context').textContent).toBe(
-      'fix-2 asks: fix-1 and fix-2 both rewrote the backoff.',
-    );
+  it('labels the message with the asker, (lead) only for the lead', () => {
+    show(card([BACKOFF], { agent: 'fix-2', context: 'fix-1 and fix-2 both rewrote the `backoff`.' }));
+    expect(screen.getByTestId('question-context-who').textContent).toBe('fix-2');
+    expect(screen.getByTestId('question-context').textContent).toBe('fix-1 and fix-2 both rewrote the backoff.');
+    expect(screen.getByText('backoff').style.color).toBe('var(--color-neutral-200)');
   });
 
   it('omits the context line when there is none', () => {

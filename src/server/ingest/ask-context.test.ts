@@ -25,7 +25,7 @@ describe('askContext', () => {
       assistant('a1', [text('Pia finished the toggle.\n\nThat decides where she writes it, so I would rather ask.')]),
       assistant('a2', [ask]),
     ];
-    expect(askContext(lines)).toBe('That decides where she writes it, so I would rather ask.');
+    expect(askContext(lines)).toBe('Pia finished the toggle.\n\nThat decides where she writes it, so I would rather ask.');
   });
 
   it('stops at a user record rather than borrow text from an earlier step', () => {
@@ -54,8 +54,18 @@ describe('askContext', () => {
     expect(askContext(lines)).toBeUndefined();
   });
 
-  it('is undefined with no AskUserQuestion call, and skips lines that do not parse', () => {
-    expect(askContext([assistant('a1', [text('hello')]), '{"truncated', ''])).toBeUndefined();
+  it("takes the step's text when the call itself is not flushed yet, which is when the hook usually fires", () => {
+    const lines = [
+      assistant('a0', [text('Old question.'), ask]),
+      user('u1', [{ type: 'tool_result', tool_use_id: 'tu1', content: 'answered' }]),
+      assistant('a1', [text('Both drafts are below.\n\n## Test\n\n- [ ] it passes')]),
+    ];
+    expect(askContext(lines)).toBe('Both drafts are below.\n\n## Test\n\n- [ ] it passes');
+  });
+
+  it('skips lines that do not parse, and is undefined for an empty tail', () => {
+    expect(askContext([assistant('a1', [text('hello')]), '{"truncated', ''])).toBe('hello');
+    expect(askContext(['{"truncated', ''])).toBeUndefined();
   });
 });
 
