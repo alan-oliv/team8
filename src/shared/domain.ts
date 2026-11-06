@@ -270,6 +270,7 @@ export interface AskQuestion {
   header: string;
   options: { label: string; description?: string; preview?: string }[];
   multiSelect: boolean;
+  refs?: string[];          // headings of `context` this question is about, e.g. "Test"
 }
 
 export interface NeedsYouItem {
