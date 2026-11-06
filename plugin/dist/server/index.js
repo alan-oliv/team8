@@ -4686,12 +4686,9 @@ function createPermits() {
 import { promises as fs4 } from "node:fs";
 var TAIL_BYTES = 256 * 1024;
 var blocksOf = (rec) => rec.type === "assistant" && Array.isArray(rec.message?.content) ? rec.message.content : [];
-function lastParagraph(text) {
-  const paragraphs = text.trim().split(/\n\s*\n/);
-  return paragraphs[paragraphs.length - 1].trim();
-}
 function askContext(lines) {
   const recs = lines.map(parseLine).filter((r) => r !== null);
+  if (recs.length === 0) return void 0;
   const answered = /* @__PURE__ */ new Set();
   for (const rec of recs) {
     const content = rec.type === "user" ? rec.message?.content : void 0;
@@ -4711,13 +4708,16 @@ function askContext(lines) {
       }
     }
   }
-  if (at < 0) return void 0;
+  if (at < 0) {
+    at = recs.length - 1;
+    blockAt = blocksOf(recs[at]).length;
+  }
   for (let i = at; i >= 0; i--) {
     if (recs[i].type === "user") return void 0;
     const blocks = blocksOf(recs[i]);
     for (let k = (i === at ? blockAt : blocks.length) - 1; k >= 0; k--) {
       const b = blocks[k];
-      if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) return lastParagraph(b.text);
+      if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) return b.text.trim();
     }
   }
   return void 0;
