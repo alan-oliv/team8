@@ -1,6 +1,6 @@
 import type { Subagent, SubagentState, SubagentTree } from './domain';
 import type { TranscriptRecord } from './transcript';
-import { contextOccupancy, tokensOf, usageRecordsOf, type UsageRecord } from './usage';
+import { contextOccupancy, tokensOf, totalCost, usageRecordsOf, type UsageRecord } from './usage';
 
 /**
  * The read model behind `TeamState.subagents`, built from the only two files a
@@ -60,6 +60,12 @@ export interface SubagentDigest {
   startedAt?: number;
   lastAt?: number;
   tokens: number;
+  /**
+   * What those records cost at list price, each on the model it reports.
+   * Absent in a log written before the digest priced itself; a reader then
+   * derives a figure and says so.
+   */
+  costUsd?: number;
   toolCalls: number;
   contextTokens: number;
   summary?: string;
@@ -104,6 +110,7 @@ export function digestOf(fold: SubagentFold): SubagentDigest {
     startedAt: fold.startedAt,
     lastAt: fold.lastAt,
     tokens: tokensOf([...fold.usage.values()]),
+    costUsd: totalCost([...fold.usage.values()]),
     toolCalls: fold.toolCalls,
     contextTokens: fold.contextTokens,
     summary: fold.summary,
@@ -469,6 +476,7 @@ function nodesOf(
     if (spawn.returnedSummary) node.returnedSummary = spawn.returnedSummary;
     if (digest && digest.records > 0) {
       node.tokens = digest.tokens;
+      if (digest.costUsd !== undefined) node.costUsd = digest.costUsd;
       node.toolCalls = digest.toolCalls;
       node.contextTokens = digest.contextTokens;
       if (!node.returnedSummary && digest.summary) node.returnedSummary = digest.summary;

@@ -220,6 +220,7 @@ export interface Subagent {
   returnedAt?: number;
   durationMs?: number;       // absent until it returns
   tokens?: number;
+  costUsd?: number;          // list price over its own records; absent for a digest from before it priced itself
   toolCalls?: number;
   contextTokens?: number;
   returnedSummary?: string;

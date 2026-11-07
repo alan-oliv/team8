@@ -1406,6 +1406,42 @@ describe('config-less session', () => {
     return events;
   };
 
+  const digestOf = (sub: (typeof tree.subagents)[number], digest: Record<string, unknown>, seq: number): StoredEvent => ({
+    seq,
+    ts: 0,
+    kind: 'subagent',
+    payload: { toolUseId: sub.meta.toolUseId, agentId: sub.agentId, meta: sub.meta, digest },
+  });
+  const priced = { records: 3, tokens: 577, costUsd: 0.25, toolCalls: 1, contextTokens: 9, spawns: [] };
+
+  it('keeps a priced digest over the empty one a re-adoption emits before its re-read, and counts it in the session total', () => {
+    const scout = tree.subagents[0];
+    const events = [...soloLog(), digestOf(scout, priced, 10), digestOf(scout, { ...priced, records: 0, tokens: 0, costUsd: 0 }, 11)];
+    const state = project(events, false);
+    const node = state.subagents![tree.parent.agent].find((s) => s.toolUseId === scout.meta.toolUseId)!;
+    expect(node.tokens).toBe(577);
+    expect(node.costUsd).toBe(0.25);
+    expect(state.totalCostUsd).toBeCloseTo(state.agents[0].costUsd + 0.25, 9);
+  });
+
+  it('carries a priced Task call in the session total after its dispatch record has aged out of the lead’s transcript', () => {
+    const scout = tree.subagents[0];
+    // The lead's transcript bounded down to its newest record: the Task
+    // tool_use that dispatched the scout is gone, so the tree cannot place it.
+    const events = soloLog().filter((e) => e.kind !== 'transcript');
+    events.push({
+      seq: 20,
+      ts: 0,
+      kind: 'transcript',
+      agent: tree.parent.agent,
+      payload: { agent: tree.parent.agent, records: tree.parent.records.slice(-1) },
+    });
+    events.push(digestOf(scout, priced, 21));
+    const state = project(events, false);
+    expect(state.subagents?.[tree.parent.agent]?.some((s) => s.toolUseId === scout.meta.toolUseId) ?? false).toBe(false);
+    expect(state.totalCostUsd).toBeCloseTo(state.agents[0].costUsd + 0.25, 9);
+  });
+
   it('stands the lead up as the only agent, with its subagent tree intact', () => {
     const state = project(soloLog(), false);
     expect(state.agents).toHaveLength(1);

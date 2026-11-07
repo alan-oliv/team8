@@ -33,11 +33,12 @@ describe('UsageTeam — reconciliation', () => {
     expect(screen.getByTestId('usage-cost-value').textContent).toBe(formatCost(state.totalCostUsd));
   });
 
-  it('never invents a second cost total — the tile and the sum of agent.costUsd agree exactly', () => {
+  it('never invents a second cost total — with no Task call, the tile and the ledger footer are the sum of agent.costUsd exactly', () => {
     const { state } = renderUsage();
     const truth = state.agents.reduce((sum, a) => sum + a.costUsd, 0);
     expect(state.totalCostUsd).toBe(truth); // fixture sanity: this IS what the status bar reads
     expect(screen.getByTestId('usage-cost-value').textContent).toBe(formatCost(truth));
+    expect(screen.getByTestId('usage-foot-cost').textContent).toBe(formatCost(truth));
   });
 });
 
@@ -60,6 +61,16 @@ describe('UsageTeam — tiles', () => {
     const avoided = dollarsAvoided(state.agents);
     expect(avoided).not.toBeUndefined();
     expect(screen.getByTestId('usage-cache-note').textContent).toContain(formatCost(avoided!));
+  });
+
+  it('prints the cache-read ratio off the lead model’s rate card, not a fixed 0.1×', () => {
+    const state = sampleTeamState();
+    // The fixture lead's card happens to read at 0.1×, which is the figure the
+    // old literal printed — Opus 5.5 is the one that showed the literal wrong.
+    (state.agents.find((a) => a.isLead) ?? state.agents[0]).model = 'claude-opus-5-5';
+    render(<UsageTeam state={state} now={FIXTURE_NOW} focused={null} onFocus={vi.fn()} spendSamples={[]} />);
+    expect(screen.getByTestId('usage-cache-note').textContent).toContain('reads bill at 0.05×');
+    expect(screen.getByTestId('usage-composition-note').textContent).toContain('bill at 0.05× input on claude-opus-5-5');
   });
 
   it('names the count of tasks the cost-per-task figure divided by', () => {
@@ -540,6 +551,16 @@ describe('spend per Task call', () => {
     expect(screen.getByTestId('usage-taskcalls-total').textContent).toBe(
       formatCost(subagentSpendUsd({ tokens: 28_700, model: 'claude-opus-5' })),
     );
+  });
+
+  it('prices a call from its own digest when it carries a cost, and captions the figure as list price', () => {
+    const state = withTree();
+    const priced = { ...state, subagents: { 'team-lead': [{ ...state.subagents['team-lead'][0], costUsd: 2.72 }] } };
+    render(<UsageTeam state={priced} now={FIXTURE_NOW} focused={null} onFocus={vi.fn()} spendSamples={[]} />);
+    expect(screen.getByTestId('usage-taskcall-spend').textContent).toBe(formatCost(2.72));
+    expect(screen.getByTestId('usage-taskcalls-total').textContent).toBe(formatCost(2.72));
+    expect(screen.getByTestId('usage-taskcalls-caption').textContent).toMatch(/list price/);
+    expect(screen.getByTestId('usage-cost-note').textContent).toContain(`incl. ${formatCost(2.72)} in 1 Task call`);
   });
 
   it('captions the figure as derived, not measured', () => {

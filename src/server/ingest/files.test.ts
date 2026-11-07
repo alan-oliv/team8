@@ -2174,8 +2174,42 @@ describe('subagent trees', () => {
         (e.payload as RosterPayload).sidecars.map((s) => s.meta.name),
       ),
     ).not.toContain('scout');
-    // …while the tree still bills it, out of its own digest.
-    expect(state.subagents!['team-lead'][0].tokens).toBeGreaterThan(0);
+    // …while the tree still bills it, out of its own digest, and the session
+    // total counts it: not a teammate's spend, but this session's.
+    const scoutCall = state.subagents!['team-lead'][0];
+    expect(scoutCall.tokens).toBeGreaterThan(0);
+    expect(scoutCall.costUsd).toBeGreaterThan(0);
+    // Pinned from the fixtures, not from the state: the lead's own records,
+    // the probe-charlie teammate the layout plants, and the scout's records.
+    const charlie = readFileSync(path.join(FIXTURES, 'transcript-agent-aprobe-charlie-12ee4cb1ed35cf7c.jsonl'), 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as TranscriptRecord);
+    expect(state.totalCostUsd).toBeCloseTo(
+      totalCost(usageRecordsOf(tree.parent.records as TranscriptRecord[])) +
+        totalCost(usageRecordsOf(charlie)) +
+        totalCost(usageRecordsOf(sub('ascout-0011223344556677').records as TranscriptRecord[])),
+      9,
+    );
+  });
+
+  it('reads an unnamed subagent whose transcript landed before its sidecar', async () => {
+    // `agent-a<16hex>.jsonl` claims no name, so a watcher read that beats the
+    // sidecar can only defer it; adopting the sidecar has to put those bytes back.
+    const found = sub('aauditor-8899aabbccddeeff');
+    const ingest = startFileIngest(store, { paths, teamName: TEAM, leadSessionId: LEAD_SESSION, sweepIntervalMs: 0 });
+    try {
+      await settle();
+      await ingest.sweep();
+      await fs.writeFile(path.join(AGENT_DIR(), 'agent-a8899aabbccddeeff.jsonl'), jsonl(found.records));
+      await settle(500);
+      await fs.writeFile(path.join(AGENT_DIR(), 'agent-a8899aabbccddeeff.meta.json'), JSON.stringify(found.meta));
+      await settle(500);
+    } finally {
+      ingest.close();
+    }
+    const auditor = project(store.replay(), false).subagents!['team-lead'][1];
+    expect(auditor.tokens).toBeGreaterThan(0);
   });
 
   it('ignores a workflow fan-out, which is not a subagent of ours either', async () => {
@@ -2215,6 +2249,29 @@ describe('subagent trees', () => {
     const second = project(await sweep(), false).subagents!['team-lead'][1];
     expect(second.tokens).toBe(first.tokens);
     expect(second.toolCalls).toBe(first.toolCalls);
+  });
+
+  it('keeps a finished subagent’s digest across a switch back to its session', async () => {
+    await write('aauditor-8899aabbccddeeff');
+    const first = startFileIngest(store, { paths, teamName: TEAM, leadSessionId: LEAD_SESSION, sweepIntervalMs: 0 });
+    await settle();
+    await first.sweep();
+    // What a switch away hands the switch back: the tails, so the lead's own
+    // transcript is not re-read from byte 0, and the usage read so far.
+    const carry = first.close();
+    const before = project(store.replay(), false).subagents!['team-lead'][1];
+    expect(before.tokens).toBeGreaterThan(0);
+
+    const second = startFileIngest(store, { paths, teamName: TEAM, leadSessionId: LEAD_SESSION, sweepIntervalMs: 0, ...carry });
+    try {
+      await settle();
+      await second.sweep();
+    } finally {
+      second.close();
+    }
+    const after = project(store.replay(), false).subagents!['team-lead'][1];
+    expect(after.tokens).toBe(before.tokens);
+    expect(after.toolCalls).toBe(before.toolCalls);
   });
 });
 

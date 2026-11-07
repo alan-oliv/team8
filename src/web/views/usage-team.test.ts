@@ -6,6 +6,7 @@ import { pricingFor } from '../../shared/catalog';
 import {
   billedTokens,
   cacheHitRatio,
+  cacheReadRatio,
   costPerHour,
   costPerTask,
   dollarsAvoided,
@@ -435,5 +436,12 @@ describe('seriesColors', () => {
     const colors = seriesColors(many);
     expect(colors.size).toBe(7);
     for (const c of colors.values()) expect(c).toMatch(/var\(--color-accent-\d00\)/);
+  });
+});
+
+describe('cacheReadRatio', () => {
+  it('reads the ratio off the rate card: 0.05× on Opus 5.5, 0.1× on Sonnet 5.5', () => {
+    expect(cacheReadRatio('claude-opus-5-5')).toBe('0.05×');
+    expect(cacheReadRatio('claude-sonnet-5-5')).toBe('0.1×');
   });
 });

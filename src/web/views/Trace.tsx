@@ -124,9 +124,8 @@ export function Trace({ agent, model, subagents, now, selected, onSelect }: Trac
   const maxDepth = flat.reduce((m, r) => Math.max(m, r.depth), 0);
   const tokensIn = flat.reduce((n, r) => n + (r.subagent.tokens ?? 0), 0);
   const shownToParent = flat.reduce((n, r) => n + estimatedTokens(r.subagent.returnedSummary), 0);
-  // No per-call token split exists to price accurately — cache reads are the
-  // dominant class in real usage (USAGE-STATE.md), so that rate is the closer
-  // approximation of the two blunt instruments available.
+  // Each call's own list-price figure when its digest carries one; a log from
+  // before that is priced by derivation — see subagentSpendUsd.
   const spend = flat.reduce((n, r) => n + subagentSpendUsd(r.subagent), 0);
   const ratio = shownToParent > 0 ? Math.round(tokensIn / shownToParent) : null;
 
@@ -162,7 +161,11 @@ export function Trace({ agent, model, subagents, now, selected, onSelect }: Trac
           value={formatTokens(shownToParent)}
           accent
         />
-        <Stat testid="trace-spend" label="SPEND" value={formatCost(spend)} />
+        <Stat
+          testid="trace-spend"
+          label={flat.every((r) => r.subagent.costUsd !== undefined) ? 'SPEND' : 'SPEND · DERIVED'}
+          value={formatCost(spend)}
+        />
         <span style={{ flex: 1 }} />
         {ratio !== null && (
           <span
