@@ -21,6 +21,8 @@ export const PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1
 export const LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
 /** Absolute path to the task gate, used by hookBlock(). */
 export const TASK_GATE_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'task-gate.sh');
+/** Absolute path to the agent gate, used by hookBlock(). */
+export const AGENT_GATE_SCRIPT = path.join(PLUGIN_DIR, 'bin', 'agent-gate.sh');
 /** The bundled inbox-delivery hook, used by hookBlock(); matches plugin/hooks/hooks.json. */
 export const INBOX_DELIVER_SCRIPT = path.join(PLUGIN_DIR, 'dist', 'hooks', 'inbox-deliver.js');
 /** Where the user's own env values are stashed while the console owns them. */
@@ -177,7 +179,14 @@ export function hookBlock(port: number): HookBlock {
     matcher: 'TaskCreate|TaskUpdate',
     hooks: [{ type: 'command', command: `'${TASK_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }],
   };
-  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher, taskGate];
+  // The agent gate keeps the isolation flag consistent across a session's
+  // named team8 spawns, so a reviewer in a subagents run cannot slip into the
+  // roster as a teammate. Matches hooks/hooks.json, after the task gate.
+  const agentGate: HookEntry = {
+    matcher: 'Agent',
+    hooks: [{ type: 'command', command: `'${AGENT_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }],
+  };
+  hooks.PreToolUse = [...(hooks.PreToolUse ?? []), launcher, workflowLauncher, taskGate, agentGate];
   // Hands a busy teammate its unread messages after its next tool call; the
   // lead's hooks carry no agent_id and never start it. Matches
   // plugin/hooks/hooks.json, right after the observation curl entry.
@@ -214,6 +223,7 @@ function isConsoleEntry(entry: unknown): boolean {
         typeof h.command === 'string' &&
         (h.command.includes('console-launch.sh') ||
           h.command.includes('task-gate.sh') ||
+          h.command.includes('agent-gate.sh') ||
           // The two gates earlier versions wrote, so an upgrade strips them.
           h.command.includes('task-created.sh') ||
           h.command.includes('task-completed.sh') ||

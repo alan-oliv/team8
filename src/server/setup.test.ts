@@ -44,15 +44,15 @@ describe('hookBlock', () => {
     expect(Object.keys(block.hooks)).toEqual([...HOOK_EVENTS]);
     for (const event of HOOK_EVENTS) {
       const entries = block.hooks[event] as HookEntry[];
-      // Both tool arms carry three extra entries: the command-hook launcher on
+      // Both tool arms carry extra entries: the command-hook launcher on
       // the Agent tool, and the same launcher on Workflow — a different tool,
-      // which the Agent matcher can never see. The third is PreToolUse's task
-      // gate, and PostToolUse's inbox-delivery hook, gated on agent_id so the
-      // lead never starts it.
+      // which the Agent matcher can never see. PreToolUse adds its two gates,
+      // on the task tools and on Agent; PostToolUse adds the inbox-delivery
+      // hook, gated on agent_id so the lead never starts it.
       const carriesLauncher = event === 'PreToolUse' || event === 'PostToolUse';
-      expect(entries).toHaveLength(carriesLauncher ? 4 : 1);
+      expect(entries).toHaveLength(event === 'PreToolUse' ? 5 : carriesLauncher ? 4 : 1);
       expect(entries.filter((e) => e.matcher === 'TaskCreate|TaskUpdate')).toHaveLength(event === 'PreToolUse' ? 1 : 0);
-      expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(carriesLauncher ? 1 : 0);
+      expect(entries.filter((e) => e.matcher === 'Agent')).toHaveLength(event === 'PreToolUse' ? 2 : carriesLauncher ? 1 : 0);
       expect(entries.filter((e) => e.matcher === 'Workflow')).toHaveLength(carriesLauncher ? 1 : 0);
       // SessionStart carries one extra hook, console-hint.sh (console upgrades
       // and the resume note), appended to the same entry as the observation
@@ -76,6 +76,16 @@ describe('hookBlock', () => {
     expect(gates[0].hooks[0].command).not.toContain('http://127.0.0.1');
     expect(Object.keys(block.hooks)).not.toContain('TaskCreated');
     expect(Object.keys(block.hooks)).not.toContain('TaskCompleted');
+  });
+
+  it('registers the agent gate on PreToolUse, for Agent, after the launcher', () => {
+    const agents = (block.hooks.PreToolUse as HookEntry[]).filter((e) => e.matcher === 'Agent');
+    expect(agents).toHaveLength(2);
+    expect(agents[0].hooks[0].command).toContain('console-launch.sh');
+    expect(agents[1].hooks).toHaveLength(1);
+    expect(agents[1].hooks[0].type).toBe('command');
+    expect(agents[1].hooks[0].command).toContain('agent-gate.sh');
+    expect(agents[1].hooks[0].command).not.toContain('http://127.0.0.1');
   });
 
   it('sets an explicit timeout on every entry, long only for the deliberate hold', () => {
@@ -179,6 +189,7 @@ describe("the plugin's own hooks.json", () => {
         .replace(/(['"])[^'"]*\/bin\/console-restart\.sh\1/, '<restart>')
         .replace(/(['"])[^'"]*\/bin\/console-hint\.sh\1/, '<hint>')
         .replace(/(['"])[^'"]*\/bin\/task-gate\.sh\1/, '<task-gate>')
+        .replace(/(['"])[^'"]*\/bin\/agent-gate\.sh\1/, '<agent-gate>')
         .replace(/(['"])[^'"]*\/dist\/hooks\/inbox-deliver\.js\1/, '<inbox-deliver>');
     const normalise = (entries: HookEntry[]) =>
       JSON.stringify(
@@ -186,7 +197,8 @@ describe("the plugin's own hooks.json", () => {
           // Both launcher arms — Agent and Workflow — legitimately differ:
           // absolute path in the generated block, ${CLAUDE_PLUGIN_ROOT} in the
           // shipped one. Everything else must match byte for byte.
-          e.matcher === 'Agent' || e.matcher === 'Workflow'
+          (e.matcher === 'Agent' || e.matcher === 'Workflow') &&
+          (e.hooks[0] as { command: string }).command.includes('console-launch.sh')
             ? { ...e, hooks: [{ ...e.hooks[0], command: '<launcher>' }] }
             : {
                 ...e,
@@ -402,6 +414,14 @@ describe('mergeHookBlock / removeHookBlock', () => {
     expect(gate?.hooks[0].command).toContain('task-gate.sh');
     expect(merged.hooks.TaskCreated).toBeUndefined();
     expect(merged.hooks.TaskCompleted).toBeUndefined();
+  });
+
+  it('writes the agent gate on PreToolUse and strips it again', () => {
+    const merged = mergeHookBlock({}, 4823) as { hooks: Record<string, HookEntry[]> };
+    const gates = merged.hooks.PreToolUse.filter((e) => e.hooks[0].command.includes('agent-gate.sh'));
+    expect(gates).toHaveLength(1);
+    expect(gates[0].matcher).toBe('Agent');
+    expect(JSON.stringify(removeHookBlock(merged))).not.toContain('agent-gate.sh');
   });
 
   it("keeps a user's own empty event key", () => {

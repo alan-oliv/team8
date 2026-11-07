@@ -156,6 +156,8 @@ mailbox. Nothing errors either way. So in subagents mode every named spawn
 carries it — executors and reviewers alike — and in teammates mode none does.
 A reviewer is the spawn that gets this wrong: its step reads the same in both
 modes, so the flag has to come from the mode you are in, not from the step.
+A hook, `agent-gate.sh`, holds the line: the session's first named team8 spawn
+fixes the mode, and a later one whose flag disagrees is refused with the fix.
 
 **subagents.** A worker per track, every track of the wave at once, each in a
 worktree of its own. Dispatch each track whose blockers are closed: one fresh
