@@ -339,10 +339,10 @@ function lastCwds(buf: Buffer, slug: string): { last?: string; filedUnder?: stri
  * The mode `team8:tasks` decided, read off the lead's own write of the run
  * log: the `mode: <x> — <reason>` line of `docs/team8/runs/<batch>.md`. Only a
  * tool_use record counts — the skill text arrives as a user record and quotes
- * the same line as an example — and the template's `mode: solo | subagents …`
+ * the same line as an example — and the template's `mode: subagents | teammates …`
  * has no dash after the first word, so an unfilled log decides nothing.
  */
-const DECIDED_MODE = /mode: (solo|subagents|teammates|workflow) —/g;
+const DECIDED_MODE = /mode: (subagents|teammates|workflow) —/g;
 
 function lastDecidedMode(buf: Buffer): DecidedMode | undefined {
   const marker = 'docs/team8/runs/';

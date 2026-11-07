@@ -23,10 +23,13 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
    If `team8:plan` already landed them, skip this step and its branch cut.
-4. **Take the mode from the task list's closing notes** — solo, subagents,
+4. **Take the mode from the first line of the task list's closing** — subagents,
    teammates or workflow, per `team8:tasks` Mode. If no mode was stated, settle
-   it now as that Mode does — read it off the graph, and between subagents and
-   teammates ask with the recommendation first — and say it in one line. Then
+   it now as that Mode does — workflow read off the graph; between
+   subagents and teammates ask, recommendation first — and say it in one line.
+   A `mode: subagents` or `mode: teammates` line that does not say the user
+   chose it, in the closing or in this skill's own arguments, is the graph's
+   recommendation and not the mode: ask the same way before any spawn. Then
    take the waves from the closing: the agents alive at any moment, teammates
    or subagents, are the tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode. Before the first spawn, tell the user in one
@@ -72,7 +75,6 @@ pushes a question at them that only you have the dependency graph to answer.
 |---|---|
 | teammates — any two tracks run at the same time in one checkout | **One shared branch, one PR for the batch.** The only option |
 | subagents — each track in a worktree of its own | **A branch per track, a PR each.** The only option the other way: every worktree arrives on its own branch off the default branch |
-| solo — every task blocked by the previous one | One branch per task, stacked, a PR each, IF you want reviewable slices |
 | Sequential tasks inside a track, parallel tracks beside it | The mode decides it: the shared branch for teammates, a branch per track for subagents |
 
 **Why concurrency forecloses the choice for teammates:** they share one checkout, so they
@@ -115,14 +117,15 @@ How many PRs is yours to decide too, and the origin of the work decides it:
 
 | Where the work came from | PRs |
 |---|---|
-| One batch tackled together — a plan, a handoff drop, a review's findings | One PR for the batch, in teammates or solo mode. In subagents mode the worktrees decide: a PR per track |
+| One batch tackled together — a plan, a handoff drop, a review's findings | One PR for the batch, in teammates mode. In subagents mode the worktrees decide: a PR per track |
 | Separate tickets, separate identifications, separate asks | A PR each — subagents mode gives it for free; in teammates mode only if step 2a left you a single track, since concurrency forecloses per-task branches |
 
 Whatever you decide is the answer **for the whole batch**, and every dispatch prompt
 must state it explicitly. Do not decide per teammate, and do not leave it unstated
 and let each teammate choose — that is how three branches land and two sit unpushed.
 
-**Ask the user only what changes what gets built,** and ask it with
+**Ask the user only what changes what gets built** — and the mode, which
+step 4 asks whenever it is subagents or teammates — and ask it with
 AskUserQuestion. A question whose every answer
 leads to the same dispatch is a round trip you spent for nothing. Worth asking: two
 readings of the work that produce different code; a destructive step outside the
@@ -134,18 +137,17 @@ how to branch, how many PRs, whether to start.
 - "…ok, or would you rather they stop at commits and you open it?"
 - "Which way now — adjust, or start the work?" *after* the user already said run it
 - Any question you could answer by reading the task graph or the git state
-- Presenting a recommended option and then asking whether to take it
+- Presenting a recommended option and then asking whether to take it (the one
+  exception is the mode ask in step 4)
 
 **All of these mean: take the recommended option and dispatch.**
 
 ## Modes
 
-The mode came from the task graph (`team8:tasks` Mode). Each mode ends the
-same way: the terminal deliverable from step 2b, the run log filled at close.
-
-**solo.** The lead does the work itself, task by task in dependency order,
-TDD, one commit per task by pathspec. Mark each task `in_progress`
-and `completed` as you go. No dispatch, no roster.
+The mode came from the closing — the user's answer for subagents or
+teammates, the graph for workflow (`team8:tasks` Mode). Each mode
+ends the same way: the terminal deliverable from step 2b, the run log filled
+at close.
 
 **subagents.** A worker per track, every track of the wave at once, each in a
 worktree of its own. Dispatch each track whose blockers are closed: one fresh
@@ -168,7 +170,7 @@ clear, and its prompt says to `git merge <that branch>` first, so its PR stacks
 on the other. A clear track's worktree goes with `git worktree remove <path>`
 (`git worktree list` has the path); the branch stays for its PR.
 
-**teammates.** A peak of two or more. Dispatch by wave, from the closing's
+**teammates.** The user's choice, at any peak. Dispatch by wave, from the closing's
 wave lines: every track in wave 1 now, one teammate each; each later wave
 when the tasks it waits on close, fresh teammates. A team8 unblock notice
 says when: it names each unblocked task whose owner is idle or not running;

@@ -425,7 +425,12 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       }
       case 'subagent': {
         const p = ev.payload as SubagentPayload;
-        // Cumulative, so the newest digest REPLACES the last one, like `totals`.
+        // Cumulative, so the newest digest REPLACES the last one, like `totals`
+        // — except an empty one over a digest with records: a transcript never
+        // shrinks, so that is a re-adoption's placeholder, emitted before its
+        // re-read lands, and for one frame it would show the call at $0.
+        const held = subagentFacts.get(p.toolUseId)?.digest;
+        if (p.digest.records === 0 && held && held.records > 0) break;
         subagentFacts.set(p.toolUseId, {
           agentId: p.agentId,
           meta: p.meta,
@@ -677,6 +682,22 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     subagentFacts,
   );
 
+  // A subagent is not a team member and takes no share of a teammate's spend,
+  // but what it put through the model was this session's bill all the same —
+  // Claude Code's own /cost counts it, and a total that left it out read $7.11
+  // for a session whose transcripts held $7.69. Summed over the digests, not
+  // the tree: the tree needs the lead's dispatch record, which the per-agent
+  // record bound drops first, and a cost that fell with it would be the drop
+  // the store promises never happens. A digest from before it priced itself
+  // counts for nothing, tokens included, so both totals cover the same calls.
+  let taskCallTokens = 0;
+  let taskCallCostUsd = 0;
+  for (const { digest } of subagentFacts.values()) {
+    if (!digest || digest.costUsd === undefined) continue;
+    taskCallTokens += digest.tokens;
+    taskCallCostUsd += digest.costUsd;
+  }
+
   const leadMember = config?.members.find((m) => m.agentId === config.leadAgentId) ?? config?.members[0];
 
   return {
@@ -688,8 +709,8 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     // A config-less session has no createdAt, so the lead's own start stands in
     // — the alternative is an elapsed measured from the epoch.
     startedAt: config?.createdAt ?? agents.find((a) => a.isLead)?.startedAt ?? 0,
-    totalTokens,
-    totalCostUsd: agents.reduce((sum, a) => sum + a.costUsd, 0),
+    totalTokens: totalTokens + taskCallTokens,
+    totalCostUsd: agents.reduce((sum, a) => sum + a.costUsd, 0) + taskCallCostUsd,
     rateLimits,
     agents,
     tasks,

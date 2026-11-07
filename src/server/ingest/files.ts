@@ -719,6 +719,12 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     const buffered = pending.get(transcript)?.records ?? [];
     dropPending(transcript);
     appendSubagent(transcript, buffered);
+    // An unnamed transcript (`agent-a<16hex>.jsonl`, the common shape) claims
+    // nothing, so a watcher read that beat the sidecar dropped its bytes into
+    // `deferred` — put them back, or the pump below starts past them and the
+    // digest stays empty. Same per-file chain as the pump, so the reset lands
+    // first.
+    if (deferred.delete(transcript)) void transcripts.forget(transcript);
     // The sweep records a file's mtime whether or not it read it, so a subagent
     // that had already finished when its sidecar was judged would never be
     // offered again — asking for it here is the only thing that reads it.
@@ -1313,8 +1319,12 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
       const tails = transcripts.states();
       // Read from 0 next time: a deferred file's bytes were dropped and a
       // pending one's records die with this ingest, so neither is in the store;
-      // a workflow agent's spend is folded per ingest and is not carried over.
-      for (const f of [...deferred, ...pending.keys()]) tails.delete(f);
+      // a workflow agent's spend is folded per ingest and is not carried over,
+      // and neither is a subagent's digest — carried at its EOF, the next
+      // ingest re-adopted it as an empty fold and never read a byte (five
+      // finished subagents went to `records: 0` on a switch back to their
+      // session).
+      for (const f of [...deferred, ...pending.keys(), ...subagentOf.keys()]) tails.delete(f);
       for (const f of tails.keys()) if (workflowAgentClaimOf(f)) tails.delete(f);
       for (const w of watchers) w.close();
       return { tails, usage: usageLedger };

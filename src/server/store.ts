@@ -208,6 +208,11 @@ function needsYouId(payload: unknown): string | undefined {
   return typeof id === 'string' ? id : undefined;
 }
 
+function toolUseIdOf(payload: unknown): string | undefined {
+  const id = payload && typeof payload === 'object' ? (payload as { toolUseId?: unknown }).toolUseId : undefined;
+  return typeof id === 'string' ? id : undefined;
+}
+
 // Two scalars off a TranscriptPayload (project.ts owns the shape). The store
 // cannot rewrite a payload without forcing a whole-file compaction, but it can
 // read one to decide whether to keep the row — the same exception needsYouId is.
@@ -409,8 +414,21 @@ function transcriptDrops(events: StoredEvent[]): {
  * a shrunk row leaves the row COUNT unchanged.
  */
 function trim(events: StoredEvent[]): StoredEvent[] {
+  // A finished subagent never appends again, so the oldest-first drop below
+  // would take its only digest while live ones keep re-publishing theirs — and
+  // with it the spend the session total reads. The newest row per toolUseId is
+  // kept whatever its age; only the re-reads behind it count against the cap,
+  // which is what the cap's note promises.
+  const newestDigest = new Map<string, StoredEvent>();
+  for (const e of events) {
+    if (e.kind !== 'subagent') continue;
+    const id = toolUseIdOf(e.payload);
+    if (id) newestDigest.set(id, e);
+  }
+  const pinned = new Set(newestDigest.values());
+
   const counts = new Map<string, number>();
-  for (const e of events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  for (const e of events) if (!pinned.has(e)) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
 
   const excess = new Map<string, number>();
   for (const [kind, keep] of Object.entries(KIND_RETENTION)) {
@@ -436,6 +454,7 @@ function trim(events: StoredEvent[]): StoredEvent[] {
   // Ascending seq order, so the first `over` events of a kind are its oldest.
   const kept = events.filter((e) => {
     if (transcripts.has(e)) return false;
+    if (pinned.has(e)) return true;
     if (e.kind === 'needsyou') {
       const id = needsYouId(e.payload);
       if (id && closedIds.has(id)) return false;

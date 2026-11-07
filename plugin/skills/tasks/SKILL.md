@@ -9,7 +9,7 @@ description: Use when breaking work into tasks — a feature, a migration, a rev
 
 A task list is a delegation contract, not a to-do list. Each task gets picked up by an agent with **none of this conversation's context**, possibly in parallel with its siblings, possibly on a different model. That needs three things: a description that stands alone, dependencies that are real, and a model sized to the task.
 
-**This skill also decides how the list runs.** Solo, subagents, teammates or workflow is read off the finished graph here — and, between subagents and teammates, asked of the user with the recommendation first — stated as the first line of the closing message, and executed by `team8:run` as stated. Nothing upstream knows it — a plan is the same plan in any mode — and `run` does not re-decide it. Until this line exists, the mode is unknown, and the console shows no mode badge for the session.
+**This skill also decides how the list runs.** Subagents, teammates or workflow is read off the finished graph here — and, between subagents and teammates, asked of the user with the recommendation first — stated as the first line of the closing message, and executed by `team8:run` as stated. Nothing upstream knows it — a plan is the same plan in any mode — and `run` does not re-decide it. Until this line exists, the mode is unknown, and the console shows no mode badge for the session.
 
 ## When to Use
 
@@ -142,7 +142,7 @@ or what was fixed.
 
 The closing message has four parts, in this order. Part 4 is an action, not a question: the list runs in the same turn it is shown.
 
-1. **The mode** — the first line, on its own, as Mode below settled it (read off the graph, asked where it was subagents or teammates), and for teammates it says how many run at once: `mode: teammates — 4 tracks in 3 waves, peak 2 at once`. Then the waves, one line each, before the table. A closing without this has not decided anything, and `run` will have to.
+1. **The mode** — the first line, on its own, as Mode below settled it (read off the graph for workflow, asked whenever it is subagents or teammates), saying who chose it, and for teammates how many run at once: `mode: teammates — the user's choice over the recommended subagents — 4 tracks in 3 waves, peak 2 at once`. Then the waves, one line each, before the table. A closing without this has not decided anything, and `run` will have to.
 
 2. **The table** — dependency, model and estimate columns, so the user can override before anything runs, and a total row:
 
@@ -157,41 +157,42 @@ The closing message has four parts, in this order. Part 4 is an action, not a qu
 
 ## Mode: read it off the graph, then ask
 
-The task list decides how it runs, not the plan and not habit. Four modes,
-matching the console's: solo, subagents, teammates, workflow. Read the
-recommendation off the tracks and the task shapes; where it lands between
-subagents and teammates, ask the user with the recommendation first (The ask,
-below); state the result with its reason in the closing. `team8:run` executes
-whichever was chosen.
+The task list decides how it runs, not the plan and not habit. Three modes,
+matching the console's: subagents, teammates, workflow — the lead never does
+the work itself; every list spawns at least one worker. Read the
+recommendation off the tracks and the task shapes; whenever it is subagents
+or teammates — however clear-cut — ask the user, recommendation first (The
+ask, below); state the result with its reason in the closing. `team8:run`
+executes whichever was chosen.
 
-The four modes are Claude Code's own ways of running work in parallel
+The three modes are Claude Code's own ways of running work in parallel
 (https://code.claude.com/docs/en/agents), and they differ on seven things.
 This is the knowledge the mode is read against:
 
-| | solo | subagents | teammates | workflow |
-|---|---|---|---|---|
-| What it is | The lead does it | Delegated workers inside one session: each does a task in its own context and returns a summary | Multiple coordinated sessions with a shared task list and inter-agent messaging, managed by a lead | A script that runs many subagents and cross-checks their results |
-| Who coordinates the work | The lead | The lead delegates and collects results inside one conversation | The lead plans, assigns and supervises a group of workers | The script holds the plan instead of the lead's turn-by-turn judgment |
-| Do the workers talk to each other | — | No. Each reports back to the lead | Yes. Teammates message each other and share the task list | No. The script passes results between stages |
-| Where they edit | The lead's checkout | A worktree each, on a branch each | One shared checkout, each owning its files | Per agent, as the script spawns it |
-| Where intermediate results live | The lead's context | The lead's context | A shared task list | Script variables |
-| Scale | A couple of tool calls | A few delegated tasks per turn | A handful of long-running peers | Dozens to hundreds of agents per run |
-| Interruption | — | Restarts the turn | Teammates keep running | Resumable in the same session |
+| | subagents | teammates | workflow |
+|---|---|---|---|
+| What it is | Delegated workers inside one session: each does a task in its own context and returns a summary | Multiple coordinated sessions with a shared task list and inter-agent messaging, managed by a lead | A script that runs many subagents and cross-checks their results |
+| Who coordinates the work | The lead delegates and collects results inside one conversation | The lead plans, assigns and supervises a group of workers | The script holds the plan instead of the lead's turn-by-turn judgment |
+| Do the workers talk to each other | No. Each reports back to the lead | Yes. Teammates message each other and share the task list | No. The script passes results between stages |
+| Where they edit | A worktree each, on a branch each | One shared checkout, each owning its files | Per agent, as the script spawns it |
+| Where intermediate results live | The lead's context | A shared task list | Script variables |
+| Scale | A few delegated tasks per turn | A handful of long-running peers | Dozens to hundreds of agents per run |
+| Interruption | Restarts the turn | Teammates keep running | Resumable in the same session |
 
 A track is a group of tasks whose files no other group touches. Count them
 first, then read the work against the table — above all, do the workers
 need to talk to each other:
 
-| The work is | Mode | Why, per the table |
+| The work is | Recommends | Why, per the table |
 |---|---|---|
-| At most two tasks, every one of them **mechanical** (Sizing above) — work the lead finishes in the next few tool calls | **solo** | Nothing is worth repeating and nothing is worth a worker. Spawning costs more than the work; the lead does it, TDD, one commit |
-| A batch of separate tickets — two to seven tasks, related or not, none big enough to split into tracks of its own — or a single **standard** or **judgment** task, or any graph with a peak of 1 | **subagents** | Each ticket is a side job a worker does in its own context, in a worktree of its own on its own branch, and hands back as a PR; the lead reviews each and decides what runs next. They all start at once and never coordinate: no task needs a sibling's result mid-flight, so nobody needs a mailbox, a shared branch or file ownership |
+| A batch of separate tickets — two to seven tasks, related or not, none big enough to split into tracks of its own — or a single task — **mechanical** included — or any graph with a peak of 1 | **subagents** | Each ticket is a side job a worker does in its own context, in a worktree of its own on its own branch, and hands back as a PR; the lead reviews each and decides what runs next. They all start at once and never coordinate: no task needs a sibling's result mid-flight, so nobody needs a mailbox, a shared branch or file ownership |
 | One new module or feature split into two or more tracks that build at once — pieces that share types, routes, a branch and a track review | **teammates** | The lead splits the project into pieces, assigns them and keeps the workers in sync through the shared task list and messaging. Parallel writers in one checkout need file ownership, a shared branch and a track review. Every task carries its teammate as owner from creation (Owners, above), and the teammate claims each in turn. Size against 3–5 teammates and 5–6 tasks each — fewer tasks per teammate and coordination costs more than the parallelism buys |
 | Five or more tasks of the same shape — the same job over many inputs, a review per PR, a fan-out with a verify step — with no decision between them | **workflow** | The orchestration itself is the repeatable thing: the script decides what runs next, results live in its variables, and it scales to dozens or hundreds of agents where a lead would improvise the same dispatch by hand. This skill's instruction is the opt-in the Workflow tool requires: state it, do not ask the user to choose it |
 
-A single standard task is subagents, not solo: one file of real work is
-still work the lead should review rather than write. Solo is for the rename,
-the flag, the field — the rows Sizing calls mechanical. Ties break upward:
+All of this recommends; between subagents and teammates the user answers.
+A single task is subagents, however small: a rename, a flag, a field is
+still work the lead reviews rather than writes, so one worker does it.
+Ties break upward:
 subagents before teammates, unless the tasks are pieces of one feature that
 genuinely build at once. Separate tickets that happen to be startable together
 are still subagents: parallel is not the same as coordinated. Teammates before
@@ -200,7 +201,7 @@ shapes takes the mode of its hardest part.
 
 ### The ask: subagents or teammates
 
-Solo and workflow are read off the graph and stated. Between subagents and
+Workflow is read off the graph and stated. Between subagents and
 teammates the choice is the user's — their session, their cost, their
 attention — and this skill asks it, once, after the tasks exist and before
 the owners and the three checks. `AskUserQuestion`, header `Mode`, exactly
@@ -210,11 +211,11 @@ described in one line of what it means for this list:
 - `teammates` — "One feature in N tracks that build at once: N peers on a shared branch, each owning its files, messaging each other, a track review per track."
 - `subagents` — "A worker per ticket, all at once, each in a worktree of its own on its own branch: a PR each, every result back in my context to review; nobody coordinates with anybody."
 
-The answer is the mode, whatever the graph said. Teammates: set the owners
-(above) before the checks. Subagents: leave every owner empty; the waves still
-say which tracks start at once, each in its own worktree. This is the one
-question this skill asks; the closing still ends in the handoff, not a
-question.
+The answer is the mode, whatever the graph said — the table and the peak
+recommend, they never decide. Teammates: set the owners (above) before the
+checks. Subagents: leave every owner empty; the waves still say which tracks
+start at once, each in its own worktree. This is the one question this skill
+asks; the closing still ends in the handoff, not a question.
 
 **Tracks are not parallelism.** A track is who owns which files — in subagents
 mode, which worktree; a wave is who is running at the same time. Wave 1 is every
@@ -223,20 +224,23 @@ is unblocked once wave N closes. The peak is the largest wave, and it is the
 number of agents the user is paying for at once, in either mode. Four tracks
 that run 1, then 2, then 1 is a peak of 2, and the closing says so.
 
-Write the mode as the first line of the closing, then the waves:
+Write the mode as the first line of the closing, saying who chose it, then
+the waves:
 
 ```
-mode: teammates — 4 tracks in 3 waves, peak 2 at once
+mode: teammates — the user's choice over the recommended subagents — 4 tracks in 3 waves, peak 2 at once
 wave 1: A (tasks 1, 2)
 wave 2: B (3) ∥ C (4, 5, 6) — after task 1
 wave 3: D (7) — after 4, 5, 6
 ```
 
-Subagents the same way: `mode: subagents — 5 tickets in 5 tracks, one wave, 5 at once`.
+Subagents the same way: `mode: subagents — the user's choice, as recommended — 5 tickets in 5 tracks, one wave, 5 at once`.
+A subagents or teammates line that does not say the user chose it is a
+recommendation, not a mode, and `team8:run` asks before it spawns.
 
-A peak of 1 is not teammates. Every track running after the previous one is
-one serial line of work, and the mode is subagents whatever the file
-ownership looks like.
+A peak of 1 recommends subagents: every track running after the previous one
+is one serial line of work, whatever the file ownership looks like. It is
+still The ask's recommendation, never its answer.
 
 ## Estimating: complexity × model × effort, at list price
 
@@ -287,9 +291,9 @@ in the same direction, change the factor instead.
 |---|---|
 | A ticket turned into a task without the readiness check | Check it against the four questions first. Any "no" means it goes through `team8:plan` by itself. |
 | One model for the whole list | Model is per-task. A list of nine usually spans two or three tiers. |
-| Mode left implicit, or left to `run` | It is part 1 of the closing. Read it off the tracks, ask where it is subagents or teammates, and say it with its reason. |
-| Teammates by habit for a one-track list | One track is subagents. Count the tracks before naming the mode. |
-| Teammates for a batch of separate tickets | Tickets that never need each other's results are subagents, however many could start at once. Teammates is one feature split into pieces that build together. |
+| Mode left implicit, or left to `run` | It is part 1 of the closing. Read it off the tracks, ask whenever it is subagents or teammates, and say it with its reason and who chose it. |
+| Teammates by habit for a one-track list | One track recommends subagents; the ask still decides. Count the tracks before recommending. |
+| Teammates for a batch of separate tickets | Tickets that never need each other's results recommend subagents, however many could start at once; the user still chooses. Teammates is one feature split into pieces that build together. |
 | Choosing subagents or teammates without the ask | The choice is the user's. Recommend one, label it `(Recommended)`, ask, then set owners if the answer is teammates. |
 | "4 tracks" read as 4 teammates | Tracks own files; waves run. Say the peak, and list the waves. |
 | Chaining every task 1→2→3→4 | Per blocker, ask: what output does the blocked task read? No answer, no blocker. |

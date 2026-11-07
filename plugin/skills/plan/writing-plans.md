@@ -35,7 +35,13 @@ fresh reviewer's gate. When drawing task boundaries: fold setup,
 configuration, scaffolding, and documentation steps into the task whose
 deliverable needs them; split only where a reviewer could meaningfully
 reject one task while approving its neighbor. Each task ends with an
-independently testable deliverable.
+independently testable deliverable. A task that only checks another task's
+output — a comparison against the design, a smoke run, a walk through the
+screens — is that task's last steps, not a task of its own: it has no test
+cycle to carry, and as a task it pays a fresh context to re-read what the
+task that built the thing already held. A check over more than one task's
+output — an end-to-end run across tracks — stays a task, blocked by
+everything that can break it.
 
 ## Bite-Sized Task Granularity
 
@@ -185,7 +191,8 @@ creating them:
   after the producer's track finishes. Say which, with `blockedBy`.
 - Fewest tracks that keep files disjoint. A three-track list with one shared
   file is a merge conflict; a one-track list is fine.
-- Verification tasks belong to the track that can break them.
+- A verification task spans the tracks that can break it; one that checks a
+  single task is that task's last steps (Task Right-Sizing).
 
 Invoke `team8:tasks` — its contract applies to every task. One `TaskCreate` per
 plan task, same order, same subject. The description stands alone; it never

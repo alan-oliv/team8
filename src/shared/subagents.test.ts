@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { TranscriptRecord } from './transcript';
+import { totalCost, usageRecordsOf } from './usage';
 import {
   buildSubagentTree,
   digestOf,
@@ -253,6 +254,12 @@ describe('foldSubagentRecords', () => {
     expect(digest(scout.records).tokens).toBe(5 + 300 + 1200 + (7 + 90 + 800) + (9 + 210 + 400));
   });
 
+  it('prices those records at list price, each on the model it reports', () => {
+    const own = digest(scout.records);
+    expect(own.costUsd).toBeGreaterThan(0);
+    expect(own.costUsd).toBeCloseTo(totalCost(usageRecordsOf(scout.records)), 12);
+  });
+
   it('reports context occupancy from its newest assistant turn', () => {
     expect(digest(scout.records).contextTokens).toBe(9 + 400 + 42000);
   });
@@ -268,7 +275,7 @@ describe('foldSubagentRecords', () => {
 
   it('is empty, not zeroed, for a subagent that has written nothing', () => {
     const empty = digestOf(emptySubagentFold());
-    expect(empty).toMatchObject({ records: 0, tokens: 0, toolCalls: 0, contextTokens: 0 });
+    expect(empty).toMatchObject({ records: 0, tokens: 0, costUsd: 0, toolCalls: 0, contextTokens: 0 });
     expect(empty.startedAt).toBeUndefined();
     expect(empty.summary).toBeUndefined();
   });
@@ -383,6 +390,7 @@ describe('buildSubagentTree', () => {
     expect(built['team-lead'][0].durationMs).toBeUndefined();
     // Its own transcript still bills, because that is measured, not inferred.
     expect(built['team-lead'][0].tokens).toBe(digest(scout.records).tokens);
+    expect(built['team-lead'][0].costUsd).toBe(digest(scout.records).costUsd);
   });
 
   it('reads a dispatch with a sidecar but no records yet as queued', () => {

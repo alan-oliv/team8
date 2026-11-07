@@ -263,5 +263,7 @@ it('takes a session with no team config at all from the picker to a populated tr
   // billed tokens. A zero here means the ingest never got inside a session it
   // had no config.json to scope it with.
   expect(screen.getByTestId('trace-tokens-in').textContent).toBe('15.0k');
-  expect(screen.getByTestId('trace-spend').textContent).toBe('≈$0.01');
+  // List price over each call's own records, not the cache-read derivation
+  // that printed ≈$0.01 for the same 15k tokens.
+  expect(screen.getByTestId('trace-spend').textContent).toBe('≈$0.21');
 }, 40_000);

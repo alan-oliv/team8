@@ -7,6 +7,7 @@ import { flattenSubagents } from '../../shared/subagents';
 import {
   billedTokens,
   cacheHitRatio,
+  cacheReadRatio,
   costPerHour,
   costPerTask,
   dollarsAvoided,
@@ -416,6 +417,11 @@ function RateCardPanel({ models }: { models: readonly ModelSpend[] }) {
     .map((m) => rateOf(m.model))
     .filter((r, i, all) => all.findIndex((o) => o.model === r.model) === i);
   const rows = [...catalog, ...unknown];
+  // Said from the rows, never typed: a sentence that named 0.1× over an Opus
+  // 5.5 lead billed at 0.05× is the stale copy the comment above warns of.
+  const readRatios = [...new Set(rows.map((r) => cacheReadRatio(r.model)))]
+    .sort((a, b) => parseFloat(b) - parseFloat(a))
+    .join(', ');
 
   const CELL: CSSProperties = { width: '52px', flex: 'none', textAlign: 'right' };
   const cells = (card: Pick<ModelRate, 'input' | 'output' | 'cacheWrite' | 'cacheRead'>) => (
@@ -471,7 +477,7 @@ function RateCardPanel({ models }: { models: readonly ModelSpend[] }) {
         </div>
       ))}
       <div data-testid="usage-rate-note" style={PROSE}>
-        {'Cache writes bill at 1.25× the input rate and reads at 0.1× (0.05× on Opus 5.5, 0.025× on Fable 5.1), which is why the total is not several times larger. '}
+        {`Cache writes bill at 1.25× the input rate and reads at ${readRatios} of it by model, which is why the total is not several times larger. `}
         {"A teammate's cache TTL is 5 minutes by default, separate from the main conversation's — a teammate idle longer than that pays the write again on its next turn. "}
         <code style={{ color: 'var(--color-accent-400)' }}>subagentPromptCacheTtl: 1h</code>
         {' extends it and bills writes higher.'}
@@ -693,6 +699,12 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
   const taskCalls = Object.entries(state.subagents ?? {}).flatMap(([parent, list]) =>
     flattenSubagents(list).map((s) => ({ s, parent })),
   );
+  // Priced by each call's own digest when every call carries one; a log from
+  // before the digest priced itself is drawn by derivation and captioned so.
+  // A log written across that line — some calls priced, some not — takes the
+  // derived caption and no `incl.` note: an under-claim, never an over-claim.
+  const taskCallsMeasured = taskCalls.every(({ s }) => s.costUsd !== undefined);
+  const taskCallSpend = taskCalls.reduce((n, { s }) => n + subagentSpendUsd(s), 0);
   const perTask = costPerTask(state.totalCostUsd, tasksDone);
   const perHour = costPerHour(state.totalCostUsd, state.startedAt, now);
 
@@ -711,6 +723,7 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
   // lead's — the model that would have carried the work.
   const serialModel = (agents.find((a) => a.isLead) ?? agents[0])?.model ?? '';
   const serial = serialEstimate(agents, serialModel);
+  const readRatio = cacheReadRatio(serialModel);
 
   return (
     <div
@@ -723,7 +736,11 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
           testId="usage-cost"
           label="session cost"
           value={formatCost(state.totalCostUsd)}
-          note={perHour === undefined ? `${EM_DASH} per hour at the current burn` : `${formatCost(perHour)} per hour at the current burn`}
+          note={`${perHour === undefined ? EM_DASH : formatCost(perHour)} per hour at the current burn${
+            taskCalls.length > 0 && taskCallsMeasured
+              ? ` · incl. ${formatCost(taskCallSpend)} in ${taskCalls.length} Task call${taskCalls.length === 1 ? '' : 's'}`
+              : ''
+          }`}
         />
         <Tile
           testId="usage-tokens"
@@ -743,7 +760,7 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
           label="cache hit rate"
           value={hit === undefined ? EM_DASH : formatPct(hit)}
           valueColor="var(--color-accent-400)"
-          note={`reads bill at 0.1× — ${avoided === undefined ? EM_DASH : formatCost(avoided)} avoided`}
+          note={`lead's reads bill at ${readRatio} — ${avoided === undefined ? EM_DASH : formatCost(avoided)} avoided`}
         />
         <Tile
           testId="usage-context"
@@ -804,8 +821,8 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
         </div>
         <div data-testid="usage-composition-note" style={PROSE}>
           {hit === undefined
-            ? 'Cache reads are the majority of a team\'s tokens and bill at 0.1x input — their share is unknown here because at least one agent has no split recorded. '
-            : `Cache reads are ${formatPct(hit)} of this team's billed tokens and bill at 0.1x input. `}
+            ? `Cache reads are the majority of a team's tokens and bill at ${readRatio} input on ${serialModel} — their share is unknown here because at least one agent has no split recorded. `
+            : `Cache reads are ${formatPct(hit)} of this team's billed tokens and bill at ${readRatio} input on ${serialModel}. `}
           {"A teammate's cache TTL is 5 minutes by default, so a teammate idle longer than that pays the write again on its next turn."}
         </div>
       </div>
@@ -919,7 +936,9 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
           <div style={{ ...PANEL_HEAD, padding: '13px 16px 11px', borderBottom: '1px solid var(--color-neutral-900)' }}>
             <span style={PANEL_TITLE}>Spend per Task call</span>
             <span data-testid="usage-taskcalls-caption" style={PANEL_CAPTION}>
-              derived at the cache-read rate · no per-call split is recorded
+              {taskCallsMeasured
+                ? 'list price over each call’s own transcript'
+                : 'derived at the cache-read rate · recorded before calls were priced'}
             </span>
           </div>
           {taskCalls.map(({ s, parent }) => (
@@ -951,7 +970,7 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
           <div style={{ display: 'flex', gap: '10px', padding: '7px 16px', fontSize: '11.5px' }}>
             <span style={{ flex: 1, color: 'var(--color-neutral-600)' }}>{`${taskCalls.length} calls`}</span>
             <span data-testid="usage-taskcalls-total" style={{ width: '64px', textAlign: 'right', fontWeight: 500, color: 'var(--color-text)' }}>
-              {formatCost(taskCalls.reduce((n, { s }) => n + subagentSpendUsd(s), 0))}
+              {formatCost(taskCallSpend)}
             </span>
           </div>
         </div>
@@ -1008,6 +1027,9 @@ export function UsageTeam({ state, now, focused, onFocus, spendSamples }: UsageT
         </p>
         <p style={{ margin: 0 }}>
           Compaction on the lead rewrites the cached prefix and costs a full cache write across the whole team, not just the lead.
+        </p>
+        <p style={{ margin: 0 }}>
+          {"Claude Code's own session cost — its status line and /cost — also counts the side calls it makes for itself (session titles, summaries, prompt suggestions, compaction), which no transcript records, so the session cost at the top of this page runs below it by what those cost."}
         </p>
         <p style={{ margin: 0 }}>
           Rates come from config (<code style={{ color: 'var(--color-accent-400)' }}>src/shared/catalog.json</code>) — an edit there takes effect on the next drain. Every dollar on this page is derived at API list price; a subscription plan meters the same usage against plan limits instead.

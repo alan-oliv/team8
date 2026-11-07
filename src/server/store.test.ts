@@ -284,6 +284,24 @@ describe('team scoping', () => {
       store.close();
     }
   });
+
+  it('keeps a finished subagent’s digest past the subagent cap while a live one keeps re-publishing', () => {
+    const cap = KIND_RETENTION.subagent!;
+    const store = openStore(path.join(dir, 'digest.db'), 'session-cap00001');
+    try {
+      store.append('subagent', { toolUseId: 'toolu_done', agentId: 'a1', digest: { records: 3, tokens: 577 } });
+      for (let i = 0; i < cap + 600; i++) {
+        store.append('subagent', { toolUseId: 'toolu_live', agentId: 'a2', digest: { records: i, tokens: i } });
+      }
+      const digests = store.replay().filter((e) => e.kind === 'subagent');
+      // The finished one's only row is the oldest of the kind and still here.
+      expect(digests[0].payload).toMatchObject({ toolUseId: 'toolu_done', digest: { tokens: 577 } });
+      expect(digests.at(-1)!.payload).toMatchObject({ toolUseId: 'toolu_live', digest: { records: cap + 599 } });
+      expect(digests.length).toBeLessThanOrEqual(cap + 250);
+    } finally {
+      store.close();
+    }
+  });
 });
 
 // project() walks every stored record on every publish, so what has to be

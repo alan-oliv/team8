@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { Subagent } from '../../shared/domain';
+import { formatCost } from '../format';
 import { Trace, axisTicks } from './Trace';
 
 afterEach(cleanup);
@@ -109,6 +110,11 @@ describe('Trace header strip', () => {
     // returnedSummary is 400 chars -> ~100 estimated tokens; 4400 / 100 = 44:1.
     expect(screen.getByTestId('trace-shown-to-parent').textContent).toBe('100');
     expect(screen.getByTestId('trace-ratio').textContent).toContain('44:1');
+  });
+
+  it('prices the spend from each call’s own cost when its digest carries one', () => {
+    renderTrace({ subagents: [subagent({ tokens: 4_400, costUsd: 2.72 })] });
+    expect(screen.getByTestId('trace-spend').textContent).toBe(formatCost(2.72));
   });
 });
 

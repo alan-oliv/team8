@@ -10,14 +10,15 @@ describe('modeIn', () => {
   });
 
   it('takes the last mode line in one write', () => {
-    expect(modeIn(runLog('mode: solo — first\nmode: teammates — second'))).toBe('teammates');
+    expect(modeIn(runLog('mode: subagents — first\nmode: teammates — second'))).toBe('teammates');
   });
 
-  it('ignores the template, other files, logs with no mode and non-objects', () => {
-    expect(modeIn(runLog('- tasks: <n> · mode: solo | subagents | teammates | workflow — <reason>'))).toBeUndefined();
+  it('ignores the template, a retired mode, other files, logs with no mode and non-objects', () => {
+    expect(modeIn(runLog('- tasks: <n> · mode: subagents | teammates | workflow — <reason>'))).toBeUndefined();
+    expect(modeIn(runLog('mode: solo — an old batch'))).toBeUndefined();
     expect(modeIn({ file_path: '/r/docs/team8/plans/p.md', content: 'mode: teammates — x' })).toBeUndefined();
     expect(modeIn(runLog('## Brainstorm'))).toBeUndefined();
-    expect(modeIn('mode: solo — x')).toBeUndefined();
+    expect(modeIn('mode: subagents — x')).toBeUndefined();
     expect(modeIn(undefined)).toBeUndefined();
   });
 });
@@ -61,7 +62,7 @@ describe('stageOf', () => {
   });
 
   it('starts over at the next team8:plan, forgetting the last batch\'s mode', () => {
-    const decided = { role: 'assistant', toolUses: [{ input: runLog('mode: solo — first') }] };
+    const decided = { role: 'assistant', toolUses: [{ input: runLog('mode: subagents — first') }] };
     expect(stageOf([decided, plan])).toEqual({ phase: 'spec' });
   });
 

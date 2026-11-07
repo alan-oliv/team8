@@ -386,12 +386,26 @@ export function serialEstimate(
 }
 
 /**
- * A Task call's derived spend. The Subagent contract carries one aggregate
- * token count, no four-class split, so this prices at the cache-read rate —
- * the dominant class in real usage (USAGE-STATE.md §6). A derived figure, and
- * every drawing site must caption it as one. One derivation, shared with the
- * trace view, so the two cannot disagree.
+ * A Task call's spend: `costUsd` when its digest carries one — list price over
+ * its own records, each on the model it reports — and otherwise, for a log
+ * written before the digest priced itself, a derivation at the cache-read
+ * rate, the dominant class in real usage (USAGE-STATE.md §6). The derivation
+ * undercounts an Opus call by an order of magnitude ($0.05 for a $2.72 task),
+ * so every drawing site captions which of the two it drew. One function,
+ * shared with the trace view, so the two cannot disagree.
  */
-export function subagentSpendUsd(s: Pick<Subagent, 'tokens' | 'model'>): number {
+export function subagentSpendUsd(s: Pick<Subagent, 'tokens' | 'model' | 'costUsd'>): number {
+  if (s.costUsd !== undefined) return s.costUsd;
   return (((s.tokens ?? 0) / 1_000_000) * resolveModel(s.model).pricing.cacheRead);
+}
+
+/**
+ * What a cache read costs against an input token on this model's card, as the
+ * notes print it: `0.05×` on Opus 5.5, `0.1×` on Sonnet 5.5. Read off the rate
+ * card rather than written into the prose, which is how the prose said 0.1×
+ * over a lead billed at 0.05×.
+ */
+export function cacheReadRatio(model: string): string {
+  const rate = rateOf(model);
+  return rate.input > 0 ? `${+(rate.cacheRead / rate.input).toFixed(3)}×` : '—';
 }

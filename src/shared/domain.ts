@@ -220,6 +220,7 @@ export interface Subagent {
   returnedAt?: number;
   durationMs?: number;       // absent until it returns
   tokens?: number;
+  costUsd?: number;          // list price over its own records; absent for a digest from before it priced itself
   toolCalls?: number;
   contextTokens?: number;
   returnedSummary?: string;
@@ -413,8 +414,8 @@ export interface TeamState {
   leadReachable?: boolean;
 }
 
-/** The four ways `team8:tasks` can decide a batch runs — the console's four pills. */
-export type DecidedMode = 'solo' | 'subagents' | 'teammates' | 'workflow';
+/** The three ways `team8:tasks` can decide a batch runs — the console's three pills. */
+export type DecidedMode = 'subagents' | 'teammates' | 'workflow';
 
 /**
  * The server's own record of a team while it walks `teams/` — what
