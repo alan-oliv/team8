@@ -93,4 +93,28 @@ describe('readTailLines and readAskContext', () => {
     expect(await readAskContext(path.join(dir, 'missing.jsonl'))).toBeUndefined();
     expect(await readAskContext(undefined)).toBeUndefined();
   });
+
+  // Claude Code writes the call's record together with the text that came before it in the same
+  // response, and the PermissionRequest hook fires before that write.
+  it('waits for the call to land when the hook fires before Claude Code writes it, then takes the text before it', async () => {
+    const file = path.join(dir, 'lead.jsonl');
+    await fs.writeFile(
+      file,
+      [user('u0', 'go'), assistant('a0', [{ type: 'tool_use', id: 't0', name: 'Bash', input: {} }]), user('u1', [{ type: 'tool_result', tool_use_id: 't0', content: 'ok' }])].join('\n') + '\n',
+    );
+
+    const pending = readAskContext(file, 1000, 10);
+    await new Promise((r) => setTimeout(r, 60));
+    await fs.appendFile(file, `${assistant('a1', [text('Both drafts are below.'), ask])}\n`);
+
+    expect(await pending).toBe('Both drafts are below.');
+  });
+
+  it('gives up after the wait and reads the step the tail ends in', async () => {
+    const file = path.join(dir, 'lead.jsonl');
+    await fs.writeFile(file, `${assistant('a1', [text('Reading the config first.')])}\n`);
+    const started = Date.now();
+    expect(await readAskContext(file, 50, 10)).toBe('Reading the config first.');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(50);
+  });
 });
