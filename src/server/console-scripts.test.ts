@@ -73,6 +73,8 @@ function script(
       },
       (err, stdout, stderr) => resolve({ code: (err as { code?: number } | null)?.code ?? 0, stdout, stderr }),
     );
+    // A script that exits without reading stdin closes the pipe under this write; that EPIPE is not a failure.
+    child.stdin!.on('error', () => {});
     child.stdin!.end(stdin);
   });
 }
@@ -398,5 +400,12 @@ describe('console-open.sh', () => {
     expect(run.code).toBe(1);
     expect(run.stderr).toContain('not substituted');
     expect(await starts()).toEqual([]);
+  });
+
+  // The script exits before reading stdin; the helper must not let the pipe's EPIPE escape as an unhandled error.
+  it('resolves when the script exits without reading a stdin larger than the pipe holds', async () => {
+    const run = await script('console-open.sh', ['${CLAUDE_SESSION_ID}'], 'x'.repeat(1 << 20));
+
+    expect(run.code).toBe(1);
   });
 });
