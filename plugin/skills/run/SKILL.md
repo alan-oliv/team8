@@ -23,10 +23,13 @@ of hands, not an owner — and the lead becomes the bottleneck it was trying to 
    **REQUIRED SUB-SKILL:** `team8:tasks` — what each
    task has to carry, and the model each one is worth.
    If `team8:plan` already landed them, skip this step and its branch cut.
-4. **Take the mode from the task list's closing notes** — solo, subagents,
+4. **Take the mode from the first line of the task list's closing** — solo, subagents,
    teammates or workflow, per `team8:tasks` Mode. If no mode was stated, settle
-   it now as that Mode does — read it off the graph, and between subagents and
-   teammates ask with the recommendation first — and say it in one line. Then
+   it now as that Mode does — solo and workflow read off the graph; between
+   subagents and teammates ask, recommendation first — and say it in one line.
+   A `mode: subagents` or `mode: teammates` line that does not say the user
+   chose it, in the closing or in this skill's own arguments, is the graph's
+   recommendation and not the mode: ask the same way before any spawn. Then
    take the waves from the closing: the agents alive at any moment, teammates
    or subagents, are the tracks in the current wave, never all the tracks.
 5. **Dispatch** in that mode. Before the first spawn, tell the user in one
@@ -122,7 +125,8 @@ Whatever you decide is the answer **for the whole batch**, and every dispatch pr
 must state it explicitly. Do not decide per teammate, and do not leave it unstated
 and let each teammate choose — that is how three branches land and two sit unpushed.
 
-**Ask the user only what changes what gets built,** and ask it with
+**Ask the user only what changes what gets built** — and the mode, which
+step 4 asks whenever it is subagents or teammates — and ask it with
 AskUserQuestion. A question whose every answer
 leads to the same dispatch is a round trip you spent for nothing. Worth asking: two
 readings of the work that produce different code; a destructive step outside the
@@ -134,14 +138,17 @@ how to branch, how many PRs, whether to start.
 - "…ok, or would you rather they stop at commits and you open it?"
 - "Which way now — adjust, or start the work?" *after* the user already said run it
 - Any question you could answer by reading the task graph or the git state
-- Presenting a recommended option and then asking whether to take it
+- Presenting a recommended option and then asking whether to take it (the one
+  exception is the mode ask in step 4)
 
 **All of these mean: take the recommended option and dispatch.**
 
 ## Modes
 
-The mode came from the task graph (`team8:tasks` Mode). Each mode ends the
-same way: the terminal deliverable from step 2b, the run log filled at close.
+The mode came from the closing — the user's answer for subagents or
+teammates, the graph for solo and workflow (`team8:tasks` Mode). Each mode
+ends the same way: the terminal deliverable from step 2b, the run log filled
+at close.
 
 **solo.** The lead does the work itself, task by task in dependency order,
 TDD, one commit per task by pathspec. Mark each task `in_progress`
@@ -168,7 +175,7 @@ clear, and its prompt says to `git merge <that branch>` first, so its PR stacks
 on the other. A clear track's worktree goes with `git worktree remove <path>`
 (`git worktree list` has the path); the branch stays for its PR.
 
-**teammates.** A peak of two or more. Dispatch by wave, from the closing's
+**teammates.** The user's choice, at any peak. Dispatch by wave, from the closing's
 wave lines: every track in wave 1 now, one teammate each; each later wave
 when the tasks it waits on close, fresh teammates. A team8 unblock notice
 says when: it names each unblocked task whose owner is idle or not running;

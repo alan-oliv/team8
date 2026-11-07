@@ -96,8 +96,8 @@ artifact, never the approval.
 **Never offer to skip this skill.** "This is small enough that the
 pipeline is overkill, want me to just write it?" is not a question to
 ask — the user invoked `team8:plan`, and a small task is the solo mode
-with a two-line design, not a reason to bypass the tasks, the table, the
-and the run. The same holds when the folder is not a git repo:
+with a two-line design, not a reason to bypass the tasks, the table and
+the run. The same holds when the folder is not a git repo:
 say so once, skip the branch cut and every commit, and do everything
 else exactly as written.
 
@@ -336,11 +336,11 @@ is stopped and re-dispatched from the edited list.
 1. **Fill the Plan section of the run log** — self-review fixes, task and
    track counts, the estimate total — and **commit the plan and the log** on
    the batch branch, so every executor can read them.
-2. **Close with the `team8:tasks` ending**: the plan path, the table (task,
-   blocked by, model, estimate) with its total, and the notes (the mode and
-   its reason per `team8:tasks` Mode — which asked the user where the choice
-   was subagents or teammates — tracks, what starts now, sizing you were
-   unsure about, any residual ruling). No question follows it.
+2. **Close with the `team8:tasks` ending**: the mode line first (who chose it
+   and why, per `team8:tasks` Mode — the user's answer whenever it is
+   subagents or teammates), the plan path, the table (task, blocked by,
+   model, estimate) with its total, and the notes (tracks, what starts now,
+   sizing you were unsure about, any residual ruling). No question follows it.
 3. **In the same turn, invoke `team8:run`** in the stated mode. The tasks and
    the branch exist; `run` skips its own task creation and branch cut. Ending
    the turn after the table, with nothing dispatched, is the failure this
@@ -370,7 +370,7 @@ pr: <url, at close>
 
 ## Plan
 - plan: written by the lead · self-review fixes: <n> (a batch that skipped this skill: `plan: none · tasks from <Jira | Linear | the user> via team8:tasks`)
-- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: solo | subagents | teammates | workflow — <reason>
+- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: solo | subagents | teammates | workflow — <the user's choice | read off the graph> — <reason>
 - estimate: ≈$<total> (per task in the plan's table)
 
 ## Run
