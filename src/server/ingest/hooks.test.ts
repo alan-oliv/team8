@@ -390,6 +390,29 @@ describe('hook', () => {
   });
 });
 
+describe("the band's TaskList poll", () => {
+  it('appends nothing and touches nobody for a TaskList hook with no agent_id', async () => {
+    const touched: string[] = [];
+    const h = createHookHandlers({ store, permits, onAgentActivity: (a) => touched.push(a) });
+
+    await h.hook({ hook_event_name: 'PreToolUse', tool_name: 'TaskList', session_id: 'lead-session-id' });
+    await h.hook({ hook_event_name: 'PostToolUse', tool_name: 'TaskList', session_id: 'lead-session-id' });
+
+    expect(of(store.replay(), 'hook')).toHaveLength(0);
+    expect(touched).toEqual([]);
+  });
+
+  it("keeps a teammate's own TaskList call", async () => {
+    const touched: string[] = [];
+    const h = createHookHandlers({ store, permits, onAgentActivity: (a) => touched.push(a) });
+
+    await h.hook({ hook_event_name: 'PreToolUse', tool_name: 'TaskList', agent_id: 'probe-alpha@team', session_id: 'x' });
+
+    expect(of(store.replay(), 'hook')).toHaveLength(1);
+    expect(touched).toEqual(['probe-alpha']);
+  });
+});
+
 describe('--read-only', () => {
   it('answers PermissionRequest immediately instead of holding the turn', async () => {
     // Holding in read-only was the worst case: the card renders with disabled

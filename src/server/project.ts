@@ -460,8 +460,9 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
         // Only the main session posts Stop, at the end of every turn: a lead
         // never mails the idle_notification its teammates' idleness comes from.
         // Notification is Claude Code waiting on the user, never the agent working.
+        // A SessionEnd is never this agent's work: a foreign one is filed under the lead's name.
         if (p.event === 'Stop') idleAt(p.agent, ev.ts);
-        else if (p.event !== 'Notification') bump(p.agent, ev.ts);
+        else if (p.event !== 'Notification' && p.event !== 'SessionEnd') bump(p.agent, ev.ts);
         break;
       }
       case 'statusline': {

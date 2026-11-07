@@ -192,6 +192,9 @@ export function createHookHandlers(deps: HookDeps): HookHandlers {
         const foreign = !str(b.agent_id) && !!lead && !!sid && sid !== lead;
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str(b.tool_name);
+        // The band in plugin/hooks/team8.tsx calls TaskList every 5s from the lead's process,
+        // so these are not the lead working and would fill the hook retention in minutes.
+        if (toolName === 'TaskList' && !str(b.agent_id)) return { status: 200, body: {} };
         // A foreign session's permission request is the one hook the console
         // answers for a session it is not showing: held and tagged with that
         // session, and kept off this session's log, so its card surfaces when
