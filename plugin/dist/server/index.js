@@ -5971,6 +5971,7 @@ var HOOK_TIMEOUT_SECONDS = 5;
 var PERMISSION_HOOK_TIMEOUT_SECONDS = DEFAULT_PERMISSION_TIMEOUT_MS / 1e3;
 var LAUNCH_HOOK_TIMEOUT_SECONDS = 5;
 var TASK_GATE_SCRIPT = path11.join(PLUGIN_DIR, "bin", "task-gate.sh");
+var AGENT_GATE_SCRIPT = path11.join(PLUGIN_DIR, "bin", "agent-gate.sh");
 var INBOX_DELIVER_SCRIPT = path11.join(PLUGIN_DIR, "dist", "hooks", "inbox-deliver.js");
 var BACKUP_FILE = "team8.backup.json";
 var SUBAGENT_PROMPT_CACHE_TTL = "1h";
@@ -6032,7 +6033,11 @@ function hookBlock(port) {
     matcher: "TaskCreate|TaskUpdate",
     hooks: [{ type: "command", command: `'${TASK_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }]
   };
-  hooks.PreToolUse = [...hooks.PreToolUse ?? [], launcher, workflowLauncher, taskGate];
+  const agentGate = {
+    matcher: "Agent",
+    hooks: [{ type: "command", command: `'${AGENT_GATE_SCRIPT}'`, timeout: HOOK_TIMEOUT_SECONDS }]
+  };
+  hooks.PreToolUse = [...hooks.PreToolUse ?? [], launcher, workflowLauncher, taskGate, agentGate];
   const inboxDeliver = {
     hooks: [{ type: "command", command: inboxDeliverCommand(INBOX_DELIVER_SCRIPT), timeout: HOOK_TIMEOUT_SECONDS }],
     matcher: "*"
@@ -6054,7 +6059,7 @@ function isConsoleEntry(entry) {
   const hooks = entry?.hooks;
   if (!Array.isArray(hooks)) return false;
   return hooks.some(
-    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || h.command.includes("task-gate.sh") || // The two gates earlier versions wrote, so an upgrade strips them.
+    (h) => h?.type === "http" && typeof h.url === "string" && CONSOLE_HOOK_URL.test(h.url) || h?.type === "command" && typeof h.command === "string" && (h.command.includes("console-launch.sh") || h.command.includes("task-gate.sh") || h.command.includes("agent-gate.sh") || // The two gates earlier versions wrote, so an upgrade strips them.
     h.command.includes("task-created.sh") || h.command.includes("task-completed.sh") || h.command.includes("inbox-deliver.js") || CONSOLE_HOOK_COMMAND_URL.test(h.command))
   );
 }
