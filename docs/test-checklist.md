@@ -44,6 +44,16 @@ and anything that felt slow (which view, roughly how long).
 - [ ] Console offers `stream` and `overview`, then `trace` once the worker is spawned
 - [ ] `overview` shows a brief of this one session
 
+### 1b. The same request with `--skip-reviews`
+
+```
+/team8:plan --skip-reviews I need a small formatPrice function for a Node project. Given 1234.5 it should return "$1,234.50": a dollar sign, commas for thousands and always two decimals. Include a test.
+```
+
+- [ ] The lead still says the classification and presents the design in chat, then goes on without waiting
+- [ ] The only AskUserQuestion is `Mode`. Answer subagents
+- [ ] The run log's Brainstorm section says `spec rounds with the user: 0 · --skip-reviews`
+
 ## 2. Subagents: `kv-lab`
 
 ```

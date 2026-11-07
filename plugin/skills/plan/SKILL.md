@@ -1,6 +1,7 @@
 ---
 name: plan
-description: Use when a feature, subsystem or multi-step change needs a design and an implementation plan before anyone writes code — "plan this", "let's design X", "plan it with the team", "plan and then run it". Brainstorms the design with the user into a spec, then the lead writes the plan in the same session a task at a time, the tasks land on the shared list, and the user approves before team8:run executes.
+description: Use when a feature, subsystem or multi-step change needs a design and an implementation plan before anyone writes code — "plan this", "let's design X", "plan it with the team", "plan and then run it". Brainstorms the design with the user into a spec, then the lead writes the plan in the same session a task at a time, the tasks land on the shared list, and the user approves before team8:run executes. `--skip-reviews` takes every recommended answer itself and stops only to ask the mode.
+argument-hint: "[--skip-reviews] <request>"
 ---
 
 # Plan
@@ -30,6 +31,25 @@ stop once its tasks land. Hand back to `team8:tasks` instead of running Phase 3,
 so the batch gets one closing and one `team8:run`. Only the first item planned
 in the batch cuts the branch and opens the run log. Later items reuse both.
 
+## `--skip-reviews`
+
+The trailing `ARGUMENTS:` line may carry `--skip-reviews`. Strip it; the
+rest is the request. The flag is the user's approval given in advance: every
+question this skill, `writing-plans.md`, `team8:reproduce` and `team8:run`
+would put to them resolves to its `(Recommended)` option, stated in one line
+in chat where the question would have been. Everything is still presented and written exactly
+as below — the classification, the design, the spec file and its commit, the
+plan with its progress lines, the run log — so the user can read it back.
+Nothing waits. The visual companion is never offered. The flag holds for the
+whole batch, including an item `team8:tasks` sends back through this skill.
+
+Two questions are still asked:
+
+- The Mode ask in `team8:tasks` — subagents or teammates.
+- A question whose recommended answer needs something only the user has, or
+  changes something outside the repo — an attachment that won't open, inputs
+  that don't exist yet, a stopgap in production.
+
 ## Phase 1: Brainstorm
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.
@@ -41,7 +61,10 @@ design, and get your human partner's approval.
 <HARD-GATE>
 Do NOT invoke any implementation skill, write any code, scaffold any
 project, or take any implementation action until you have told your
-human partner what you intend and they have approved it. This applies
+human partner what you intend and they have approved it. With
+`--skip-reviews` that approval was given up front (see the `--skip-reviews`
+section): present everything as written, take each recommended option, and
+don't wait. This applies
 to EVERY task on EVERY path below — the ceremony scales with the task;
 the approval gate never does.
 </HARD-GATE>
@@ -116,6 +139,7 @@ else exactly as written.
 | "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table and run do not. |
 | "The ticket has repro steps — I'll just run them" | Reproducing is `team8:reproduce`: propose the probe and get a yes first. |
 | "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
+| "They passed `--skip-reviews`, so I can skip presenting the design too" | The flag skips the waiting, not the presenting. The design, the spec and the plan are still written where the user can read them back. |
 
 ### Checklist
 
@@ -366,7 +390,7 @@ pr: <url, at close>
 ## Brainstorm
 - path: spike | bounded | architectural
 - repro: reproduced | not reproduced | blocked | n/a — <one line>
-- spec rounds with the user: <n>
+- spec rounds with the user: <n> (or `0 · --skip-reviews`)
 
 ## Plan
 - plan: written by the lead · self-review fixes: <n> (a batch that skipped this skill: `plan: none · tasks from <Jira | Linear | the user> via team8:tasks`)

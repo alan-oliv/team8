@@ -206,7 +206,9 @@ Five skills fire on their own, when the work calls for them.
 `team8:plan` takes an idea to an approved spec with you, then writes the plan
 in the same session, a task at a time, with a progress line after each and a
 `plan` tab in the console that fills in as it goes. What comes back to you is
-the task table and a file path, and nothing runs until you say so.
+the task table and a file path, and the run starts in the same turn.
+`/team8:plan --skip-reviews <request>` takes every recommended answer itself
+and stops only to ask the mode.
 
 `team8:reproduce` takes a bug report to reproduced, not reproduced or blocked
 before anyone designs a fix. It reads every attachment first, asks before it
