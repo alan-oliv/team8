@@ -1577,6 +1577,10 @@ describe('the lead turning idle on Stop', () => {
     );
   });
 
+  it('a SessionEnd after Stop keeps the lead idle: another session ending on the machine is not its work', () => {
+    expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), hook(3, T0 + 60_000, 'SessionEnd')])).toBe('idle');
+  });
+
   it('reads working again once the next prompt arrives', () => {
     const next: TranscriptRecord = {
       type: 'user',
