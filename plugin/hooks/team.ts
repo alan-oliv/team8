@@ -3,12 +3,12 @@
 // No relative imports either: Claude Code wants `./x.ts`, which tsc refuses.
 
 export type Task = { id: string; status: string };
-export type Mode = 'solo' | 'subagents' | 'teammates' | 'workflow';
+export type Mode = 'subagents' | 'teammates' | 'workflow';
 
 const RUN_LOG = 'docs/team8/runs/';
 // The console's rule (src/server/index.ts, lastDecidedMode): the dash after the
-// word tells a filled run log from the template's `mode: solo | subagents …`.
-const DECIDED = /mode: (solo|subagents|teammates|workflow) —/g;
+// word tells a filled run log from the template's `mode: subagents | teammates …`.
+const DECIDED = /mode: (subagents|teammates|workflow) —/g;
 
 // Only a Write or Edit of a run log counts, so a plan or a spec that quotes a
 // mode line, or names the run-log folder, decides nothing.

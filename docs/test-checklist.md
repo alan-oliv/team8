@@ -28,7 +28,7 @@ Keep for the report: the closing message (mode line, waves, task table), the
 run log from the lab's `docs/team8/runs/`, which tabs appeared or stayed empty,
 and anything that felt slow (which view, roughly how long).
 
-## 1. Solo: `solo-lab`
+## 1. One task: `solo-lab`
 
 ```
 /team8:plan I need a small formatPrice function for a Node project. Given 1234.5 it should return "$1,234.50": a dollar sign, commas for thousands and always two decimals. Include a test.
@@ -36,11 +36,12 @@ and anything that felt slow (which view, roughly how long).
 
 - [ ] The lead never offers to skip the pipeline, and "no git" only skips the branch and commits
 - [ ] No spec or plan file: small work goes straight to tasks
-- [ ] Closing says `mode: solo`: one mechanical task, one file
+- [ ] The ask offers `subagents (Recommended)` first, then `teammates`. Answer subagents
+- [ ] Closing says `mode: subagents`: one mechanical task, one file, one worker
 - [ ] The approval question shows in the question modal, answerable from the console
-- [ ] The lead fixes it itself, test first, no roster
-- [ ] The picker row and the trigger show no kind pill for this bare session
-- [ ] Console offers `stream` and `overview` only
+- [ ] The lead spawns one subagent for it and reviews its PR, never writes the fix itself
+- [ ] The picker row and the trigger show no kind pill until the worker is spawned, then `subagents`
+- [ ] Console offers `stream` and `overview`, then `trace` once the worker is spawned
 - [ ] `overview` shows a brief of this one session
 
 ## 2. Subagents: `kv-lab`
@@ -50,7 +51,7 @@ and anything that felt slow (which view, roughly how long).
 ```
 
 - [ ] The ask offers `subagents (Recommended)` first, then `teammates`: one small store is a single track of standard tasks, not a feature in pieces. Answer subagents
-- [ ] Closing says `mode: subagents`. One task is enough — a single standard task is subagents, not solo
+- [ ] Closing says `mode: subagents`. One task is enough — a single task is still one worker
 - [ ] Whether it wrote a spec and plan. If it did: `plan` appears as the second tab once the skeleton is written, rows fill in one per Edit, matching the `Plan ▓▓░░ n/N` lines in the terminal, and opening a row shows that task's section
 - [ ] After "start the work", `trace` appears with one lane per implementer and reviewer
 - [ ] One implementer at a time in `trace`, since this is a single track; separate tickets would run one lane per track at once, each in its own worktree

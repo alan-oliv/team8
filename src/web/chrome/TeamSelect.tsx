@@ -287,8 +287,8 @@ export function TeamSelect({ current, sessionName, mode, open, onOpenChange, swi
               the operator having to read the counts on the line
               below. Smaller than the trigger's badge (9px / 0 6px),
               which is the canvas's own pair of sizes. A bare session
-              gets no pill, same as the trigger: `solo` is a mode the
-              batch decides, not what a window with no evidence is. */}
+              gets no pill, same as the trigger: a window with no
+              evidence has no kind to name. */}
           {(row.mode || kindOf(row) !== 'solo') && (
           <span
             data-testid="team-kind"

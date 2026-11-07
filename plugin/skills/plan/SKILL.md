@@ -95,7 +95,7 @@ artifact, never the approval.
 
 **Never offer to skip this skill.** "This is small enough that the
 pipeline is overkill, want me to just write it?" is not a question to
-ask — the user invoked `team8:plan`, and a small task is the solo mode
+ask — the user invoked `team8:plan`, and a small task is one subagent
 with a two-line design, not a reason to bypass the tasks, the table and
 the run. The same holds when the folder is not a git repo:
 say so once, skip the branch cut and every commit, and do everything
@@ -112,7 +112,7 @@ else exactly as written.
 | "The spike works, so I'll keep the code" | A spike's output is an answer. Keeping the code is a new request — classify it. |
 | "It grew, but I'm almost done — no need to re-classify" | Hidden complexity upgrades the path mid-task. Stop and say so. |
 | "They approved the spike, so the follow-up change is approved too" | Each task gets its own classification and its own approval. |
-| "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means `mode: solo`, never no tasks and no approval. |
+| "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means one task and one worker, never no tasks and no approval. |
 | "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table and run do not. |
 | "The ticket has repro steps — I'll just run them" | Reproducing is `team8:reproduce`: propose the probe and get a yes first. |
 | "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
@@ -370,7 +370,7 @@ pr: <url, at close>
 
 ## Plan
 - plan: written by the lead · self-review fixes: <n> (a batch that skipped this skill: `plan: none · tasks from <Jira | Linear | the user> via team8:tasks`)
-- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: solo | subagents | teammates | workflow — <the user's choice | read off the graph> — <reason>
+- tasks: <n> · tracks: <n> · waves: <n> · peak: <n> at once · mode: subagents | teammates | workflow — <the user's choice | read off the graph> — <reason>
 - estimate: ≈$<total> (per task in the plan's table)
 
 ## Run
