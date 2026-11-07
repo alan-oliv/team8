@@ -409,3 +409,71 @@ describe('console-open.sh', () => {
     expect(run.code).toBe(1);
   });
 });
+
+describe('agent-gate.sh', () => {
+  const agentCall = (opts: { name?: string; type?: string; isolation?: string; session?: string }) => ({
+    tool_name: 'Agent',
+    session_id: opts.session ?? 'session-one',
+    tool_input: {
+      prompt: 'p',
+      ...(opts.name ? { name: opts.name } : {}),
+      ...(opts.type ? { subagent_type: opts.type } : {}),
+      ...(opts.isolation ? { isolation: opts.isolation } : {}),
+    },
+  });
+  const gate = (payload: unknown) => script('agent-gate.sh', [], JSON.stringify(payload));
+  const mode = (session = 'session-one') =>
+    fs.readFile(path.join(claudeDir, 'team8', `agent-mode-${session}`), 'utf8').then((s) => s.trim(), () => null);
+
+  it("passes a spawn with no name, and a named one that is not team8's, keeping no state", async () => {
+    expect((await gate(agentCall({ type: 'team8:executor', isolation: 'worktree' }))).code).toBe(0);
+    expect((await gate(agentCall({ name: 'scout', type: 'Explore' }))).code).toBe(0);
+    expect(await mode()).toBeNull();
+  });
+
+  it("fixes the session's mode on its first named team8 spawn", async () => {
+    expect((await gate(agentCall({ name: 'app', type: 'team8:executor-high', isolation: 'worktree' }))).code).toBe(0);
+    expect(await mode()).toBe('subagents');
+  });
+
+  it('refuses a reviewer spawned without the flag in a subagents session, naming it and the fix', async () => {
+    await gate(agentCall({ name: 'app', type: 'team8:executor-high', isolation: 'worktree' }));
+    const run = await gate(agentCall({ name: 'review-app-1', type: 'team8:reviewer' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('review-app-1');
+    expect(run.stderr).toContain('subagents');
+    expect(run.stderr).toContain('isolation: "worktree"');
+    expect(await mode()).toBe('subagents');
+  });
+
+  it('passes a later spawn whose flag agrees', async () => {
+    await gate(agentCall({ name: 'app', type: 'team8:executor-high', isolation: 'worktree' }));
+    expect((await gate(agentCall({ name: 'review-app-1', type: 'team8:reviewer', isolation: 'worktree' }))).code).toBe(0);
+  });
+
+  it('refuses the flag in a teammates session the same way', async () => {
+    await gate(agentCall({ name: 'gate', type: 'team8:executor' }));
+    expect(await mode()).toBe('teammates');
+    const run = await gate(agentCall({ name: 'review-gate', type: 'team8:reviewer', isolation: 'worktree' }));
+    expect(run.code).toBe(2);
+    expect(run.stderr).toContain('teammates');
+    expect((await gate(agentCall({ name: 'review-gate', type: 'team8:reviewer' }))).code).toBe(0);
+  });
+
+  it('keeps sessions apart', async () => {
+    await gate(agentCall({ name: 'app', type: 'team8:executor', isolation: 'worktree' }));
+    expect((await gate(agentCall({ name: 'gate', type: 'team8:executor', session: 'session-two' }))).code).toBe(0);
+    expect(await mode('session-two')).toBe('teammates');
+  });
+
+  it('passes everything when jq is missing, and input it cannot read', async () => {
+    const bin = path.join(root, 'bin-without-jq');
+    await fs.mkdir(bin);
+    await fs.symlink('/bin/cat', path.join(bin, 'cat'));
+    await gate(agentCall({ name: 'app', type: 'team8:executor', isolation: 'worktree' }));
+    const run = await script('agent-gate.sh', [], JSON.stringify(agentCall({ name: 'r', type: 'team8:reviewer' })), { PATH: bin });
+    expect(run.code).toBe(0);
+    expect((await script('agent-gate.sh', [], 'not json')).code).toBe(0);
+    expect((await script('agent-gate.sh', [], '')).code).toBe(0);
+  });
+});

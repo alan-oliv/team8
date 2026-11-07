@@ -149,12 +149,21 @@ teammates, the graph for workflow (`team8:tasks` Mode). Each mode
 ends the same way: the terminal deliverable from step 2b, the run log filled
 at close.
 
+**`isolation: "worktree"` follows the mode, never the role.** With agent teams
+on, that flag alone decides what a named `Agent` spawn becomes: with it, a
+subagent in a worktree; without it, a teammate with a roster entry and a
+mailbox. Nothing errors either way. So in subagents mode every named spawn
+carries it — executors and reviewers alike — and in teammates mode none does.
+A reviewer is the spawn that gets this wrong: its step reads the same in both
+modes, so the flag has to come from the mode you are in, not from the step.
+A hook, `agent-gate.sh`, holds the line: the session's first named team8 spawn
+fixes the mode, and a later one whose flag disagrees is refused with the fix.
+
 **subagents.** A worker per track, every track of the wave at once, each in a
 worktree of its own. Dispatch each track whose blockers are closed: one fresh
-subagent (`Agent` with `isolation: "worktree"` on the call — with agent teams
-on, that is what keeps a named spawn a subagent — named after its track,
+subagent (`Agent` with `isolation: "worktree"` on the call, named after its track,
 `subagent_type` from the track's biggest `effort` as The Dispatch Contract maps
-it, `model` from that task's metadata — never omit either) with the seven-part
+it, `model` from that task's metadata — never omit any of the three) with the seven-part
 contract below minus part 1 and part 7's `TaskUpdate` sentences, since
 subagents have no task tools — tell it so in the prompt, because its definition
 says to claim its own tasks: you claim its first task with `TaskUpdate` when
@@ -164,7 +173,9 @@ branch off the default branch, its Bash runs inside it and git aimed at your
 checkout is refused, so there is no branch to cut and no file ownership to
 draw: it works its track's tasks in order, commits, pushes its branch, opens
 the track's PR and reports (part 6). Then the Track Review below on the
-branch, findings back to the same subagent by `SendMessage` to its name, three
+branch, its reviewer spawned with `isolation: "worktree"` too (read-only, so
+its worktree is auto-cleaned), findings back to the same subagent by
+`SendMessage` to its name, three
 rounds. A track that waits on another track's output starts when that track is
 clear, and its prompt says to `git merge <that branch>` first, so its PR stacks
 on the other. A clear track's worktree goes with `git worktree remove <path>`
@@ -196,10 +207,11 @@ workflow in its own mode; agents in it never join the roster.
 
 ### Teammates share one checkout
 
-**Never pass `isolation: "worktree"` when spawning a teammate.** It routes the
-`Agent` call down the ordinary-subagent path, and what comes back is not a
+**No spawn in this mode carries `isolation: "worktree"`** (the flag follows the
+mode, Modes above). With it, the `Agent` call takes the ordinary-subagent path,
+and what comes back is not a
 teammate at all: it never enters `members[]`, gets no `TaskGet`/`TaskUpdate`, has
-no mailbox, and never appears in the console. Nothing errors. You find out when a
+no mailbox, and never appears in the console. You find out when a
 "teammate" messages you saying it cannot read the task list. Subagents mode
 takes that path on purpose.
 
@@ -250,7 +262,9 @@ plan reviewer, and the executor stays alive until its track is clear.
    while this wave is reviewed; a track of one wave is reviewed once, at its
    end. Never hand a reviewer the diff inline.
 2. **Dispatch a reviewer** (`subagent_type: "team8:reviewer"`, whose definition
-   runs at high effort and carries no Edit or Write, so read-only is enforced),
+   runs at high effort and carries no Edit or Write, so read-only is enforced;
+   in subagents mode with `isolation: "worktree"`, since the flag follows the
+   mode — Modes above),
    model sized like the track's biggest task (sonnet for standard, opus for
    judgment), with: the diff path, the task descriptions (`TaskGet` each, paste
    them), the plan sections those tasks name, the global constraints, and the
@@ -396,6 +410,7 @@ the PR next to the plan it describes.
 | Dispatching before `TaskCreate` | The list is how the work stays visible when a teammate dies |
 | Bare `git commit` in a shared checkout | It ships whatever a neighbour staged. Commit by pathspec |
 | `isolation: "worktree"` on a teammate spawn | It silently spawns a subagent, not a teammate. Teammates isolate by file ownership; worktrees are how subagents mode isolates |
+| A reviewer spawned by name without `isolation: "worktree"` in subagents mode | It silently becomes a teammate: roster entry, mailbox, a card in a console that says subagents. The flag follows the mode (Modes): every named spawn in subagents mode carries it, reviewers included |
 | Subagents dispatched one at a time | Separate tickets in separate worktrees have nothing to wait for. Every track whose blockers are closed starts now |
 | A subagent told to work on a shared branch | Its worktree branches from the default branch and refuses git into your checkout. A branch and a PR per track |
 | A prompt with no part 3 | Teammates default to improvising. Name the skills |
@@ -414,3 +429,4 @@ the PR next to the plan it describes.
 - A finished teammate whose task is still `pending`
 - A "teammate" that cannot call `TaskGet` — it is a subagent; check `members[]`
 - More agents in your spawn log than names in `members[]`
+- In subagents mode, a spawn result that says the agent "will receive instructions via mailbox" — that spawn became a teammate; the flag was missing. A subagent's result says "Async agent launched"
