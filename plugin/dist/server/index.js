@@ -3277,7 +3277,7 @@ function project(events, readOnly, now = Date.now()) {
         if (p.event === "PostToolUse") currentTool.set(p.agent, void 0);
         if (p.error) errors.set(p.agent, p.error);
         if (p.event === "Stop") idleAt(p.agent, ev.ts);
-        else if (p.event !== "Notification") bump(p.agent, ev.ts);
+        else if (p.event !== "Notification" && p.event !== "SessionEnd") bump(p.agent, ev.ts);
         break;
       }
       case "statusline": {
@@ -4685,10 +4685,11 @@ function createPermits() {
 // src/server/ingest/ask-context.ts
 import { promises as fs4 } from "node:fs";
 var TAIL_BYTES = 256 * 1024;
+var ASK_FLUSH_WAIT_MS = 2e3;
+var ASK_FLUSH_POLL_MS = 100;
 var blocksOf = (rec) => rec.type === "assistant" && Array.isArray(rec.message?.content) ? rec.message.content : [];
-function askContext(lines) {
-  const recs = lines.map(parseLine).filter((r) => r !== null);
-  if (recs.length === 0) return void 0;
+var parseRecs = (lines) => lines.map(parseLine).filter((r) => r !== null);
+function pendingAsk(recs) {
   const answered = /* @__PURE__ */ new Set();
   for (const rec of recs) {
     const content = rec.type === "user" ? rec.message?.content : void 0;
@@ -4696,22 +4697,21 @@ function askContext(lines) {
       for (const b of content) if (b?.type === "tool_result") answered.add(b.tool_use_id);
     }
   }
-  let at = -1;
-  let blockAt = -1;
-  for (let i = recs.length - 1; i >= 0 && at < 0; i--) {
+  for (let i = recs.length - 1; i >= 0; i--) {
     const blocks = blocksOf(recs[i]);
     for (let k = blocks.length - 1; k >= 0; k--) {
       if (blocks[k]?.type === "tool_use" && blocks[k].name === "AskUserQuestion" && !answered.has(blocks[k].id)) {
-        at = i;
-        blockAt = k;
-        break;
+        return { at: i, blockAt: k };
       }
     }
   }
-  if (at < 0) {
-    at = recs.length - 1;
-    blockAt = blocksOf(recs[at]).length;
-  }
+  return void 0;
+}
+function contextOf(recs) {
+  if (recs.length === 0) return void 0;
+  const call = pendingAsk(recs);
+  const at = call?.at ?? recs.length - 1;
+  const blockAt = call?.blockAt ?? blocksOf(recs[at]).length;
   for (let i = at; i >= 0; i--) {
     if (recs[i].type === "user") return void 0;
     const blocks = blocksOf(recs[i]);
@@ -4735,10 +4735,15 @@ async function readTailLines(file, maxBytes = TAIL_BYTES) {
     await fh.close();
   }
 }
-async function readAskContext(file) {
+async function readAskContext(file, waitMs = ASK_FLUSH_WAIT_MS, everyMs = ASK_FLUSH_POLL_MS) {
   if (!file) return void 0;
   try {
-    return askContext(await readTailLines(file));
+    const until = Date.now() + waitMs;
+    for (; ; ) {
+      const recs = parseRecs(await readTailLines(file));
+      if (pendingAsk(recs) || Date.now() >= until) return contextOf(recs);
+      await new Promise((r) => setTimeout(r, everyMs));
+    }
   } catch {
     return void 0;
   }
@@ -4842,6 +4847,7 @@ function createHookHandlers(deps) {
         const foreign = !str3(b.agent_id) && !!lead && !!sid && sid !== lead;
         const agent = agentNameFrom(b.agent_id, leadName);
         const toolName = str3(b.tool_name);
+        if (toolName === "TaskList" && !str3(b.agent_id)) return { status: 200, body: {} };
         if (foreign && event === "PermissionRequest") return holdPermission(b, agent, toolName, signal, sid);
         if (foreign && event !== "SessionEnd") return { status: 200, body: {} };
         const text = str3(b.message) ?? str3(b.prompt);
