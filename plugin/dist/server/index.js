@@ -1992,6 +1992,10 @@ function needsYouId(payload) {
   const id = payload && typeof payload === "object" ? payload.id : void 0;
   return typeof id === "string" ? id : void 0;
 }
+function toolUseIdOf(payload) {
+  const id = payload && typeof payload === "object" ? payload.toolUseId : void 0;
+  return typeof id === "string" ? id : void 0;
+}
 function recordCount(payload) {
   const recs = payload && typeof payload === "object" ? payload.records : void 0;
   return Array.isArray(recs) ? recs.length : 0;
@@ -2086,8 +2090,15 @@ function transcriptDrops(events) {
   return { drop, trimmed };
 }
 function trim(events) {
+  const newestDigest = /* @__PURE__ */ new Map();
+  for (const e of events) {
+    if (e.kind !== "subagent") continue;
+    const id = toolUseIdOf(e.payload);
+    if (id) newestDigest.set(id, e);
+  }
+  const pinned = new Set(newestDigest.values());
   const counts = /* @__PURE__ */ new Map();
-  for (const e of events) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  for (const e of events) if (!pinned.has(e)) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
   const excess = /* @__PURE__ */ new Map();
   for (const [kind, keep] of Object.entries(KIND_RETENTION)) {
     const over = (counts.get(kind) ?? 0) - keep;
@@ -2106,6 +2117,7 @@ function trim(events) {
   }
   const kept = events.filter((e) => {
     if (transcripts.has(e)) return false;
+    if (pinned.has(e)) return true;
     if (e.kind === "needsyou") {
       const id = needsYouId(e.payload);
       if (id && closedIds.has(id)) return false;
@@ -2391,6 +2403,7 @@ function digestOf(fold) {
     startedAt: fold.startedAt,
     lastAt: fold.lastAt,
     tokens: tokensOf([...fold.usage.values()]),
+    costUsd: totalCost([...fold.usage.values()]),
     toolCalls: fold.toolCalls,
     contextTokens: fold.contextTokens,
     summary: fold.summary,
@@ -2589,6 +2602,7 @@ function nodesOf(spawns, agent, parent, depth, facts, seen) {
     if (spawn.returnedSummary) node.returnedSummary = spawn.returnedSummary;
     if (digest && digest.records > 0) {
       node.tokens = digest.tokens;
+      if (digest.costUsd !== void 0) node.costUsd = digest.costUsd;
       node.toolCalls = digest.toolCalls;
       node.contextTokens = digest.contextTokens;
       if (!node.returnedSummary && digest.summary) node.returnedSummary = digest.summary;
@@ -3245,6 +3259,8 @@ function project(events, readOnly, now = Date.now()) {
       }
       case "subagent": {
         const p = ev.payload;
+        const held = subagentFacts.get(p.toolUseId)?.digest;
+        if (p.digest.records === 0 && held && held.records > 0) break;
         subagentFacts.set(p.toolUseId, {
           agentId: p.agentId,
           meta: p.meta,
@@ -3425,6 +3441,13 @@ function project(events, readOnly, now = Date.now()) {
     agents.map((a) => ({ agent: a.name, spawns: spawnFolds.get(a.name)?.spawns ?? [] })),
     subagentFacts
   );
+  let taskCallTokens = 0;
+  let taskCallCostUsd = 0;
+  for (const { digest } of subagentFacts.values()) {
+    if (!digest || digest.costUsd === void 0) continue;
+    taskCallTokens += digest.tokens;
+    taskCallCostUsd += digest.costUsd;
+  }
   const leadMember = config?.members.find((m) => m.agentId === config.leadAgentId) ?? config?.members[0];
   return {
     teamName: config?.name ?? "",
@@ -3435,8 +3458,8 @@ function project(events, readOnly, now = Date.now()) {
     // A config-less session has no createdAt, so the lead's own start stands in
     // — the alternative is an elapsed measured from the epoch.
     startedAt: config?.createdAt ?? agents.find((a) => a.isLead)?.startedAt ?? 0,
-    totalTokens,
-    totalCostUsd: agents.reduce((sum, a) => sum + a.costUsd, 0),
+    totalTokens: totalTokens + taskCallTokens,
+    totalCostUsd: agents.reduce((sum, a) => sum + a.costUsd, 0) + taskCallCostUsd,
     rateLimits,
     agents,
     tasks,
@@ -4237,6 +4260,7 @@ function startFileIngest(store, config) {
     const buffered = pending.get(transcript)?.records ?? [];
     dropPending(transcript);
     appendSubagent(transcript, buffered);
+    if (deferred.delete(transcript)) void transcripts.forget(transcript);
     void transcripts.pump(transcript);
   };
   const handleSubagentLines = (transcript, lines, fromStart) => {
@@ -4611,7 +4635,7 @@ function startFileIngest(store, config) {
       if (timer) clearInterval(timer);
       if (poll) clearInterval(poll);
       const tails = transcripts.states();
-      for (const f of [...deferred, ...pending.keys()]) tails.delete(f);
+      for (const f of [...deferred, ...pending.keys(), ...subagentOf.keys()]) tails.delete(f);
       for (const f of tails.keys()) if (workflowAgentClaimOf(f)) tails.delete(f);
       for (const w of watchers) w.close();
       return { tails, usage: usageLedger };
@@ -6864,7 +6888,7 @@ function lastCwds(buf, slug) {
   }
   return { last };
 }
-var DECIDED_MODE = /mode: (solo|subagents|teammates|workflow) —/g;
+var DECIDED_MODE = /mode: (subagents|teammates|workflow) —/g;
 function lastDecidedMode(buf) {
   const marker = "docs/team8/runs/";
   let at = buf.lastIndexOf(marker);
