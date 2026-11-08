@@ -10,8 +10,10 @@ export interface LaneSegment { phase: LanePhase; from: number; to: number }
 export type LaneMark =
   | { kind: 'spawn'; at: number; name: string }
   | { kind: 'msg' | 'peer'; at: number; to: string; topic: string }
-  | { kind: 'fail'; at: number; text: string }
+  | { kind: 'fail' | 'claim' | 'close'; at: number; text: string }
   | { kind: 'departed'; at: number };
+
+const MARK_KIND = { tool_error: 'fail', claimed: 'claim', closed: 'close' } as const;
 
 // `blocked` is an agent still working on a task whose dependency is open, and a
 // departed agent's lane simply ends: neither is a phase of its own.
@@ -66,10 +68,7 @@ export function laneMarks(agent: Agent, agents: Agent[], mail: MailMessage[], se
     if (m.from !== agent.name) continue;
     marks.push({ kind: lead && m.to === lead.name ? 'msg' : 'peer', at: m.ts, to: m.to, topic: messageTopic(m) });
   }
-  // shortcut: only the capped transcript window carries tool errors, so older ones are not drawn; upgrade when the fold marks them
-  for (const line of agent.transcript) {
-    if (line.marker === '✗' && line.sender === undefined) marks.push({ kind: 'fail', at: line.ts, text: line.text });
-  }
+  for (const m of agent.marks ?? []) marks.push({ kind: MARK_KIND[m.kind], at: m.ts, text: m.text });
   if (agent.status === 'departed') marks.push({ kind: 'departed', at: segments[segments.length - 1].to });
   return marks.sort((a, b) => a.at - b.at);
 }

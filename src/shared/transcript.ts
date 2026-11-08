@@ -433,6 +433,21 @@ export function toTranscriptLines(rec: TranscriptRecord, agent = ''): Transcript
  * and it is asked by hand, one row at a time, so it can afford the whole thing.
  * Undefined when the index names no row of this record.
  */
+/** The failed tool results in one record, flattened like their `✗` lines — the trace's error marks. */
+export function toolErrorsOf(rec: TranscriptRecord): string[] {
+  const content = rec.message?.content;
+  if (rec.type !== 'user' || !Array.isArray(content)) return [];
+  const out: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    const b = block as { type?: string; content?: unknown; is_error?: boolean };
+    if (b.type !== 'tool_result' || b.is_error !== true) continue;
+    const text = resultText(b.content);
+    if (text && text !== DECLINE_MESSAGE) out.push(capText(text.replace(/\s+/g, ' ').trim()));
+  }
+  return out;
+}
+
 export function fullLineText(rec: TranscriptRecord, index: number): string | undefined {
   return draftsOf(rec)?.drafts[index]?.text;
 }

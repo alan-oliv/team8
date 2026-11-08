@@ -1603,6 +1603,34 @@ describe('the lead turning idle on Stop', () => {
     expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop')])).toBe('idle');
   });
 
+  it('marks a failed tool result on the lane at the record time, and a task at the moment it changed hands', () => {
+    const errored: TranscriptRecord[] = [
+      { type: 'user', uuid: 'u2', timestamp: iso(T0 + 3_000), message: { role: 'user', content: [{ type: 'tool_result', content: 'grep: no match', is_error: true }] } },
+      { type: 'user', uuid: 'u3', timestamp: iso(T0 + 4_000), message: { role: 'user', content: [{ type: 'tool_result', content: 'fine', is_error: false }] } },
+    ];
+    const task = (seq: number, ts: number, status: 'pending' | 'in_progress' | 'completed', owner?: string): StoredEvent => ({
+      seq, ts, kind: 'task', payload: { id: 'T-1', subject: 'land the schema', description: '', blocks: [], blockedBy: [], status, owner },
+    });
+    const lead = project(
+      [
+        { seq: 0, ts: 0, kind: 'roster', payload: { config: null, sidecars: [] } },
+        transcript(1, [...turn, ...errored]),
+        // First sight: already in progress, so no claim is invented at the sweep's time.
+        task(2, T0 + 5_000, 'in_progress', 'team-lead'),
+        task(3, T0 + 9_000, 'completed', 'team-lead'),
+        task(4, T0 + 10_000, 'pending'),
+        task(5, T0 + 11_000, 'in_progress', 'team-lead'),
+      ],
+      false,
+      T0 + 61_000,
+    ).agents.find((a) => a.name === 'team-lead')!;
+    expect(lead.marks).toEqual([
+      { ts: T0 + 3_000, kind: 'tool_error', text: 'grep: no match' },
+      { ts: T0 + 9_000, kind: 'closed', text: 'T-1 · land the schema' },
+      { ts: T0 + 11_000, kind: 'claimed', text: 'T-1 · land the schema' },
+    ]);
+  });
+
   it('keeps the lane timeline as transitions only: working, idle at Stop, working at the next hook', () => {
     const lead = project(
       [{ seq: 0, ts: 0, kind: 'roster', payload: { config: null, sidecars: [] } }, transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), hook(3, T0 + 20_000, 'PreToolUse')],

@@ -82,7 +82,7 @@ An agent team, two or more members.
 <tr>
 <td></td>
 <td><code>trace</code></td>
-<td>one lifeline per teammate on the session clock: state over time, with spawns, messages and tool errors as marks, and a detail strip for the focused one</td>
+<td>one lifeline per teammate on the session clock: state over time, with spawns, messages, task claims, task closes and tool errors as marks, and a detail strip for the focused one</td>
 </tr>
 <tr>
 <td></td>

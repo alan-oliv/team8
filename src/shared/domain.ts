@@ -126,11 +126,19 @@ export interface Agent {
    * Absent on a fixture that never set it.
    */
   timeline?: PhaseChange[];
+  /**
+   * The moments on this agent's lane the other views only report as text:
+   * a failed tool result, a task it claimed, a task it closed. Folded over the
+   * whole log like `timeline`; `text` is the mark's hover title. Absent on a
+   * fixture that never set it.
+   */
+  marks?: AgentMark[];
   unread: number;
   error?: string;
 }
 
 export interface PhaseChange { ts: number; phase: 'working' | 'idle' | 'waiting' }
+export interface AgentMark { ts: number; kind: 'tool_error' | 'claimed' | 'closed'; text: string }
 
 /**
  * Set at task creation, by convention rather than a schema the task store

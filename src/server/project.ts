@@ -4,6 +4,7 @@ import type {
   AgentStatus,
   MailMessage,
   NeedsYouItem,
+  AgentMark,
   PhaseChange,
   RateLimits,
   Task,
@@ -38,6 +39,7 @@ import {
   toTranscriptLines,
   isPromptTurn,
   type TranscriptRecord,
+  toolErrorsOf,
 } from '../shared/transcript';
 import {
   mergeMail,
@@ -58,6 +60,8 @@ import { AGENT_STALE_MS, deriveTaskState, isWallClockLog } from '../shared/statu
  * 1002 lines) to draw at most 18 on screen.
  */
 export const PROJECTED_TRANSCRIPT_LINES = 60;
+/** A lane mark's hover title; the full text is on the line it came from. */
+const MARK_TEXT_CAP = 120;
 
 // ---------------------------------------------------------------------------
 // Event payload shapes. The pinned contract fixes `EventKind` but not what each
@@ -379,6 +383,12 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
     phase(agent, ts, 'working');
   };
+  const marks = new Map<string, AgentMark[]>();
+  const mark = (agent: string, ts: number, kind: AgentMark['kind'], text: string) => {
+    const list = marks.get(agent) ?? [];
+    list.push({ ts, kind, text: text.slice(0, MARK_TEXT_CAP) });
+    marks.set(agent, list);
+  };
   const lastIdle = new Map<string, number>();
   const idleAt = (agent: string, ts: number) => {
     if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
@@ -434,6 +444,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
           applySpawnEvents(spawns, spawnEventsFor(rec));
           const ts = rec.timestamp ? Date.parse(rec.timestamp) : NaN;
           if (!Number.isNaN(ts) && !isAfterStop(rec)) bump(p.agent, ts);
+          if (!Number.isNaN(ts)) for (const text of toolErrorsOf(rec)) mark(p.agent, ts, 'tool_error', text);
         }
         records.set(p.agent, list);
         seenRecords.set(p.agent, seen);
@@ -457,6 +468,15 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       }
       case 'task': {
         const p = ev.payload as TaskPayload;
+        const prev = tasksRaw.get(p.id);
+        // Between two observed states only: the first sight of a task is the
+        // sweep's time, not the task's.
+        if (prev) {
+          const label = `${p.id} · ${p.subject}`;
+          if (p.status === 'in_progress' && prev.status !== 'in_progress' && p.owner) mark(p.owner, ev.ts, 'claimed', label);
+          const closer = p.owner ?? prev.owner;
+          if (p.status === 'completed' && prev.status !== 'completed' && closer) mark(closer, ev.ts, 'closed', label);
+        }
         tasksRaw.set(p.id, p);
         break;
       }
@@ -655,6 +675,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
       timeline: timelineOf(phases.get(id.name) ?? []),
+      marks: (marks.get(id.name) ?? []).sort((a, b) => a.ts - b.ts),
       transcript: asking
         ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)]
         : lines.slice(-PROJECTED_TRANSCRIPT_LINES),
