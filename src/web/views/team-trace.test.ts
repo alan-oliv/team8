@@ -51,7 +51,11 @@ describe('laneSegments', () => {
 });
 
 describe('laneMarks', () => {
-  const lead = agent({ name: 'team-lead', isLead: true, transcript: [line(T0 + 10_000, '✗')] });
+  const lead = agent({ name: 'team-lead', isLead: true, marks: [
+    { ts: T0 + 10_000, kind: 'tool_error', text: 'grep: no match' },
+    { ts: T0 + 30_000, kind: 'claimed', text: 'T-1 · land the schema' },
+    { ts: T0 + 60_000, kind: 'closed', text: 'T-1 · land the schema' },
+  ] });
   const alpha = agent({ startedAt: T0 + 20_000 });
   const bravo = agent({ name: 'probe-bravo', startedAt: T0 + 40_000 });
   const mail = [
@@ -59,11 +63,13 @@ describe('laneMarks', () => {
     { msgId: 'm2', from: 'probe-alpha', to: 'team-lead', text: 'long body', summary: 'done with T-1', ts: T0 + 50_000, tsIsDelivery: false, read: true },
   ];
 
-  it('puts a spawn on the lead per teammate and sorts by time', () => {
+  it('puts a spawn on the lead per teammate, draws its own marks, and sorts by time', () => {
     expect(laneMarks(lead, [lead, alpha, bravo], mail, laneSegments(lead, NOW))).toEqual([
-      { kind: 'fail', at: T0 + 10_000, text: '✗ at 1700000010000' },
+      { kind: 'fail', at: T0 + 10_000, text: 'grep: no match' },
       { kind: 'spawn', at: T0 + 20_000, name: 'probe-alpha' },
+      { kind: 'claim', at: T0 + 30_000, text: 'T-1 · land the schema' },
       { kind: 'spawn', at: T0 + 40_000, name: 'probe-bravo' },
+      { kind: 'close', at: T0 + 60_000, text: 'T-1 · land the schema' },
     ]);
   });
 

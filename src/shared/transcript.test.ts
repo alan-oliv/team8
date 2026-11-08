@@ -10,6 +10,7 @@ import {
   toTranscriptLines,
   TRANSCRIPT_TEXT_CAP,
   type TranscriptRecord,
+  toolErrorsOf,
 } from './transcript';
 
 const raw = readFileSync(
@@ -731,5 +732,24 @@ describe('AskUserQuestion results', () => {
     const [line] = toTranscriptLines(rec);
     expect(line.marker).toBe('✗');
     expect(line).not.toHaveProperty('answers');
+  });
+});
+
+describe('toolErrorsOf', () => {
+  it('returns the failed tool results of a record, flattened, and not a declined question', () => {
+    const rec = {
+      type: 'user',
+      uuid: 'u1',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'tool_result', content: 'grep: no match\nexit 1', is_error: true },
+          { type: 'tool_result', content: 'all good', is_error: false },
+          { type: 'tool_result', content: DECLINE_MESSAGE, is_error: true },
+        ],
+      },
+    } as unknown as Parameters<typeof toolErrorsOf>[0];
+    expect(toolErrorsOf(rec)).toEqual(['grep: no match exit 1']);
+    expect(toolErrorsOf({ type: 'assistant', uuid: 'a1' } as unknown as Parameters<typeof toolErrorsOf>[0])).toEqual([]);
   });
 });

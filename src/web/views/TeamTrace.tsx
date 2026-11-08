@@ -26,6 +26,8 @@ const MARK: Record<LaneMark['kind'], { glyph: string; color: string; size: numbe
   msg: { glyph: '↑', color: 'var(--color-accent-300)', size: 11, label: 'message to lead' },
   peer: { glyph: '⇄', color: 'var(--color-accent-300)', size: 10, label: 'message to a teammate' },
   fail: { glyph: '✗', color: 'var(--fail)', size: 11, label: 'tool error' },
+  claim: { glyph: '◆', color: 'var(--color-accent-400)', size: 9, label: 'claimed a task' },
+  close: { glyph: '✓', color: 'var(--color-accent-300)', size: 10, label: 'closed a task' },
   departed: { glyph: '⊗', color: 'var(--color-neutral-500)', size: 11, label: 'departed' },
 };
 
@@ -78,7 +80,7 @@ export function TeamTrace({ agents, tasks, mail, startedAt, now, focused, onFocu
   const markTitle = (m: LaneMark): string => {
     const what =
       m.kind === 'spawn' ? `spawned ${display(m.name)}`
-        : m.kind === 'fail' ? m.text
+        : 'text' in m ? m.text
           : m.kind === 'departed' ? 'departed'
             : `→ ${display(m.to)}: ${m.topic}`;
     return `${clock(m.at)} · ${what}`;
@@ -230,7 +232,7 @@ export function TeamTrace({ agents, tasks, mail, startedAt, now, focused, onFocu
               {PHASE[phase].label}
             </span>
           ))}
-          {(['fail', 'msg', 'peer', 'spawn', 'departed'] as const).map((kind) => (
+          {(['claim', 'close', 'fail', 'msg', 'peer', 'spawn', 'departed'] as const).map((kind) => (
             <span key={kind} style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
               <span style={{ color: MARK[kind].color, fontSize: '10px' }}>{MARK[kind].glyph}</span>
               {MARK[kind].label}
