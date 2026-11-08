@@ -27,6 +27,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it('asks the stream for the session a /s/ route names', () => {
+  window.history.replaceState(null, '', '/s/abc12345');
+  try {
+    renderHook(() => useTeamState());
+    expect(MockEventSource.last().url).toBe('/stream?session=abc12345');
+  } finally {
+    window.history.replaceState(null, '', '/');
+  }
+});
+
 it('opens /stream, lands the snapshot, then applies state updates', () => {
   const { result } = renderHook(() => useTeamState());
   expect(MockEventSource.last().url).toBe('/stream');

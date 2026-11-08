@@ -158,24 +158,12 @@ export function App() {
     void postJson(`/api/teams/${encodeURIComponent(target)}/select`);
   }, [state, store.announcedTeam]);
 
-  // A `/s/:sessionId` URL (task #4) announces itself the same way, but against
-  // its own endpoint and without waiting on `state` first — the client cannot
-  // tell which team, if any, that lead drives, so the server's no-op guard, not
-  // a teamName comparison here, is what makes a same-session reload a no-op.
-  const sessionAnnounced = useRef(false);
-  useEffect(() => {
-    const target = store.sessionRoute;
-    if (!target || sessionAnnounced.current) return;
-    sessionAnnounced.current = true;
-    void postJson(`/api/select-session/${encodeURIComponent(target)}`);
-  }, [store.sessionRoute]);
-
   // A bare open — no `?team=` announce, no `/s/` route — otherwise lands on
   // whatever the server happened to be showing at boot. When a session in the
   // same folder is busy and the one on screen is not, it lands there instead,
-  // read off the frame's own `sessions`. Ref-guarded like the two effects above, so it runs once per
-  // page load and never fights a later manual switch; an announce or a route
-  // still wins outright.
+  // read off the frame's own `sessions`. Ref-guarded like the effect above, so
+  // it runs once per page load and never fights a later manual switch; an
+  // announce or a route still wins outright.
   const autoResumed = useRef(false);
   useEffect(() => {
     if (autoResumed.current || store.announcedTeam || store.sessionRoute || !state?.sessions) return;

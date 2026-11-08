@@ -12,7 +12,7 @@ import { createPermits } from './control/permits';
 import { createOutbox } from './control/outbox';
 import { setTeamsRoot } from './control/mailbox';
 import { createBriefs } from './brief';
-import { createStream } from './stream';
+import { createStream, type StreamHub } from './stream';
 import { foldWorkflows, modeOf } from './workflow';
 import { createBootingServer, createHttpHandler, listen, type SelectTeamOutcome } from './http';
 import { createPlanReader } from './plan';
@@ -41,6 +41,8 @@ export const IDLE_GRACE_MS = 10 * 60 * 1000;
  * it, and it costs one readdir over ~/.claude/teams.
  */
 export const FOLLOW_INTERVAL_MS = 3000;
+/** How long a read-only secondary stream outlives its last tab, so a reload does not rebuild its ingest. */
+export const SECONDARY_IDLE_MS = 30_000;
 /**
  * Follower ticks with no Claude session running before the console stops
  * itself — the backstop for a session killed without its SessionEnd hook; a
@@ -1326,6 +1328,12 @@ export async function main(argv: string[]): Promise<number> {
   // switch back then pumps only what was appended since.
   const carryByTarget = new Map<string, ReturnType<FileIngest['close']>>();
 
+  const ingestPaths = {
+    projects: projectsRoot,
+    teams: teamsRoot,
+    tasks: path.join(cli.claudeHome, 'tasks'),
+    sessions: sessionsRoot,
+  };
   const startIngest = (
     gen: number,
     team: string | undefined,
@@ -1333,12 +1341,7 @@ export async function main(argv: string[]): Promise<number> {
     carry?: ReturnType<FileIngest['close']>,
   ) =>
     startFileIngest(fencedSink(live, gen, () => generation), {
-      paths: {
-        projects: path.join(cli.claudeHome, 'projects'),
-        teams: teamsRoot,
-        tasks: path.join(cli.claudeHome, 'tasks'),
-        sessions: path.join(cli.claudeHome, 'sessions'),
-      },
+      paths: ingestPaths,
       teamName: team,
       leadSessionId: lead,
       sessionOnly: team === undefined && lead !== undefined,
@@ -1385,6 +1388,127 @@ export async function main(argv: string[]): Promise<number> {
   };
 
   /**
+   * A tab on `/s/<id>` whose session is not the one on screen. The console
+   * itself stays single-target — controls, hooks and the follower all aim at
+   * the session on screen — so the extra tab gets a read-only view of its own:
+   * a file-only ingest into a scratch store and a stream hub of its own, torn
+   * down once no tab has read it for a while. The session's per-target log
+   * belongs to the console on screen, hence the scratch store.
+   */
+  interface Secondary { hub: StreamHub; close(): void }
+  const secondaries = new Map<string, Promise<Secondary | null>>();
+  const openSecondary = async (sessionId: string): Promise<Secondary | null> => {
+    const walk = await walkTeams(teamsRoot, sessionsRoot, sessionId, projectsRoot);
+    const team = teamOfSession(walk.teams, walk.drivers, await forkChainOf(projectsRoot, sessionId));
+    if (!team && !(await sessionProjectDir(projectsRoot, sessionId, walk.sessions.cwds.get(sessionId)))) return null;
+    const own = openStore(cli.dbPath, '');
+    const snapshot = (): TeamState => {
+      const events = own.replay();
+      const state = project(events, true);
+      const workflows = foldWorkflows(events);
+      return {
+        ...state,
+        leadSessionId: state.leadSessionId || (team?.leadSessionId || sessionId),
+        mode: modeOf(state.agents.length, workflows),
+        workflows,
+        build,
+        watching,
+        leadReachable: false,
+        ...(liveRows ? { sessions: liveRows } : {}),
+      };
+    };
+    const secHub = createStream(snapshot);
+    const sink: Store = {
+      append(kind, payload, agent) {
+        const ev = own.append(kind, payload, agent);
+        secHub.publish();
+        return ev;
+      },
+      replay: () => own.replay(),
+      setTeam: () => {},
+      close: () => {},
+    };
+    const secIngest = startFileIngest(sink, {
+      paths: ingestPaths,
+      teamName: team?.name,
+      leadSessionId: team ? team.leadSessionId || sessionId : sessionId,
+      sessionOnly: !team,
+      adoptExistingTeams: false,
+    });
+    await secIngest.sweep();
+    return {
+      hub: secHub,
+      close() {
+        secIngest.close();
+        secHub.close();
+        own.close();
+      },
+    };
+  };
+  const secondaryFor = (sessionId: string): Promise<Secondary | null> => {
+    let pending = secondaries.get(sessionId);
+    if (!pending) {
+      pending = openSecondary(sessionId);
+      secondaries.set(sessionId, pending);
+      pending.then((s) => { if (!s) secondaries.delete(sessionId); }, () => secondaries.delete(sessionId));
+    }
+    return pending;
+  };
+  const showing = (sessionId: string): boolean => sessionId === leadSessionId || sessionId === currentSession;
+  const streamFor = async (sessionId: string): Promise<StreamHub | null> => {
+    if (showing(sessionId)) return hub;
+    // The first tab takes the console; the ones after it read along.
+    if (hub.clients === 0 && !switching) {
+      const outcome = await selectSession(sessionId);
+      if (outcome.ok) return hub;
+      if (outcome.reason === 'missing') return null;
+    }
+    return (await secondaryFor(sessionId))?.hub ?? null;
+  };
+  /**
+   * After the console moved to `target`: the tabs that asked for another
+   * session leave the main hub for a secondary of their own, and the tabs
+   * that were reading `target` as a secondary join the main hub, controls and
+   * all. Clients are handed over on their open sockets, so no tab reconnects
+   * and none can race the move by asking for the console back.
+   */
+  const rehome = async (target: string): Promise<void> => {
+    const strays = hub.release((tag) => tag === undefined || tag === target);
+    const promoted = secondaries.get(target);
+    if (promoted) {
+      secondaries.delete(target);
+      const sec = await promoted.catch(() => null);
+      if (sec) {
+        for (const { res, tag } of sec.hub.release(() => false)) hub.adopt(res, tag);
+        sec.close();
+      }
+    }
+    for (const { res, tag } of strays) {
+      const sec = tag === undefined ? null : await secondaryFor(tag).catch(() => null);
+      if (sec) sec.hub.adopt(res, tag);
+      else res.end();
+    }
+  };
+  const idleSince = new Map<string, number>();
+  const reapSecondaries = (): void => {
+    for (const [id, pending] of secondaries) {
+      void pending.then((sec) => {
+        if (!sec || secondaries.get(id) !== pending) return;
+        if (sec.hub.clients > 0) {
+          idleSince.delete(id);
+          return;
+        }
+        const since = idleSince.get(id) ?? Date.now();
+        idleSince.set(id, since);
+        if (Date.now() - since < SECONDARY_IDLE_MS) return;
+        secondaries.delete(id);
+        idleSince.delete(id);
+        sec.close();
+      }, () => {});
+    }
+  };
+
+  /**
    * Only the ingest is rebuilt. The store is RE-POINTED: setTeam already clears
    * the events, loads the target team's log and hands the owner stamp over,
    * while reopening it would orphan the hub's snapshot closure, `live`, and the
@@ -1412,6 +1536,7 @@ export async function main(argv: string[]): Promise<number> {
     // — which is also what http.ts's team() reads, so a control request racing
     // that window would throw inside sendToInbox's name guard.
     await ingest.sweep();
+    await rehome(lead);
     hub.publish();
   };
 
@@ -1481,6 +1606,7 @@ export async function main(argv: string[]): Promise<number> {
     // Not left to the follower's next tick: the header would name the session
     // by its id for up to FOLLOW_INTERVAL_MS after every switch.
     leadFacts = await leadFactsOf(sessionId);
+    await rehome(sessionId);
     hub.publish();
   };
 
@@ -1595,6 +1721,7 @@ export async function main(argv: string[]): Promise<number> {
     },
     selectTeam,
     selectSession,
+    streamFor,
     generateBrief: async (sessionId: string) => {
       const state = publish();
       if (sessionId !== state.leadSessionId && sessionId !== state.teamName) return null;
@@ -1677,7 +1804,10 @@ export async function main(argv: string[]): Promise<number> {
     }
   };
 
-  const follower = setInterval(() => void followRealTeam(), FOLLOW_INTERVAL_MS);
+  const follower = setInterval(() => {
+    void followRealTeam();
+    reapSecondaries();
+  }, FOLLOW_INTERVAL_MS);
   follower.unref();
   void followRealTeam();
 

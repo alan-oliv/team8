@@ -181,6 +181,39 @@ describe('GET /stream', () => {
     }
   });
 
+  it('routes a /s/ tab to the stream its session was given, and 404s one nothing answers to', async () => {
+    const main = createStream(() => emptyState(false), 50);
+    const other = createStream(() => ({ ...emptyState(false), teamName: 'other-team' }), 50);
+    const asked: string[] = [];
+    const server = createHttpServer({
+      permits,
+      outbox,
+      hooks: createHookHandlers({ store, permits }),
+      stream: main,
+      state: () => emptyState(false),
+      readOnly: false,
+      streamFor: (id: string) => {
+        asked.push(id);
+        return Promise.resolve(id === 'other' ? other : null);
+      },
+    });
+    const port = await listen(server, 0);
+    const url = `http://127.0.0.1:${port}`;
+    try {
+      const res = await fetch(`${url}/stream?session=other`);
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain('"teamName":"other-team"');
+      await reader.cancel();
+      expect((await fetch(`${url}/stream?session=missing`)).status).toBe(404);
+      expect(asked).toEqual(['other', 'missing']);
+    } finally {
+      other.close();
+      main.close();
+      await shutdown(server);
+    }
+  });
+
   // A throw out of project() must not reach the browser as an open, silent SSE
   // socket. Measured before the fix: subscribe() writes the 200 header first,
   // so the handler's own error path cannot answer any more ("Cannot write

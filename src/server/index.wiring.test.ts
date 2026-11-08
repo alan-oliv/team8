@@ -207,6 +207,27 @@ async function snapshot(url: string): Promise<TeamState> {
   return JSON.parse(buf.slice(start, buf.indexOf('\n\n', start))) as TeamState;
 }
 
+/** The next data frame on an open stream, skipping keepalives; `carry` holds the partial read. */
+async function nextFrame(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  carry: { buf: string },
+): Promise<{ event: string; state: TeamState }> {
+  const decoder = new TextDecoder();
+  for (;;) {
+    const end = carry.buf.indexOf('\n\n');
+    if (end >= 0) {
+      const raw = carry.buf.slice(0, end);
+      carry.buf = carry.buf.slice(end + 2);
+      if (!raw.includes('data: ')) continue;
+      const event = /^event: (\S+)/m.exec(raw)?.[1] ?? '';
+      return { event, state: JSON.parse(raw.slice(raw.indexOf('data: ') + 'data: '.length)) as TeamState };
+    }
+    const { value, done } = await reader.read();
+    if (done) throw new Error('the stream ended');
+    carry.buf += decoder.decode(value, { stream: true });
+  }
+}
+
 /** The frame's rows, once the follower's first tick has put them there. */
 async function sessionsOf(url: string, timeoutMs = FOLLOW_INTERVAL_MS * 3): Promise<SessionRow[]> {
   const deadline = Date.now() + timeoutMs;
@@ -322,6 +343,61 @@ describe('push -> pull wiring', () => {
         `the hook did not drain ${AGENT}'s transcript within ${HOOK_DEADLINE_MS}ms — ` +
           'onAgentActivity is optional on HookDeps, so an unwired drain typechecks',
       ).toBe(true);
+    },
+    20_000,
+  );
+
+  it(
+    'gives a second tab its own read-only stream, and hands it the console once the console moves there',
+    async () => {
+      home = await layout();
+      const solo = path.join(home, 'projects', SLUG, SOLO_SESSION);
+      await fs.mkdir(path.join(solo, 'subagents'), { recursive: true });
+      await fs.writeFile(
+        `${solo}.jsonl`,
+        assistantLine('44444444-4444-4444-4444-444444444444', SOLO_LINE) +
+          `${JSON.stringify({ type: 'custom-title', customTitle: SOLO_TITLE, sessionId: SOLO_SESSION })}\n`,
+      );
+      const url = await boot(home);
+      const primary = new AbortController();
+      const secondary = new AbortController();
+      try {
+        // The first tab holds the console.
+        const p = await fetch(`${url}/stream`, { signal: primary.signal });
+        const pr = p.body!.getReader();
+        const pc = { buf: '' };
+        expect((await nextFrame(pr, pc)).state.teamName).toBe(TEAM);
+
+        // A second tab on another session reads along, read-only, and the
+        // console under the first tab does not move.
+        const s = await fetch(`${url}/stream?session=${SOLO_SESSION}`, { signal: secondary.signal });
+        expect(s.status).toBe(200);
+        const sr = s.body!.getReader();
+        const sc = { buf: '' };
+        const first = await nextFrame(sr, sc);
+        expect(first.event).toBe('snapshot');
+        expect(first.state.readOnly).toBe(true);
+        expect(first.state.teamName).toBe('');
+        expect(first.state.leadSessionId).toBe(SOLO_SESSION);
+        expect(names(first.state)).not.toContain(AGENT);
+        expect((await snapshot(url)).teamName).toBe(TEAM);
+        expect((await fetch(`${url}/stream?session=deadbeef-0000-0000-0000-000000000000`)).status).toBe(404);
+
+        // The console moves to the second tab's session: that tab is handed the
+        // console on its open socket, and the bare first tab follows as before.
+        expect((await selectSession(url, SOLO_SESSION)).status).toBe(200);
+        let handed = await nextFrame(sr, sc);
+        for (let i = 0; i < 10 && handed.state.readOnly; i++) handed = await nextFrame(sr, sc);
+        expect(handed.event).toBe('snapshot');
+        expect(handed.state.readOnly).toBe(false);
+        expect(handed.state.leadSessionId).toBe(SOLO_SESSION);
+        let followed = await nextFrame(pr, pc);
+        for (let i = 0; i < 10 && followed.state.teamName === TEAM; i++) followed = await nextFrame(pr, pc);
+        expect(followed.state.teamName).toBe('');
+      } finally {
+        primary.abort();
+        secondary.abort();
+      }
     },
     20_000,
   );

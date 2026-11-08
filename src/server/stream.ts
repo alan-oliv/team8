@@ -6,7 +6,12 @@ export const COALESCE_MS = 250;
 const HEARTBEAT_MS = 15_000;
 
 export interface StreamHub {
-  subscribe(res: ServerResponse): void;
+  /** `tag` is the session a `/s/<id>` tab asked for; a bare tab has none. */
+  subscribe(res: ServerResponse, tag?: string): void;
+  /** Hands back the clients `keep` refuses, still open, for another hub to adopt. */
+  release(keep: (tag: string | undefined) => boolean): { res: ServerResponse; tag?: string }[];
+  /** Takes over a client whose headers another hub already sent. */
+  adopt(res: ServerResponse, tag?: string): void;
   publish(): void;
   close(): void;
   readonly clients: number;
@@ -17,7 +22,7 @@ function frame(event: string, state: TeamState): string {
 }
 
 export function createStream(snapshot: () => TeamState, coalesceMs = COALESCE_MS): StreamHub {
-  const clients = new Set<ServerResponse>();
+  const clients = new Map<ServerResponse, string | undefined>();
   let timer: NodeJS.Timeout | null = null;
   let lastFlush = 0;
   let closed = false;
@@ -28,19 +33,19 @@ export function createStream(snapshot: () => TeamState, coalesceMs = COALESCE_MS
     if (clients.size === 0) return;
     try {
       const payload = frame('state', snapshot());
-      for (const res of clients) res.write(payload);
+      for (const res of clients.keys()) res.write(payload);
     } catch (err) {
       logError('stream flush', err);
     }
   };
 
   const heartbeat = setInterval(() => {
-    for (const res of clients) res.write(': keepalive\n\n');
+    for (const res of clients.keys()) res.write(': keepalive\n\n');
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
 
   return {
-    subscribe(res) {
+    subscribe(res, tag) {
       if (closed) {
         res.end();
         return;
@@ -56,7 +61,33 @@ export function createStream(snapshot: () => TeamState, coalesceMs = COALESCE_MS
         'x-accel-buffering': 'no',
       });
       res.write(first);
-      clients.add(res);
+      clients.set(res, tag);
+      res.on('close', () => clients.delete(res));
+    },
+
+    release(keep) {
+      const out: { res: ServerResponse; tag?: string }[] = [];
+      for (const [res, tag] of clients) {
+        if (keep(tag)) continue;
+        clients.delete(res);
+        out.push({ res, tag });
+      }
+      return out;
+    },
+
+    adopt(res, tag) {
+      if (closed) {
+        res.end();
+        return;
+      }
+      try {
+        res.write(frame('snapshot', snapshot()));
+      } catch (err) {
+        logError('stream adopt', err);
+        res.end();
+        return;
+      }
+      clients.set(res, tag);
       res.on('close', () => clients.delete(res));
     },
 
@@ -75,7 +106,7 @@ export function createStream(snapshot: () => TeamState, coalesceMs = COALESCE_MS
       closed = true;
       if (timer) clearTimeout(timer);
       clearInterval(heartbeat);
-      for (const res of clients) res.end();
+      for (const res of clients.keys()) res.end();
       clients.clear();
     },
 
