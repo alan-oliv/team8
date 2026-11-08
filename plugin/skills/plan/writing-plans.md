@@ -26,7 +26,7 @@ Before defining tasks, map out which files will be created or modified and what 
 - Files that change together should live together. Split by responsibility, not by technical layer.
 - In existing codebases, follow established patterns. If the codebase uses large files, don't unilaterally restructure - but if a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
 
-This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
+This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently. The split comes from the product, so it is the same whichever mode later runs it.
 
 ## Task Right-Sizing
 
@@ -59,7 +59,7 @@ everything that can break it.
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** this plan is executed by teammates that `team8:run` dispatches from the shared task list. Read your own task section. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** this plan is executed by agents that `team8:run` dispatches from the shared task list. Read your own task section. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** [One sentence describing what this builds]
 
@@ -149,6 +149,8 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 
 **3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
 
+**4. Mode scan:** Search the plan for subagent, teammate, workflow, parallel, track, wave and peak. A hit about how agents run the work — a Tracks section, "so these build at once" — comes out. Tracks, waves and the mode are drawn on the task list, after the plan.
+
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
 
 ## Writing in Pieces
@@ -179,10 +181,11 @@ The self-review runs after the last task; the tasks come after it.
 The plan file carries the detail. The shared task list carries the delegation
 contract. Both are yours, written in the same pass, and they match one to one.
 
-**Tracks first.** `team8:run` hands each track to one teammate, and teammates
-run in parallel in one shared checkout, so isolation comes from file
-ownership and nothing else. Group the plan's tasks into tracks before
-creating them:
+**Tracks first.** `team8:run` hands each track to one worker, and tracks in
+the same wave run at once — in one shared checkout or a worktree each — so
+isolation comes from file ownership and nothing else. Tracks are read off the
+finished plan; no task changes to make one. Group the plan's tasks into tracks
+before creating them:
 
 - A file belongs to exactly one track. Two tasks that edit the same file are
   in the same track, in order. No exceptions for "just one line".
