@@ -1953,6 +1953,7 @@ function digestOf(fold) {
     lastAt: fold.lastAt,
     tokens: tokensOf([...fold.usage.values()]),
     costUsd: totalCost([...fold.usage.values()]),
+    tokenSplit: splitTok([...fold.usage.values()]),
     toolCalls: fold.toolCalls,
     contextTokens: fold.contextTokens,
     summary: fold.summary,
@@ -2152,6 +2153,7 @@ function nodesOf(spawns, agent, parent, depth, facts, seen) {
     if (digest && digest.records > 0) {
       node.tokens = digest.tokens;
       if (digest.costUsd !== void 0) node.costUsd = digest.costUsd;
+      if (digest.tokenSplit) node.tokenSplit = digest.tokenSplit;
       node.toolCalls = digest.toolCalls;
       node.contextTokens = digest.contextTokens;
       if (!node.returnedSummary && digest.summary) node.returnedSummary = digest.summary;
@@ -3185,6 +3187,19 @@ function toTranscriptLines(rec, agent = "") {
     ...draft.answers ? { answers: draft.answers } : {}
   }));
 }
+function toolErrorsOf(rec) {
+  const content = rec.message?.content;
+  if (rec.type !== "user" || !Array.isArray(content)) return [];
+  const out = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const b = block;
+    if (b.type !== "tool_result" || b.is_error !== true) continue;
+    const text = resultText(b.content);
+    if (text && text !== DECLINE_MESSAGE) out.push(capText(text.replace(/\s+/g, " ").trim()));
+  }
+  return out;
+}
 function fullLineText(rec, index) {
   return draftsOf(rec)?.drafts[index]?.text;
 }
@@ -3219,6 +3234,7 @@ function deriveTaskState(raw, task, agents) {
 
 // src/server/project.ts
 var PROJECTED_TRANSCRIPT_LINES = 60;
+var MARK_TEXT_CAP = 120;
 function lastAssistantModel(records) {
   for (let i = records.length - 1; i >= 0; i--) {
     const m = records[i].message?.model;
@@ -3345,6 +3361,12 @@ function project(events, readOnly, now = Date.now()) {
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
     phase(agent, ts, "working");
   };
+  const marks = /* @__PURE__ */ new Map();
+  const mark = (agent, ts, kind, text) => {
+    const list = marks.get(agent) ?? [];
+    list.push({ ts, kind, text: text.slice(0, MARK_TEXT_CAP) });
+    marks.set(agent, list);
+  };
   const lastIdle = /* @__PURE__ */ new Map();
   const idleAt = (agent, ts) => {
     if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
@@ -3390,6 +3412,7 @@ function project(events, readOnly, now = Date.now()) {
           applySpawnEvents(spawns, spawnEventsFor(rec));
           const ts = rec.timestamp ? Date.parse(rec.timestamp) : NaN;
           if (!Number.isNaN(ts) && !isAfterStop(rec)) bump(p.agent, ts);
+          if (!Number.isNaN(ts)) for (const text of toolErrorsOf(rec)) mark(p.agent, ts, "tool_error", text);
         }
         records.set(p.agent, list);
         seenRecords.set(p.agent, seen);
@@ -3409,6 +3432,13 @@ function project(events, readOnly, now = Date.now()) {
       }
       case "task": {
         const p = ev.payload;
+        const prev = tasksRaw.get(p.id);
+        if (prev) {
+          const label = `${p.id} \xB7 ${p.subject}`;
+          if (p.status === "in_progress" && prev.status !== "in_progress" && p.owner) mark(p.owner, ev.ts, "claimed", label);
+          const closer = p.owner ?? prev.owner;
+          if (p.status === "completed" && prev.status !== "completed" && closer) mark(closer, ev.ts, "closed", label);
+        }
         tasksRaw.set(p.id, p);
         break;
       }
@@ -3551,6 +3581,7 @@ function project(events, readOnly, now = Date.now()) {
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
       timeline: timelineOf(phases.get(id.name) ?? []),
+      marks: (marks.get(id.name) ?? []).sort((a, b) => a.ts - b.ts),
       transcript: asking ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)] : lines.slice(-PROJECTED_TRANSCRIPT_LINES),
       unread: unread.get(id.name) ?? 0,
       error: errors.get(id.name)
