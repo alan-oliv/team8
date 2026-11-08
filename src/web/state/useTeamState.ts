@@ -43,8 +43,8 @@ const URL_VIEW_IDS: readonly ViewId[] = [...VIEW_IDS, 'plan'];
 
 /**
  * `/s/<sessionId>` — the "no team required" route (task #4), reached without
- * any `?team=` at all. The segment shape matches what task #1's
- * `/api/select-session/<id>` route accepts server-side.
+ * any `?team=` at all. The tab streams `/stream?session=<id>`, and the server
+ * decides whether that is the console itself or a read-only view beside it.
  */
 const SESSION_ROUTE = /^\/s\/([A-Za-z0-9_-]+)$/;
 
@@ -314,7 +314,9 @@ export function useTeamState(url = '/stream'): TeamStateStore {
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     const connect = () => {
-      const es = new EventSource(url);
+      const es = new EventSource(
+        initial.sessionRoute ? `${url}?session=${encodeURIComponent(initial.sessionRoute)}` : url,
+      );
       source = es;
 
       const onState = (ev: Event) => {
@@ -347,7 +349,7 @@ export function useTeamState(url = '/stream'): TeamStateStore {
       clearTimeout(retry);
       source?.close();
     };
-  }, [url]);
+  }, [url, initial.sessionRoute]);
 
   // A watched session is what a reload must land back on: a re-keyed team's
   // lead id belongs to no session, so /s/<lead> would open nothing.

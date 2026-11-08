@@ -163,8 +163,11 @@ Restart Claude Code afterwards: `env` is read once at session start.
 
 Open it any time with `/team8:console` (`/console` also works, same as
 `/team8:setup` above): it opens the console on the session you run it from,
-starting or upgrading it only when needed, and every open tab follows. The
-URL is `http://127.0.0.1:4823/s/<session id>`.
+starting or upgrading it only when needed. The URL is
+`http://127.0.0.1:4823/s/<session id>`. A tab on that URL always shows that
+session: the first one open holds the console, and a tab opened on another
+session reads along read-only until you pick its session in the picker, which
+hands it the console. A tab on the bare URL follows whatever the console shows.
 
 ## Updating
 

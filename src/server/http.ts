@@ -133,6 +133,12 @@ export interface HttpDeps {
   /** Same, at a lone session that never formed a team. */
   selectSession?: (sessionId: string) => Promise<SelectTeamOutcome>;
   /**
+   * The stream for a tab on `/s/<id>`: the console's own when that session is
+   * on screen or no other tab holds the console, else a read-only one of its
+   * own. Null when nothing on disk answers to the id.
+   */
+  streamFor?: (sessionId: string) => Promise<StreamHub | null>;
+  /**
    * The overview's brief, rewritten on demand. Null when the id names a session
    * this console is not the one showing — there is one session on screen, and a
    * brief for another would be answered from state nobody here holds.
@@ -273,7 +279,13 @@ export function createHttpHandler(deps: HttpDeps): http.RequestListener {
         }
 
         if (method === 'GET' && route === '/stream') {
-          deps.stream.subscribe(res);
+          const session = url.searchParams.get('session');
+          const target = session && deps.streamFor ? await deps.streamFor(session) : deps.stream;
+          if (!target) {
+            json(res, 404, { error: 'not found', message: `no session ${session}` });
+            return;
+          }
+          target.subscribe(res, session ?? undefined);
           return;
         }
 

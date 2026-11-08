@@ -361,7 +361,9 @@ it('does not auto-switch when a /s/:sessionId route is on the URL', () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', quietCurrentState()));
 
-  expect(selects(fetchMock)).toEqual(['/api/select-session/abc12345']);
+  // The route asks the stream for its session; no select is posted.
+  expect(selects(fetchMock)).toEqual([]);
+  expect(MockEventSource.last().url).toBe('/stream?session=abc12345');
 });
 
 it('shows the nothing-live screen when the frame has no sessions and no agents', () => {
@@ -1048,19 +1050,15 @@ it('mounts the trace view over the session’s own tree when its pill is picked'
 // way and then given teammates is a team, and the picker that navigated here
 // calls it one off `members >= 2`. It used to keep a one-pill switcher and a
 // `solo` kind pill over a wall of four columns.
-it('selects the session from a /s/:sessionId URL and takes its mode from the roster', async () => {
+it('streams the session from a /s/:sessionId URL and takes its mode from the roster', async () => {
   window.history.replaceState(null, '', '/s/abc12345');
-  const fetchMock = stubFetch();
+  stubFetch();
   render(<App />);
   // A team-mode fixture on purpose: several agents, not the one-agent roster
   // soloState() builds.
   act(() => MockEventSource.last().emit('snapshot', sampleTeamState()));
 
-  expect(fetchMock).toHaveBeenCalledWith('/api/select-session/abc12345', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
-  });
+  expect(MockEventSource.last().url).toBe('/stream?session=abc12345');
 
   const tabs = await screen.findAllByRole('tab');
   expect(tabs.map((t) => t.textContent)).toEqual([
