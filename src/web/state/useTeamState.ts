@@ -4,33 +4,29 @@ import type { Agent, Diff, TeamState, TranscriptLine, ViewId } from '../../share
 export const VIEW_IDS: readonly ViewId[] = ['wall', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage'];
 
 /**
- * The switcher a sub-agents session offers. Straight off the canvas, which
- * builds it as `saViews: [['stream','stream'], ['trace','trace']]` — TWO pills,
- * against the team bar's seven and the workflow bar's five.
+ * The switcher a sub-agents session offers. Straight off the canvas's
+ * Sub-agents page (study 8), which builds it as
+ * `sbViews: ['stream', 'overview', 'trace', 'tasks', 'usage']` — five pills,
+ * against the team bar's seven and the workflow bar's five. It supersedes the
+ * Teammates page's older two-pill `saViews`, which this list once copied.
  *
  * `wall` is the first pill and LABELS itself `stream`: a single column already
  * is the parent's stream, so the id, route and component are unchanged.
  *
+ * `tasks` and `usage` are the team console's tabs adapted to this engine: the
+ * task list has one owner and no claiming; the ledger has one row per Task
+ * call instead of per member. A solo session has a task list and a bill from
+ * its first turn, so both are offered on every one.
+ *
  * `trace` is offered only when its subject exists. The canvas has no artboard
  * for a session with no subagents at all — its `SESSIONS` fixture knows exactly
  * three kinds, `teammates`, `subagents` and `workflow` — so a bare window
- * getting `stream` alone is our own gap-fill, following the same rule.
- *
- * This REPLACES decision 24's four-pill list, which added `tasks` and `usage`
- * from the README's prose. `saViews` is the canvas's own answer and it outranks
- * the prose. The cost is real and was 24's whole argument: 9 of the 10 non-empty
- * task lists on that machine belonged to sessions rather than teams, and they
- * are no longer reachable from a solo session's switcher.
- *
- * `overview` is the one addition to `saViews`, and it is not a re-litigation of
- * that: when the canvas drew the solo switcher, overview WAS the wall condensed,
- * and condensing one column produces the column. Screen 8 replaced it with a
- * written brief, WHERE IT STANDS and a row — none of which need a second agent
- * to mean something. A solo session gets the same reading of its own transcript
- * that a team gets of five.
+ * going without `trace` is our own gap-fill, following the same rule.
  */
 export function soloViews(hasSubagents: boolean): readonly ViewId[] {
-  return hasSubagents ? ['wall', 'overview', 'trace'] : ['wall', 'overview'];
+  return hasSubagents
+    ? ['wall', 'overview', 'trace', 'tasks', 'usage']
+    : ['wall', 'overview', 'tasks', 'usage'];
 }
 
 /** `plan` rides second, after the stream or wall, while the lead has a plan on the frame. */

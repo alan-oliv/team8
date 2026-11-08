@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { TranscriptRecord } from './transcript';
 import { totalCost, usageRecordsOf } from './usage';
+import { splitTok } from './cost';
 import {
   buildSubagentTree,
   digestOf,
@@ -258,6 +259,12 @@ describe('foldSubagentRecords', () => {
     const own = digest(scout.records);
     expect(own.costUsd).toBeGreaterThan(0);
     expect(own.costUsd).toBeCloseTo(totalCost(usageRecordsOf(scout.records)), 12);
+  });
+
+  it('records the four billed classes behind those tokens, on the same basis', () => {
+    const own = digest(scout.records);
+    expect(own.tokenSplit).toEqual(splitTok(usageRecordsOf(scout.records)));
+    expect(own.tokenSplit!.in + own.tokenSplit!.out + own.tokenSplit!.cacheWrite).toBe(own.tokens);
   });
 
   it('reports context occupancy from its newest assistant turn', () => {

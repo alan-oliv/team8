@@ -92,7 +92,7 @@ function tabsWithPlan(solo: boolean): (string | null)[] {
 it('offers plan second, in the team and the solo switcher, while there is a plan', () => {
   expect(tabsWithPlan(false)).toEqual(['wall', 'plan', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage']);
   cleanup();
-  expect(tabsWithPlan(true)).toEqual(['stream', 'plan', 'overview']);
+  expect(tabsWithPlan(true)).toEqual(['stream', 'plan', 'overview', 'tasks', 'usage']);
 });
 
 it('fires the view change when a tab is clicked', () => {
@@ -472,7 +472,8 @@ it('gives a solo session the two figures the canvas draws, and no team ones', ()
   expect(screen.getByText('turn 12 of 12')).toBeTruthy();
   expect(screen.getByText(/^working · /)).toBeTruthy();
   expect(screen.queryByTestId('aggregate-meter')).toBeNull();
-  expect(screen.queryByText(/tasks$/)).toBeNull();
+  // The team figure `N tasks`, not the `tasks` pill the solo switcher now carries.
+  expect(screen.queryByText(/\d tasks$/)).toBeNull();
   expect(screen.queryByText(/ctx$/)).toBeNull();
 });
 

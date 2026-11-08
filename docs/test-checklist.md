@@ -65,6 +65,8 @@ and anything that felt slow (which view, roughly how long).
 - [ ] Whether it wrote a spec and plan. If it did: `plan` appears as the second tab once the skeleton is written, rows fill in one per Edit, matching the `Plan ▓▓░░ n/N` lines in the terminal, and opening a row shows that task's section
 - [ ] After "start the work", `trace` appears with one lane per implementer and reviewer
 - [ ] One implementer at a time in `trace`, since this is a single track; separate tickets would run one lane per track at once, each in its own worktree
+- [ ] `tasks`: the plan's tasks as the session's own list, no owner column that matters
+- [ ] `usage`: one ledger row per Task call under the parent turn; a row opens that call in `trace`; the lever names the dearest call
 - [ ] Run log records the mode and its reason
 
 ## 3. Workflow: `pdf-lab`

@@ -46,13 +46,21 @@ agents, and the like).
 
 <table>
 <tr>
-<td rowspan="2" width="360"><img src="docs/subagents.png" width="360" alt="Subagents mode, trace view"></td>
+<td rowspan="4" width="360"><img src="docs/subagents.png" width="360" alt="Subagents mode, trace view"></td>
 <td><code>stream</code></td>
 <td>that session's own live transcript</td>
 </tr>
 <tr>
 <td><code>trace</code></td>
 <td>a timeline of every subagent it dispatched: model, elapsed, tokens, cost, nested by call depth (shown once it has spawned at least one)</td>
+</tr>
+<tr>
+<td><code>tasks</code></td>
+<td>the session's own task list, every task the session's, with dependencies and progress</td>
+</tr>
+<tr>
+<td><code>usage</code></td>
+<td>one ledger row per Task call: model, time, tools, tokens, what reached the parent, cost, and which call is the lever</td>
 </tr>
 </table>
 

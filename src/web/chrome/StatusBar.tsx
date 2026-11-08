@@ -59,9 +59,9 @@ export interface StatusBarProps {
   onSelectRun(runId: string): void;
   appearance: SettingsStore;
   /**
-   * A session with a roster of one (decision 24): the switcher
-   * offers stream · trace · tasks · usage, where `stream` is the wall's own
-   * pill wearing the word a single column deserves.
+   * A session with a roster of one (canvas study 8): the switcher offers
+   * stream · overview · trace · tasks · usage, where `stream` is the wall's
+   * own pill wearing the word a single column deserves.
    */
   solo?: boolean;
   /** Whether `trace` has anything to draw — see {@link soloViews}. */

@@ -1,12 +1,13 @@
 import type { TeamState, WorkflowRun } from '../../shared/domain';
 import type { SpendSample } from './usage-team';
+import { UsageSolo } from './UsageSolo';
 import { UsageTeam } from './UsageTeam';
 import { WorkflowUsage } from './WorkflowUsage';
 
-// The one thing both switchers mount at the `usage` pill. It only dispatches —
-// the team-mode and workflow-mode bodies are owned by separate tasks, and this
-// is the seam that lets them be built (and later edited) without touching one
-// another.
+// The one thing every switcher mounts at the `usage` pill. It only dispatches —
+// the team-mode, solo-mode and workflow-mode bodies are owned by separate
+// tasks, and this is the seam that lets them be built (and later edited)
+// without touching one another.
 export type UsageProps =
   | {
       mode: 'team';
@@ -16,11 +17,12 @@ export type UsageProps =
       onFocus: (name: string) => void;
       spendSamples: readonly SpendSample[];
     }
+  | { mode: 'solo'; state: TeamState; now: number; onOpenCall: (toolUseId: string) => void }
   | { mode: 'workflow'; run: WorkflowRun; now: number };
 
 export function Usage(props: UsageProps) {
-  return props.mode === 'team'
-    ? (
+  if (props.mode === 'team') {
+    return (
       <UsageTeam
         state={props.state}
         now={props.now}
@@ -28,6 +30,8 @@ export function Usage(props: UsageProps) {
         onFocus={props.onFocus}
         spendSamples={props.spendSamples}
       />
-    )
-    : <WorkflowUsage run={props.run} now={props.now} />;
+    );
+  }
+  if (props.mode === 'solo') return <UsageSolo state={props.state} now={props.now} onOpenCall={props.onOpenCall} />;
+  return <WorkflowUsage run={props.run} now={props.now} />;
 }

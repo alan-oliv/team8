@@ -31,6 +31,12 @@ it('renders the team-mode body for mode="team"', () => {
   expect(screen.queryByTestId('workflow-usage')).toBeNull();
 });
 
+it('renders the solo-mode body for mode="solo"', () => {
+  render(<Usage mode="solo" state={sampleTeamState()} now={0} onOpenCall={vi.fn()} />);
+  expect(screen.getByTestId('usage-solo')).toBeTruthy();
+  expect(screen.queryByTestId('usage')).toBeNull();
+});
+
 it('renders the workflow-mode body for mode="workflow"', () => {
   render(<Usage mode="workflow" run={RUN} now={0} />);
   expect(screen.getByTestId('workflow-usage')).toBeTruthy();

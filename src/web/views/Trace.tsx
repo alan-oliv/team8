@@ -45,7 +45,7 @@ function flatten(list: Subagent[]): FlatRow[] {
 // The contract carries only the summary text, not a token split for it — this
 // is the standard ~4-chars-per-token estimate, the only figure available for
 // what a subagent's result actually cost the parent's context.
-function estimatedTokens(text: string | undefined): number {
+export function estimatedTokens(text: string | undefined): number {
   return text ? Math.ceil(text.length / 4) : 0;
 }
 

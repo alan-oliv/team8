@@ -999,14 +999,15 @@ it('draws a bare session as its own stream rather than the empty screen', async 
   expect(screen.queryByTestId('no-sessions')).toBeNull();
 });
 
-// The same rule the other three pills follow: a view is offered when its
-// subject exists, and a bare session has no tree to draw lifelines for.
+// The same rule the other pills follow: a view is offered when its subject
+// exists, and a bare session has no tree to draw lifelines for — but it has a
+// task list and a bill from its first turn.
 it('drops the trace pill when a solo session has no subagents', async () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', bareState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'tasks', 'usage']);
 });
 
 // …and a `trace` left in the URL from a session that HAD one falls back to the
@@ -1020,16 +1021,28 @@ it('falls back to the stream when a URL asks for trace on a bare session', async
   expect(screen.queryByTestId('trace-view')).toBeNull();
 });
 
-// The canvas builds this switcher as `saViews: [['stream'], ['trace']]`, and
-// `overview` is the one addition to it — Screen 8 made the view a written brief
-// rather than the wall condensed, which reads on one agent as well as five.
-// Still three pills, not the seven a team gets.
-it('offers a sub-agents session three pills, with the wall labelled stream', async () => {
+// The canvas's Sub-agents page builds this switcher as
+// `sbViews: ['stream', 'overview', 'trace', 'tasks', 'usage']` — five pills,
+// not the seven a team gets: no comms and no grid for a roster of one.
+it('offers a sub-agents session five pills, with the wall labelled stream', async () => {
   render(<App />);
   act(() => MockEventSource.last().emit('snapshot', soloState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace', 'tasks', 'usage']);
+});
+
+it('mounts the per-call ledger at usage on a solo session, and a row opens that call in the trace', async () => {
+  render(<App />);
+  act(() => MockEventSource.last().emit('snapshot', soloState()));
+
+  fireEvent.click((await screen.findAllByRole('tab')).find((t) => t.textContent === 'usage')!);
+  expect(await screen.findByTestId('usage-solo')).toBeTruthy();
+  expect(screen.queryByTestId('usage')).toBeNull();
+
+  fireEvent.click(screen.getAllByTestId('usage-solo-call')[0]);
+  const trace = await screen.findByTestId('trace-view');
+  expect(trace.querySelector('[aria-selected="true"]')?.textContent).toContain('probe');
 });
 
 it('mounts the trace view over the session’s own tree when its pill is picked', async () => {
@@ -1076,7 +1089,7 @@ it('opens a lone /s/:sessionId session on its trace, with the solo switcher', as
   act(() => MockEventSource.last().emit('snapshot', soloState()));
 
   const tabs = await screen.findAllByRole('tab');
-  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['stream', 'overview', 'trace', 'tasks', 'usage']);
   expect(screen.getByRole('tab', { name: 'trace' }).getAttribute('aria-selected')).toBe('true');
   expect(await screen.findByTestId('trace-view')).toBeTruthy();
 });
@@ -1101,7 +1114,7 @@ it('gives a solo session the canvas two-figure bar, not the team figures', async
 
   const bar = await screen.findByTestId('bar');
   expect(bar.textContent).toContain('turn 12 of 12');
-  expect(bar.textContent).not.toContain('tasks');
+  expect(bar.textContent).not.toMatch(/\d tasks/);
   expect(bar.textContent).not.toContain('ctx');
 });
 
