@@ -2487,19 +2487,66 @@ describe('tmux-backend teammates', () => {
   });
 });
 
-describe('deleted task files', () => {
-  const boardIds = () => project(store.replay(), false).tasks.map((t) => t.id);
+const taskFile = (id: string): TaskPayload => ({
+  id,
+  subject: `Task ${id}`,
+  description: '',
+  owner: 'team-lead',
+  status: 'completed',
+  blocks: [],
+  blockedBy: [],
+});
 
-  it('drops a task from the board when its file is deleted', async () => {
+describe('deleted task files', () => {
+  const boardIds = () => project(store.replay(), false).tasks.map((t) => t.id).sort();
+
+  it('drops a task from the board when its file is deleted while the others stay', async () => {
     await layout();
+    await fs.writeFile(path.join(paths.tasks, TEAM, '2.json'), JSON.stringify(taskFile('2')));
     // The short sweep is the recovery path for a watcher event FSEvents drops.
     const ingest = startFileIngest(store, { paths, sweepIntervalMs: 200 });
     try {
       await settle();
       await ingest.sweep();
-      expect(boardIds()).toEqual(['1']);
+      expect(boardIds()).toEqual(['1', '2']);
       await fs.rm(path.join(paths.tasks, TEAM, '1.json'));
-      await waitFor(() => (boardIds().length === 0 ? true : undefined));
+      await waitFor(() => (boardIds().length === 1 ? true : undefined));
+      expect(boardIds()).toEqual(['2']);
+    } finally {
+      ingest.close();
+    }
+  });
+
+  it('keeps the board when the team ends and its task directory goes with it', async () => {
+    await layout();
+    await fs.writeFile(path.join(paths.tasks, TEAM, '2.json'), JSON.stringify(taskFile('2')));
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 200 });
+    try {
+      await settle();
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1', '2']);
+      await fs.rm(path.join(paths.tasks, TEAM), { recursive: true });
+      await settle(600);
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1', '2']);
+    } finally {
+      ingest.close();
+    }
+  });
+
+  it('keeps the board when every task file is gone but the directory remains', async () => {
+    await layout();
+    await fs.writeFile(path.join(paths.tasks, TEAM, '2.json'), JSON.stringify(taskFile('2')));
+    const ingest = startFileIngest(store, { paths, sweepIntervalMs: 0 });
+    try {
+      await settle();
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1', '2']);
+      await fs.rm(path.join(paths.tasks, TEAM, '1.json'));
+      await fs.rm(path.join(paths.tasks, TEAM, '2.json'));
+      await settle();
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1', '2']);
     } finally {
       ingest.close();
     }
@@ -2541,6 +2588,40 @@ describe('deleted task files', () => {
       await fs.chmod(dir, 0o755);
       ingest.close();
     }
+  });
+});
+
+describe("a lone session's task list", () => {
+  const boardIds = () => project(store.replay(), false).tasks.map((t) => t.id).sort();
+  const lone = () =>
+    startFileIngest(store, { paths, leadSessionId: LEAD_SESSION, sessionOnly: true, sweepIntervalMs: 0 });
+
+  it('reads only the list Claude Code keeps under the session name', async () => {
+    await layout();
+    const other = path.join(paths.tasks, 'session-other000');
+    await fs.mkdir(other, { recursive: true });
+    await fs.writeFile(path.join(other, '5.json'), JSON.stringify(taskFile('5')));
+    const ingest = lone();
+    try {
+      await settle();
+      await ingest.sweep();
+      expect(boardIds()).toEqual(['1']);
+    } finally {
+      ingest.close();
+    }
+  });
+
+  it('drops tasks whose files were deleted while the console was down', async () => {
+    await layout();
+    store.append('task', taskFile('9'), 'team-lead');
+    const ingest = lone();
+    try {
+      await settle();
+      await ingest.sweep();
+    } finally {
+      ingest.close();
+    }
+    expect(boardIds()).toEqual(['1']);
   });
 });
 
