@@ -22,6 +22,14 @@ at a time, with a progress line after each. A separate planner starts without
 the conversation, and every question it has becomes a relay round the user
 waits on.
 
+**The plan does not know the mode.** Subagents, teammates or workflow is
+settled in `team8:tasks`, after the tasks exist, by asking the user.
+Everything before that — the classification, the questions, the approaches,
+the design, the spec, the plan — is argued from the product alone, so the
+same request writes the same plan whatever mode runs it. A request that names
+a mode, in its words or in a project or folder name, changes nothing before
+the Mode ask.
+
 **Every batch leaves a run log** at `docs/team8/runs/YYYY-MM-DD-<topic>.md`:
 who ran, on what model, how many rounds, what it was estimated at, what it
 cost. It is how a past session gets debugged. See The run log below.
@@ -118,7 +126,7 @@ artifact, never the approval.
 
 **Never offer to skip this skill.** "This is small enough that the
 pipeline is overkill, want me to just write it?" is not a question to
-ask — the user invoked `team8:plan`, and a small task is one subagent
+ask — the user invoked `team8:plan`, and a small task is one task
 with a two-line design, not a reason to bypass the tasks, the table and
 the run. The same holds when the folder is not a git repo:
 say so once, skip the branch cut and every commit, and do everything
@@ -138,7 +146,9 @@ else exactly as written.
 | "This is small enough that team8:plan is overkill — I'll offer to write it directly" | The user chose the pipeline by invoking it. Small means one task and one worker, never no tasks and no approval. |
 | "No git repo, so the branch and run log can't happen — I'll just do the work" | Only the branch cut and the commits depend on git. Tasks, table and run do not. |
 | "The ticket has repro steps — I'll just run them" | Reproducing is `team8:reproduce`: propose the probe and get a yes first. |
-| "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches plus a verify step, run as a workflow. Do not ask the user to choose between a script and agents. |
+| "Same job on 20 files — I'll write one script and run it" | One operation over many inputs is a fan-out: batches handled by agents, plus a verify step. Do not ask the user to choose between a script and agents. |
+| "This approach splits into disjoint tracks, so teammates can build at once" | How agents run the work is not a trade-off between approaches. The mode is asked in `team8:tasks`, after the tasks exist; a design shaped for a mode answers that question before the user does. |
+| "The request — or the folder name — says teammates (or subagents), so I'll design for it" | Nothing before the Mode ask uses it. The same request without that word writes the same plan. |
 | "They passed `--skip-reviews`, so I can skip presenting the design too" | The flag skips the waiting, not the presenting. The design, the spec and the plan are still written where the user can read them back. |
 
 ### Checklist
@@ -234,7 +244,7 @@ is the whole process.
 - Check out the current project state first (files, docs, recent commits)
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
-- **The same job over many inputs is a fan-out, not a script.** "For each of these N items, produce X" (N of five or more, no decision between items) is workflow-shaped, per the table in `team8:tasks` Mode: the orchestration is the repeatable thing, and it scales to dozens of agents where a lead would improvise the same dispatch by hand. Design it as batches of inputs handled by agents, each returning its result, a verify step over the results, and one aggregation task at the end. The agents do the per-item work — do not offer a choice between agents and a hand-written parser, and do not collapse the job into one script the lead writes. Say the shape out loud in the design so `team8:tasks` reads `workflow` off the graph. If the inputs do not exist yet, stop and ask for them through AskUserQuestion before designing (where they live comes back in Other): a fan-out sized on an empty directory is a guess.
+- **The same job over many inputs is a fan-out, not a script.** "For each of these N items, produce X" (N of five or more, no decision between items): design it as batches of inputs handled by agents, each returning its result, a verify step over the results, and one aggregation task at the end. The agents do the per-item work — do not offer a choice between agents and a hand-written parser, and do not collapse the job into one script the lead writes. If the inputs do not exist yet, stop and ask for them through AskUserQuestion before designing (where they live comes back in Other): a fan-out sized on an empty directory is a guess.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
 - Every question is an AskUserQuestion call: 2-4 options, your recommendation first marked "(Recommended)", header 12 chars max; a free-form answer comes through its Other field, so never ask in plain reply text
 - Only one question per call - if a topic needs more exploration, break it into multiple questions
@@ -243,6 +253,7 @@ is the whole process.
 **Exploring approaches:**
 
 - Propose 2-3 different approaches with trade-offs
+- Weigh each approach on the product alone: fit with the codebase, simplicity, testability, the spec's edge cases (The plan does not know the mode, in the Overview)
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 - YAGNI ruthlessly - remove unnecessary features from every approach and design
@@ -284,6 +295,7 @@ After writing the spec document, look at it with fresh eyes:
 2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
 3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
 4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+5. **Mode scan:** Search the spec for subagent, teammate, workflow, parallel, track and wave. A hit about how agents will run the work is a leak: rewrite that passage around the product.
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
