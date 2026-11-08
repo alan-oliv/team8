@@ -3230,6 +3230,12 @@ function memoisable(rec) {
   return rec !== null && typeof rec === "object";
 }
 var lineMemo = /* @__PURE__ */ new WeakMap();
+function timelineOf(changes) {
+  changes.sort((a, b) => a.ts - b.ts);
+  const out = [];
+  for (const c of changes) if (c.phase !== out[out.length - 1]?.phase) out.push(c);
+  return out;
+}
 function waitingLine(card, ts) {
   const n = card.questions?.length ?? 0;
   return { id: `${card.id}#waiting`, marker: "\u23BF", text: `waiting on you \xB7 ${n} question${n === 1 ? "" : "s"}`, ts };
@@ -3329,12 +3335,20 @@ function project(events, readOnly, now = Date.now()) {
   const spawnFolds = /* @__PURE__ */ new Map();
   const subagentFacts = /* @__PURE__ */ new Map();
   let mail = [];
+  const phases = /* @__PURE__ */ new Map();
+  const phase = (agent, ts, p) => {
+    const list = phases.get(agent) ?? [];
+    list.push({ ts, phase: p });
+    phases.set(agent, list);
+  };
   const bump = (agent, ts) => {
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
+    phase(agent, ts, "working");
   };
   const lastIdle = /* @__PURE__ */ new Map();
   const idleAt = (agent, ts) => {
     if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
+    phase(agent, ts, "idle");
   };
   for (const ev of events) {
     switch (ev.kind) {
@@ -3443,6 +3457,7 @@ function project(events, readOnly, now = Date.now()) {
         const item = ev.payload;
         needsYou.set(item.id, item);
         cardAt.set(item.id, ev.ts);
+        phase(item.agent, ev.ts, "waiting");
         break;
       }
       case "needsyou-resolved": {
@@ -3535,6 +3550,7 @@ function project(events, readOnly, now = Date.now()) {
       costUsd: carried ? carried.costUsd : totalCost(usage),
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
+      timeline: timelineOf(phases.get(id.name) ?? []),
       transcript: asking ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)] : lines.slice(-PROJECTED_TRANSCRIPT_LINES),
       unread: unread.get(id.name) ?? 0,
       error: errors.get(id.name)
