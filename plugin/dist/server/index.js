@@ -5420,7 +5420,7 @@ data: ${JSON.stringify(state)}
 `;
 }
 function createStream(snapshot, coalesceMs = COALESCE_MS) {
-  const clients = /* @__PURE__ */ new Set();
+  const clients = /* @__PURE__ */ new Map();
   let timer = null;
   let lastFlush = 0;
   let closed = false;
@@ -5428,17 +5428,17 @@ function createStream(snapshot, coalesceMs = COALESCE_MS) {
     if (clients.size === 0) return;
     try {
       const payload = frame("state", snapshot());
-      for (const res of clients) res.write(payload);
+      for (const res of clients.keys()) res.write(payload);
     } catch (err) {
       logError("stream flush", err);
     }
   };
   const heartbeat = setInterval(() => {
-    for (const res of clients) res.write(": keepalive\n\n");
+    for (const res of clients.keys()) res.write(": keepalive\n\n");
   }, HEARTBEAT_MS2);
   heartbeat.unref?.();
   return {
-    subscribe(res) {
+    subscribe(res, tag) {
       if (closed) {
         res.end();
         return;
@@ -5451,7 +5451,31 @@ function createStream(snapshot, coalesceMs = COALESCE_MS) {
         "x-accel-buffering": "no"
       });
       res.write(first);
-      clients.add(res);
+      clients.set(res, tag);
+      res.on("close", () => clients.delete(res));
+    },
+    release(keep) {
+      const out = [];
+      for (const [res, tag] of clients) {
+        if (keep(tag)) continue;
+        clients.delete(res);
+        out.push({ res, tag });
+      }
+      return out;
+    },
+    adopt(res, tag) {
+      if (closed) {
+        res.end();
+        return;
+      }
+      try {
+        res.write(frame("snapshot", snapshot()));
+      } catch (err) {
+        logError("stream adopt", err);
+        res.end();
+        return;
+      }
+      clients.set(res, tag);
       res.on("close", () => clients.delete(res));
     },
     publish() {
@@ -5468,7 +5492,7 @@ function createStream(snapshot, coalesceMs = COALESCE_MS) {
       closed = true;
       if (timer) clearTimeout(timer);
       clearInterval(heartbeat);
-      for (const res of clients) res.end();
+      for (const res of clients.keys()) res.end();
       clients.clear();
     },
     get clients() {
@@ -5633,7 +5657,13 @@ function createHttpHandler(deps) {
           }
         }
         if (method === "GET" && route === "/stream") {
-          deps.stream.subscribe(res);
+          const session = url.searchParams.get("session");
+          const target = session && deps.streamFor ? await deps.streamFor(session) : deps.stream;
+          if (!target) {
+            json(res, 404, { error: "not found", message: `no session ${session}` });
+            return;
+          }
+          target.subscribe(res, session ?? void 0);
           return;
         }
         if (method === "GET" && route === "/health") {
@@ -6800,6 +6830,7 @@ var execFileAsync2 = promisify4(execFile5);
 var DEFAULT_PORT = 4823;
 var IDLE_GRACE_MS = 10 * 60 * 1e3;
 var FOLLOW_INTERVAL_MS = 3e3;
+var SECONDARY_IDLE_MS = 3e4;
 var IDLE_EXIT_TICKS = 10;
 function parseArgs(argv) {
   let command = "run";
@@ -7546,13 +7577,14 @@ async function main(argv) {
   let liveRows;
   let liveRowsJson = "";
   const carryByTarget = /* @__PURE__ */ new Map();
+  const ingestPaths = {
+    projects: projectsRoot,
+    teams: teamsRoot2,
+    tasks: path13.join(cli.claudeHome, "tasks"),
+    sessions: sessionsRoot
+  };
   const startIngest = (gen, team, lead, carry) => startFileIngest(fencedSink(live, gen, () => generation), {
-    paths: {
-      projects: path13.join(cli.claudeHome, "projects"),
-      teams: teamsRoot2,
-      tasks: path13.join(cli.claudeHome, "tasks"),
-      sessions: path13.join(cli.claudeHome, "sessions")
-    },
+    paths: ingestPaths,
     teamName: team,
     leadSessionId: lead,
     sessionOnly: team === void 0 && lead !== void 0,
@@ -7578,6 +7610,114 @@ async function main(argv) {
     const meta = dir ? await transcriptMeta(`${dir}.jsonl`) : {};
     return { sessionName: sessions.names.get(id) ?? meta.title, branch: meta.branch, mode: meta.mode };
   };
+  const secondaries = /* @__PURE__ */ new Map();
+  const openSecondary = async (sessionId) => {
+    const walk2 = await walkTeams(teamsRoot2, sessionsRoot, sessionId, projectsRoot);
+    const team = teamOfSession(walk2.teams, walk2.drivers, await forkChainOf(projectsRoot, sessionId));
+    if (!team && !await sessionProjectDir(projectsRoot, sessionId, walk2.sessions.cwds.get(sessionId))) return null;
+    const own = openStore(cli.dbPath, "");
+    const snapshot = () => {
+      const events = own.replay();
+      const state = project(events, true);
+      const workflows = foldWorkflows(events);
+      return {
+        ...state,
+        leadSessionId: state.leadSessionId || (team?.leadSessionId || sessionId),
+        mode: modeOf(state.agents.length, workflows),
+        workflows,
+        build,
+        watching,
+        leadReachable: false,
+        ...liveRows ? { sessions: liveRows } : {}
+      };
+    };
+    const secHub = createStream(snapshot);
+    const sink = {
+      append(kind, payload, agent) {
+        const ev = own.append(kind, payload, agent);
+        secHub.publish();
+        return ev;
+      },
+      replay: () => own.replay(),
+      setTeam: () => {
+      },
+      close: () => {
+      }
+    };
+    const secIngest = startFileIngest(sink, {
+      paths: ingestPaths,
+      teamName: team?.name,
+      leadSessionId: team ? team.leadSessionId || sessionId : sessionId,
+      sessionOnly: !team,
+      adoptExistingTeams: false
+    });
+    await secIngest.sweep();
+    return {
+      hub: secHub,
+      close() {
+        secIngest.close();
+        secHub.close();
+        own.close();
+      }
+    };
+  };
+  const secondaryFor = (sessionId) => {
+    let pending = secondaries.get(sessionId);
+    if (!pending) {
+      pending = openSecondary(sessionId);
+      secondaries.set(sessionId, pending);
+      pending.then((s) => {
+        if (!s) secondaries.delete(sessionId);
+      }, () => secondaries.delete(sessionId));
+    }
+    return pending;
+  };
+  const showing = (sessionId) => sessionId === leadSessionId || sessionId === currentSession;
+  const streamFor = async (sessionId) => {
+    if (showing(sessionId)) return hub;
+    if (hub.clients === 0 && !switching) {
+      const outcome = await selectSession(sessionId);
+      if (outcome.ok) return hub;
+      if (outcome.reason === "missing") return null;
+    }
+    return (await secondaryFor(sessionId))?.hub ?? null;
+  };
+  const rehome = async (target) => {
+    const strays = hub.release((tag) => tag === void 0 || tag === target);
+    const promoted = secondaries.get(target);
+    if (promoted) {
+      secondaries.delete(target);
+      const sec2 = await promoted.catch(() => null);
+      if (sec2) {
+        for (const { res, tag } of sec2.hub.release(() => false)) hub.adopt(res, tag);
+        sec2.close();
+      }
+    }
+    for (const { res, tag } of strays) {
+      const sec2 = tag === void 0 ? null : await secondaryFor(tag).catch(() => null);
+      if (sec2) sec2.hub.adopt(res, tag);
+      else res.end();
+    }
+  };
+  const idleSince = /* @__PURE__ */ new Map();
+  const reapSecondaries = () => {
+    for (const [id, pending] of secondaries) {
+      void pending.then((sec2) => {
+        if (!sec2 || secondaries.get(id) !== pending) return;
+        if (sec2.hub.clients > 0) {
+          idleSince.delete(id);
+          return;
+        }
+        const since = idleSince.get(id) ?? Date.now();
+        idleSince.set(id, since);
+        if (Date.now() - since < SECONDARY_IDLE_MS) return;
+        secondaries.delete(id);
+        idleSince.delete(id);
+        sec2.close();
+      }, () => {
+      });
+    }
+  };
   const retarget = async (team, lead) => {
     hub.publish();
     const gen = ++generation;
@@ -7589,6 +7729,7 @@ async function main(argv) {
     leadFacts = {};
     ingest = startIngest(gen, team, lead, carryByTarget.get(team));
     await ingest.sweep();
+    await rehome(lead);
     hub.publish();
   };
   const selectTeam = async (team) => {
@@ -7636,6 +7777,7 @@ async function main(argv) {
     ingest = startIngest(gen, void 0, sessionId, carryByTarget.get(sessionId));
     await ingest.sweep();
     leadFacts = await leadFactsOf(sessionId);
+    await rehome(sessionId);
     hub.publish();
   };
   const targetOf = async (walk2) => {
@@ -7734,6 +7876,7 @@ async function main(argv) {
     },
     selectTeam,
     selectSession,
+    streamFor,
     generateBrief: async (sessionId) => {
       const state = publish();
       if (sessionId !== state.leadSessionId && sessionId !== state.teamName) return null;
@@ -7777,7 +7920,10 @@ async function main(argv) {
       hub.publish();
     }
   };
-  const follower = setInterval(() => void followRealTeam(), FOLLOW_INTERVAL_MS);
+  const follower = setInterval(() => {
+    void followRealTeam();
+    reapSecondaries();
+  }, FOLLOW_INTERVAL_MS);
   follower.unref();
   void followRealTeam();
   process.on("SIGINT", stop);
@@ -7798,6 +7944,7 @@ export {
   HEAD_WINDOW,
   IDLE_EXIT_TICKS,
   IDLE_GRACE_MS,
+  SECONDARY_IDLE_MS,
   TAIL_WINDOW,
   discoverTeam,
   fencedSink,
