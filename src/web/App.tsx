@@ -27,8 +27,8 @@ import { LeftSession } from './views/LeftSession';
 import { NoSessions } from './views/NoSessions';
 import { Overview } from './views/Overview';
 import { Plan } from './views/Plan';
-import { Rail } from './views/Rail';
 import { Tasks } from './views/Tasks';
+import { TeamTrace } from './views/TeamTrace';
 import { Trace } from './views/Trace';
 import { Usage } from './views/Usage';
 import { Wall } from './views/Wall';
@@ -84,13 +84,12 @@ export function App() {
   // lead without a roster-of-one check. Before the first snapshot there is no
   // roster to ask, so the route stands in as the only hint there is.
   const solo = state === null ? store.sessionRoute !== null : state.agents.length <= 1;
-  // `trace` is offered when its subject exists (decision 24's rule), and on a
-  // bare session it does not: no subagents, nothing to draw lifelines for. A
-  // team never offers it either, whatever it has spawned — its switcher is the
-  // seven views. Either way a `trace` left in the URL falls back to the stream
-  // rather than mounting a view with no tab above it.
+  // `trace` is offered when its subject exists (decision 24's rule): a team's
+  // teammates always, a solo session's subagents only once it has some. On a
+  // bare session a `trace` left in the URL falls back to the stream rather than
+  // mounting a view with no tab above it.
   const hasSubagents = Object.values(state?.subagents ?? {}).some((list) => list.length > 0);
-  const offersTrace = solo && hasSubagents;
+  const offersTrace = !solo || hasSubagents;
   const view =
     (store.view === 'trace' && !offersTrace) || (store.view === 'plan' && !state?.plan) ? 'wall' : store.view;
   // Lives here, not in the view, so switching away from usage and back does
@@ -476,7 +475,7 @@ export function App() {
         )}
         {view === 'tasks' && <Tasks tasks={state.tasks} teamName={state.teamName} />}
         {view === 'plan' && state.plan && <Plan plan={state.plan} />}
-        {view === 'trace' && traceLead && (
+        {view === 'trace' && solo && traceLead && (
           <Trace
             agent={traceLead.name}
             model={traceLead.model}
@@ -488,15 +487,17 @@ export function App() {
             onSelect={setTraceSelected}
           />
         )}
-        {view === 'rail' && (
-          <Rail
+        {view === 'trace' && !solo && (
+          <TeamTrace
             agents={state.agents}
+            tasks={state.tasks}
+            mail={state.mail}
+            startedAt={state.startedAt}
+            now={now}
             focused={store.agent}
             onFocus={store.setAgent}
-            now={now}
-            readOnly={state.readOnly}
-            leadReachable={state.leadReachable ?? false}
-            subagents={state.subagents}
+            onOpenWall={(name) => { store.setAgent(name); store.setView('wall'); }}
+            onOpenMail={(name) => { setMailFor(name); store.setAgent(name); store.setView('comms'); }}
           />
         )}
         {view === 'grid' && (

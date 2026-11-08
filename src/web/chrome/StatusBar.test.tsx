@@ -64,7 +64,7 @@ it('exposes the switcher as a tablist with the seven views', () => {
     'overview',
     'comms',
     'tasks',
-    'rail',
+    'trace',
     'grid',
     'usage',
   ]);
@@ -90,7 +90,7 @@ function tabsWithPlan(solo: boolean): (string | null)[] {
 }
 
 it('offers plan second, in the team and the solo switcher, while there is a plan', () => {
-  expect(tabsWithPlan(false)).toEqual(['wall', 'plan', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage']);
+  expect(tabsWithPlan(false)).toEqual(['wall', 'plan', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage']);
   cleanup();
   expect(tabsWithPlan(true)).toEqual(['stream', 'plan', 'overview']);
 });

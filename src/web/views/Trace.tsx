@@ -4,7 +4,7 @@ import { resolveModel } from '../../shared/catalog';
 import { subagentSpendUsd } from './usage-team';
 import { contextBar, formatCost, formatElapsed, formatTokens } from '../format';
 
-const TYPE_BADGE: CSSProperties = {
+export const TYPE_BADGE: CSSProperties = {
   border: '1px solid var(--color-neutral-800)',
   color: 'var(--color-neutral-600)',
   borderRadius: 'var(--radius-sm)',
@@ -76,7 +76,7 @@ const TICK_STEPS_MS = [
  * subagents were stopped days ago without ever being marked returned. That is
  * not hypothetical: it is what this view drew the first time it met one.
  */
-function tickLabel(ms: number, span: number): string {
+export function tickLabel(ms: number, span: number): string {
   if (span < HOUR) {
     const total = Math.round(ms / 1000);
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
@@ -159,7 +159,7 @@ export function Trace({ agent, model, subagents, now, selected, onSelect }: Trac
           testid="trace-shown-to-parent"
           label="SHOWN TO PARENT"
           value={formatTokens(shownToParent)}
-          accent
+          color="var(--color-accent-300)"
         />
         <Stat
           testid="trace-spend"
@@ -364,9 +364,9 @@ export function Trace({ agent, model, subagents, now, selected, onSelect }: Trac
   );
 }
 
-function Stat({
-  testid, label, value, accent = false,
-}: { testid: string; label: string; value: string; accent?: boolean }) {
+export function Stat({
+  testid, label, value, color = 'var(--color-text)',
+}: { testid: string; label: string; value: string; color?: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
       <span style={{ color: 'var(--color-neutral-600)', fontSize: '9.5px', letterSpacing: '.06em' }}>
@@ -374,7 +374,7 @@ function Stat({
       </span>
       <span
         data-testid={testid}
-        style={{ color: accent ? 'var(--color-accent-300)' : 'var(--color-text)', fontSize: '15px' }}
+        style={{ color, fontSize: '15px' }}
       >
         {value}
       </span>

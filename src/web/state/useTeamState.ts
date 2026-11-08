@@ -1,7 +1,7 @@
-import { createContext, useCallback, useEffect, useState } from 'react';
+import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import type { Agent, Diff, TeamState, TranscriptLine, ViewId } from '../../shared/domain';
 
-export const VIEW_IDS: readonly ViewId[] = ['wall', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage'];
+export const VIEW_IDS: readonly ViewId[] = ['wall', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage'];
 
 /**
  * The switcher a sub-agents session offers. Straight off the canvas, which
@@ -39,7 +39,7 @@ export function withPlan(views: readonly ViewId[], hasPlan: boolean): readonly V
 }
 
 /** Every id a URL may carry, whatever mode the session turns out to be in. */
-const URL_VIEW_IDS: readonly ViewId[] = [...VIEW_IDS, 'trace', 'plan'];
+const URL_VIEW_IDS: readonly ViewId[] = [...VIEW_IDS, 'plan'];
 
 /**
  * `/s/<sessionId>` — the "no team required" route (task #4), reached without
@@ -253,6 +253,10 @@ export function useTeamState(url = '/stream'): TeamStateStore {
   const [state, setState] = useState<TeamState | null>(null);
   const [connected, setConnected] = useState(false);
   const [view, setView] = useState<ViewId>(initial.view);
+  // `/s/<id>` with no `?view=` defaults to the trace: right for a solo session,
+  // whose trace is its subagents, wrong for a team, which lands on the wall as
+  // it always has. Only the first frame knows which one arrived.
+  const routeDefaulted = useRef(initial.sessionRoute !== null && !new URLSearchParams(window.location.search).has('view'));
   const [selected, setAgent] = useState<string | null>(initial.agent);
   const [selectedRun, setRun] = useState<string | null>(initial.run);
   // Held here rather than in Wall so a width survives a trip through another
@@ -320,6 +324,10 @@ export function useTeamState(url = '/stream'): TeamStateStore {
         // Functional form on purpose: reading `state` here would put it in the effect's
         // dep array and rebuild the EventSource on every frame.
         setState((prev) => (prev ? reconcile(prev, next) : next));
+        if (routeDefaulted.current) {
+          routeDefaulted.current = false;
+          if (next.agents.length > 1) setView((v) => (v === 'trace' ? 'wall' : v));
+        }
       };
       es.addEventListener('snapshot', onState);
       es.addEventListener('state', onState);

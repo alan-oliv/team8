@@ -374,7 +374,7 @@ describe('the gear is chrome, not a metric', () => {
   });
 
   it('is reachable in every view', () => {
-    for (const view of ['wall', 'overview', 'comms', 'tasks', 'rail', 'grid']) {
+    for (const view of ['wall', 'overview', 'comms', 'tasks', 'trace', 'grid']) {
       mount(view);
       expect(screen.getByTestId('config-trigger'), view).toBeTruthy();
       cleanup();
