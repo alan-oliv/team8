@@ -239,6 +239,8 @@ export interface Subagent {
   durationMs?: number;       // absent until it returns
   tokens?: number;
   costUsd?: number;          // list price over its own records; absent for a digest from before it priced itself
+  /** The four billed classes behind `tokens` and `costUsd`; absent on a digest from before it was recorded. */
+  tokenSplit?: TokenSplit;
   toolCalls?: number;
   contextTokens?: number;
   returnedSummary?: string;

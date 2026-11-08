@@ -39,14 +39,14 @@ const RAMP = [
 ];
 
 // Fixed draw order, ramp -700 → -500 → -400 → -300 — never re-sorted by size.
-const SEGMENT_COLOR: Record<SegmentKey, string> = {
+export const SEGMENT_COLOR: Record<SegmentKey, string> = {
   cacheRead: 'var(--color-accent-700)',
   cacheWrite: 'var(--color-accent-500)',
   in: 'var(--color-accent-400)',
   out: 'var(--color-accent-300)',
 };
 
-const PANEL: CSSProperties = {
+export const PANEL: CSSProperties = {
   background: 'var(--color-bg)',
   border: '1px solid var(--color-neutral-900)',
   borderRadius: 'var(--radius-md)',
@@ -64,28 +64,28 @@ const PANEL: CSSProperties = {
 // it shrank to nothing and the per-agent ledger left a live team's page
 // entirely. Panels without `overflow` are floored at their content height and
 // need no such guard.
-const TABLE_PANEL: CSSProperties = {
+export const TABLE_PANEL: CSSProperties = {
   ...PANEL,
   padding: 0,
   overflow: 'hidden',
   flexShrink: 0,
 };
 
-const PANEL_HEAD: CSSProperties = {
+export const PANEL_HEAD: CSSProperties = {
   display: 'flex',
   alignItems: 'baseline',
   justifyContent: 'space-between',
   gap: '12px',
 };
 
-const PANEL_TITLE: CSSProperties = {
+export const PANEL_TITLE: CSSProperties = {
   fontWeight: 500,
   fontSize: '12.5px',
   color: 'var(--color-text)',
   whiteSpace: 'nowrap',
 };
 
-const PANEL_CAPTION: CSSProperties = {
+export const PANEL_CAPTION: CSSProperties = {
   fontSize: '10.5px',
   color: 'var(--color-neutral-600)',
   whiteSpace: 'nowrap',
@@ -127,7 +127,7 @@ const EM_DASH = '—';
 // narrower body. Cost takes the remainder so the row cannot overflow.
 const LEDGER_ROW: CSSProperties = { display: 'flex', alignItems: 'center', gap: '10px' };
 
-const cell = (width: string, align: CSSProperties['textAlign'] = 'right'): CSSProperties => ({
+export const cell = (width: string, align: CSSProperties['textAlign'] = 'right'): CSSProperties => ({
   width,
   flex: 'none',
   textAlign: align,
@@ -149,7 +149,7 @@ const COL = {
   cost: { ...cell('auto'), flex: 1, minWidth: '64px' },
 };
 
-function Tile({
+export function Tile({
   testId, label, value, valueColor, note,
 }: {
   testId: string;
@@ -169,7 +169,7 @@ function Tile({
   );
 }
 
-const PROSE: CSSProperties = {
+export const PROSE: CSSProperties = {
   fontSize: '10.5px',
   lineHeight: 1.5,
   color: 'var(--color-neutral-600)',

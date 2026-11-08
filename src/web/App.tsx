@@ -497,7 +497,18 @@ export function App() {
             subagents={state.subagents}
           />
         )}
-        {view === 'usage' && (
+        {view === 'usage' && solo && (
+          <Usage
+            mode="solo"
+            state={state}
+            now={now}
+            onOpenCall={(toolUseId) => {
+              setTraceSelected(toolUseId);
+              store.setView('trace');
+            }}
+          />
+        )}
+        {view === 'usage' && !solo && (
           <Usage
             mode="team"
             state={state}
