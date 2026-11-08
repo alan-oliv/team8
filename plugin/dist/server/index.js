@@ -1625,9 +1625,9 @@ import {
   appendFileSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
+  readFileSync as readFileSync2,
   renameSync,
-  statSync,
+  statSync as statSync2,
   unlinkSync,
   writeFileSync
 } from "node:fs";
@@ -1653,6 +1653,10 @@ var PLUGIN_DIR = resolvePluginDir();
 var LAUNCH_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-launch.sh");
 var RESTART_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-restart.sh");
 var HINT_SCRIPT = path.join(PLUGIN_DIR, "bin", "console-hint.sh");
+function teamNameFromSessionId(sessionId) {
+  if (!sessionId || sessionId.length < 8) return "";
+  return `session-${sessionId.slice(0, 8)}`;
+}
 function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -1913,480 +1917,25 @@ function addSplits(a, b) {
   return sum;
 }
 
-// src/server/store.ts
-var KIND_RETENTION = {
-  task: 5e3,
-  mail: 2e3,
-  hook: 2e3,
-  substatus: 500,
-  roster: 200,
-  statusline: 200,
-  // A resolution is a human action (approve/deny/dismiss a card), not a
-  // background event, so 500 is many days of them even on a busy console —
-  // and safe regardless: trim() always drops a resolution's matching
-  // `needsyou` create alongside it, so nothing here is ever left dangling.
-  "needsyou-resolved": 500,
-  // One row per run per re-read, folded last-wins per runId, so this caps
-  // re-reads and not runs. A LIVE run is re-appended on every journal append —
-  // the only kind here whose row count grows with a run's length rather than
-  // with how many there are — and 16 runs was the whole of a heavy week on the
-  // capture machine. Rows are ~9 KB each with the script stripped (leanRun).
-  workflow: 500,
-  // One row per RUN per drain of any of its agent transcripts, folded last-wins
-  // per runId. A live run re-appends as its agents write, so like `workflow`
-  // this caps re-reads rather than runs. Rows are small by construction — the
-  // per-agent totals plus a burn series capped at WORKFLOW_BURN_SAMPLES points,
-  // never the turns behind them.
-  "workflow-usage": 500,
-  // One digest per subagent per drain, folded last-wins per toolUseId — so this
-  // caps re-reads, not subagents. A LIVE subagent re-appends on every drain of
-  // its transcript, and a fan-out runs several at once, which is why the cap is
-  // higher than workflow's: a digest is a few hundred bytes, not nine kilobytes.
-  subagent: 2e3
-};
-var TRANSCRIPT_RECORDS_PER_AGENT = 1e3;
-var TRANSCRIPT_EVENTS_PER_AGENT = 1200;
-var PRUNE_EVERY = 250;
-var TEAM_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
-function isTeamName(team) {
-  return TEAM_NAME.test(team);
-}
-function logPathFor(dbPath, team) {
-  const name = isTeamName(team) ? team : "unknown";
-  return path2.join(path2.dirname(dbPath), "logs", `${name}.jsonl`);
-}
-function runsDirFor(dbPath) {
-  return path2.join(path2.dirname(dbPath), "logs", "runs");
-}
-function scratchLogPath(dbPath, runId) {
-  return path2.join(runsDirFor(dbPath), `${runId}.jsonl`);
-}
-var STALE_LOG_MS = 7 * 24 * 60 * 60 * 1e3;
-function encode(event, team) {
-  return `${JSON.stringify({ ...event, team })}
-`;
-}
-function decode(line) {
-  let raw;
-  try {
-    raw = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof raw?.seq !== "number" || typeof raw.ts !== "number" || typeof raw.kind !== "string") {
-    return null;
-  }
-  return {
-    // A log written before the log was team-scoped has no `team`.
-    team: typeof raw.team === "string" ? raw.team : "",
-    event: {
-      seq: raw.seq,
-      ts: raw.ts,
-      kind: raw.kind,
-      agent: typeof raw.agent === "string" ? raw.agent : void 0,
-      payload: raw.payload ?? null
-    }
-  };
-}
-function needsYouId(payload) {
-  const id = payload && typeof payload === "object" ? payload.id : void 0;
-  return typeof id === "string" ? id : void 0;
-}
-function toolUseIdOf(payload) {
-  const id = payload && typeof payload === "object" ? payload.toolUseId : void 0;
-  return typeof id === "string" ? id : void 0;
-}
-function recordCount(payload) {
-  const recs = payload && typeof payload === "object" ? payload.records : void 0;
-  return Array.isArray(recs) ? recs.length : 0;
-}
-function readsFromStart(payload) {
-  return payload !== null && typeof payload === "object" && payload.fromStart === true;
-}
-function carriesTotals(payload) {
-  return payload !== null && typeof payload === "object" && payload.totals != null;
-}
-function totalsOf(payload) {
-  const totals = payload && typeof payload === "object" ? payload.totals : void 0;
-  return totals != null && typeof totals === "object" ? totals : void 0;
-}
-function recordsOf(payload) {
-  const recs = payload && typeof payload === "object" ? payload.records : void 0;
-  return Array.isArray(recs) ? recs : [];
-}
-function usageFrom(rows) {
-  const recs = [];
-  for (const e of rows) for (const r of recordsOf(e.payload)) if (r != null) recs.push(r);
-  const usage = dedupeUsage(usageRecordsOf(recs));
-  return { costUsd: totalCost(usage), tokens: tokensOf(usage), split: splitTok(usage) };
-}
-function withTotals(e, totals) {
-  return { ...e, payload: { ...e.payload, totals } };
-}
-function withNewestRecords(e, keep) {
-  const payload = e.payload;
-  const records = payload.records;
-  return { ...e, payload: { ...payload, records: records.slice(records.length - keep) } };
-}
-function readableRows(events, agent) {
-  const rows = [];
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e.kind !== "transcript" || (e.agent ?? "") !== agent) continue;
-    rows.push(e);
-    if (readsFromStart(e.payload)) break;
-  }
-  return rows.reverse();
-}
-function transcriptDrops(events) {
-  const drop = /* @__PURE__ */ new Set();
-  const trimmed = /* @__PURE__ */ new Map();
-  const keptRecords = /* @__PURE__ */ new Map();
-  const keptEvents = /* @__PURE__ */ new Map();
-  const pastReset = /* @__PURE__ */ new Set();
-  const newestKept = /* @__PURE__ */ new Map();
-  const newestTotals = /* @__PURE__ */ new Map();
-  const losing = /* @__PURE__ */ new Set();
-  for (let i = events.length - 1; i >= 0; i--) {
-    const e = events[i];
-    if (e.kind !== "transcript") continue;
-    const agent = e.agent ?? "";
-    if (!newestTotals.has(agent) && carriesTotals(e.payload)) newestTotals.set(agent, e);
-    if (pastReset.has(agent)) {
-      drop.add(e);
-      losing.add(agent);
-      continue;
-    }
-    if (readsFromStart(e.payload)) pastReset.add(agent);
-    const records = keptRecords.get(agent) ?? 0;
-    const count = keptEvents.get(agent) ?? 0;
-    if (records >= TRANSCRIPT_RECORDS_PER_AGENT || count >= TRANSCRIPT_EVENTS_PER_AGENT) {
-      drop.add(e);
-      losing.add(agent);
-      continue;
-    }
-    const held = recordCount(e.payload);
-    const room = TRANSCRIPT_RECORDS_PER_AGENT - records;
-    if (held > room) {
-      trimmed.set(e, withNewestRecords(e, room));
-      keptRecords.set(agent, TRANSCRIPT_RECORDS_PER_AGENT);
-      losing.add(agent);
-    } else {
-      keptRecords.set(agent, records + held);
-    }
-    keptEvents.set(agent, count + 1);
-    if (!newestKept.has(agent) && e.payload !== null && typeof e.payload === "object") {
-      newestKept.set(agent, e);
-    }
-  }
-  for (const agent of losing) {
-    const survivor = newestKept.get(agent);
-    if (!survivor) continue;
-    const winner = newestTotals.get(agent);
-    if (winner && !drop.has(winner)) continue;
-    const carried = winner && totalsOf(winner.payload) || usageFrom(readableRows(events, agent));
-    trimmed.set(survivor, withTotals(trimmed.get(survivor) ?? survivor, carried));
-  }
-  return { drop, trimmed };
-}
-function trim(events) {
-  const newestDigest = /* @__PURE__ */ new Map();
-  for (const e of events) {
-    if (e.kind !== "subagent") continue;
-    const id = toolUseIdOf(e.payload);
-    if (id) newestDigest.set(id, e);
-  }
-  const pinned = new Set(newestDigest.values());
-  const counts = /* @__PURE__ */ new Map();
-  for (const e of events) if (!pinned.has(e)) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
-  const excess = /* @__PURE__ */ new Map();
-  for (const [kind, keep] of Object.entries(KIND_RETENTION)) {
-    const over = (counts.get(kind) ?? 0) - keep;
-    if (over > 0) excess.set(kind, over);
-  }
-  const { drop: transcripts, trimmed } = transcriptDrops(events);
-  if (excess.size === 0 && transcripts.size === 0 && trimmed.size === 0) return events;
-  const closedIds = /* @__PURE__ */ new Set();
-  let closedOver = excess.get("needsyou-resolved") ?? 0;
-  for (const e of events) {
-    if (closedOver <= 0) break;
-    if (e.kind !== "needsyou-resolved") continue;
-    const id = needsYouId(e.payload);
-    if (id) closedIds.add(id);
-    closedOver--;
-  }
-  const kept = events.filter((e) => {
-    if (transcripts.has(e)) return false;
-    if (pinned.has(e)) return true;
-    if (e.kind === "needsyou") {
-      const id = needsYouId(e.payload);
-      if (id && closedIds.has(id)) return false;
-    }
-    const over = excess.get(e.kind);
-    if (!over) return true;
-    excess.set(e.kind, over - 1);
-    return false;
-  });
-  return trimmed.size === 0 ? kept : kept.map((e) => trimmed.get(e) ?? e);
-}
-function gcStaleLogs(dir, keep) {
-  const cutoff = Date.now() - STALE_LOG_MS;
-  let names;
-  try {
-    names = readdirSync(dir);
-  } catch {
-    return;
-  }
-  for (const name of names) {
-    if (!name.endsWith(".jsonl") && !name.endsWith(".tmp")) continue;
-    const candidate = path2.join(dir, name);
-    if (candidate === keep) continue;
-    try {
-      if (statSync(candidate).mtimeMs < cutoff) unlinkSync(candidate);
-    } catch {
-    }
-  }
-}
-function sizeOf(file) {
-  try {
-    return statSync(file).size;
-  } catch {
-    return 0;
-  }
-}
-function rowKey(e) {
-  return `${e.ts} ${e.kind} ${e.agent ?? ""} ${JSON.stringify(e.payload)}`;
-}
-function migrateLegacyLog(dbPath, runId) {
-  let contents;
-  try {
-    contents = readFileSync(dbPath, "utf8");
-  } catch {
-    return;
-  }
-  const byTeam = /* @__PURE__ */ new Map();
-  for (const line of contents.split("\n")) {
-    if (!line) continue;
-    const record = decode(line);
-    if (!record || !isTeamName(record.team)) continue;
-    const rows = byTeam.get(record.team) ?? [];
-    rows.push(record.event);
-    byTeam.set(record.team, rows);
-  }
-  let recovered = 0;
-  let touched = 0;
-  let deferred = 0;
-  for (const [team, legacy] of byTeam) {
-    const file = logPathFor(dbPath, team);
-    const before = sizeOf(file);
-    const tmp = `${file}.${runId}.tmp`;
-    try {
-      const existing = [];
-      if (before > 0) {
-        for (const line of readFileSync(file, "utf8").split("\n")) {
-          if (!line) continue;
-          const record = decode(line);
-          if (record) existing.push(record.event);
-        }
-      }
-      const have = new Set(existing.map(rowKey));
-      const fresh = legacy.filter((e) => !have.has(rowKey(e)));
-      if (fresh.length === 0) continue;
-      const out = [];
-      let l = 0;
-      let n = 0;
-      while (l < fresh.length || n < existing.length) {
-        const takeLegacy = n >= existing.length || l < fresh.length && fresh[l].ts <= existing[n].ts;
-        out.push(takeLegacy ? fresh[l++] : existing[n++]);
-      }
-      writeFileSync(tmp, out.map((e, i) => encode({ ...e, seq: i + 1 }, team)).join(""));
-      if (sizeOf(file) !== before) {
-        unlinkSync(tmp);
-        deferred++;
-        continue;
-      }
-      renameSync(tmp, file);
-      recovered += fresh.length;
-      touched++;
-    } catch (err) {
-      logError(`migrating ${team}`, err);
-      deferred++;
-    }
-  }
-  const base = path2.basename(dbPath);
-  if (deferred > 0) {
-    logInfo(
-      `recovered ${recovered} row(s) from ${base} into ${touched} team log(s); ${deferred} team log(s) are open in another console, so ${base} is left in place and the next start retries`
-    );
-    return;
-  }
-  const aside = `${dbPath}.migrated-${Date.now()}`;
-  try {
-    renameSync(dbPath, aside);
-  } catch (err) {
-    if (err.code !== "ENOENT") logError(`renaming ${base} aside`, err);
-    return;
-  }
-  logInfo(
-    `recovered ${recovered} row(s) from ${base} into ${touched} team log(s); the original is at ${aside}`
-  );
-}
-function ownerPathFor(file) {
-  return `${file}.owner`;
-}
-function stampOwner(file) {
-  const owner = ownerPathFor(file);
-  try {
-    const prev = JSON.parse(readFileSync(owner, "utf8"));
-    const pid = typeof prev.pid === "number" ? prev.pid : 0;
-    if (pid && pid !== process.pid && isPidAlive(pid)) {
-      logInfo(
-        `${file} is already open in process ${pid} \u2014 two consoles on one team log double every ingested row, and each can only resolve its own permission cards`
-      );
-    }
-  } catch {
-  }
-  try {
-    writeFileSync(owner, `${JSON.stringify({ pid: process.pid, since: Date.now() })}
-`);
-  } catch (err) {
-    logError(`stamping ${owner}`, err);
-  }
-}
-function clearOwner(file) {
-  const owner = ownerPathFor(file);
-  try {
-    const prev = JSON.parse(readFileSync(owner, "utf8"));
-    if (prev.pid !== process.pid) return;
-    unlinkSync(owner);
-  } catch {
-  }
-}
-function openStore(dbPath, team = "") {
-  const runId = `${process.pid}-${randomUUID().slice(0, 8)}`;
-  let current = isTeamName(team) ? team : "";
-  let file = current === "" ? scratchLogPath(dbPath, runId) : logPathFor(dbPath, current);
-  const logsDir = path2.join(path2.dirname(dbPath), "logs");
-  const runsDir = runsDirFor(dbPath);
-  mkdirSync(runsDir, { recursive: true });
-  migrateLegacyLog(dbPath, runId);
-  gcStaleLogs(logsDir, file);
-  gcStaleLogs(runsDir, file);
-  if (current !== "") stampOwner(file);
-  let sincePrune = 0;
-  let nextSeq = 1;
-  let events = [];
-  let dirty = false;
-  let accounted = 0;
-  let warnedShared = false;
-  const load = () => {
-    events = [];
-    nextSeq = 1;
-    let buf;
-    try {
-      buf = readFileSync(file);
-    } catch {
-      buf = Buffer.alloc(0);
-    }
-    accounted = buf.length;
-    for (const line of buf.toString("utf8").split("\n")) {
-      if (!line) continue;
-      const record = decode(line);
-      if (!record) {
-        dirty = true;
-        continue;
-      }
-      if (record.event.seq >= nextSeq) nextSeq = record.event.seq + 1;
-      if (record.team === current) events.push(record.event);
-    }
-  };
-  const rewrite = () => {
-    const size = sizeOf(file);
-    if (size !== accounted) {
-      if (!warnedShared) {
-        warnedShared = true;
-        logInfo(
-          `${file} holds ${size - accounted} bytes this run did not write \u2014 another console is writing the same team log, so this one will stop compacting it`
-        );
-      }
-      return false;
-    }
-    const body = events.map((e) => encode(e, current)).join("");
-    const tmp = `${file}.${runId}.tmp`;
-    writeFileSync(tmp, body);
-    renameSync(tmp, file);
-    accounted = Buffer.byteLength(body);
-    return true;
-  };
-  const discardScratch = (scratch) => {
-    try {
-      unlinkSync(scratch);
-    } catch {
-    }
-  };
-  load();
-  const loaded = events;
-  events = trim(events);
-  if (dirty || events !== loaded) {
-    if (rewrite()) dirty = false;
-  }
-  return {
-    append(kind, payload, agent) {
-      const ts = Date.now();
-      const seq2 = nextSeq++;
-      const event = { seq: seq2, ts, kind, agent, payload: payload ?? null };
-      events.push(event);
-      const encoded = encode(event, current);
-      appendFileSync(file, encoded);
-      accounted += Buffer.byteLength(encoded);
-      if (++sincePrune >= PRUNE_EVERY) {
-        sincePrune = 0;
-        const before = events;
-        events = trim(events);
-        if (events !== before) rewrite();
-      }
-      return { seq: seq2, ts, kind, agent, payload };
-    },
-    // The array is a copy; the rows in it are not. project() memoises each
-    // record's derived lines on the record object, so handing back copies here
-    // would leave the console correct and silently 18x slower.
-    replay() {
-      return events.slice();
-    },
-    setTeam(next) {
-      if (next === current || !isTeamName(next)) return;
-      const wasScratch = current === "";
-      const adopted = wasScratch ? events : [];
-      const scratch = file;
-      current = next;
-      file = logPathFor(dbPath, current);
-      stampOwner(file);
-      load();
-      for (const e of adopted) {
-        const moved = { ...e, seq: nextSeq++ };
-        events.push(moved);
-        const encoded = encode(moved, current);
-        appendFileSync(file, encoded);
-        accounted += Buffer.byteLength(encoded);
-      }
-      const before = events;
-      events = trim(events);
-      if (dirty || events !== before) {
-        if (rewrite()) dirty = false;
-      }
-      if (wasScratch) discardScratch(scratch);
-      else clearOwner(scratch);
-    },
-    close() {
-      if (current === "") discardScratch(file);
-      else clearOwner(file);
-    }
-  };
-}
-
 // src/shared/subagents.ts
 var SUBAGENT_SUMMARY_CAP = 400;
 var SUBAGENT_TOOLS = /* @__PURE__ */ new Set(["Task", "Agent"]);
+function blocksOf(rec) {
+  const content = rec.message?.content;
+  return Array.isArray(content) ? content.filter((b) => b && typeof b === "object") : [];
+}
+function dispatchIdsOf(rec) {
+  if (rec.type !== "assistant") return [];
+  return blocksOf(rec).flatMap(
+    (b) => b.type === "tool_use" && SUBAGENT_TOOLS.has(b.name ?? "") && typeof b.id === "string" ? [b.id] : []
+  );
+}
+function resultIdsOf(rec) {
+  if (rec.type !== "user") return [];
+  return blocksOf(rec).flatMap(
+    (b) => b.type === "tool_result" && typeof b.tool_use_id === "string" ? [b.tool_use_id] : []
+  );
+}
 function emptySubagentFold() {
   return {
     records: 0,
@@ -2618,6 +2167,582 @@ function buildSubagentTree(roots, facts) {
     if (nodes.length > 0) tree[root.agent] = nodes;
   }
   return tree;
+}
+
+// src/server/plan.ts
+import { readFileSync, statSync } from "node:fs";
+
+// plugin/hooks/team.ts
+var TASK_HEADING = /^### Task (\d+): (.+)$/;
+var STEP = /^- \[[ x]\] \*\*Step/;
+var FENCE = /^\s*(`{3,}|~{3,})/;
+function fencedLines(lines) {
+  let open = null;
+  return lines.map((line) => {
+    const fence = FENCE.exec(line)?.[1];
+    if (open === null) {
+      if (!fence) return false;
+      open = fence;
+      return true;
+    }
+    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
+    return true;
+  });
+}
+function parsePlan(text) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const tasks = [];
+  lines.forEach((line, i) => {
+    if (fenced[i]) return;
+    const heading = TASK_HEADING.exec(line);
+    if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
+    else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
+  });
+  return tasks;
+}
+function sectionOf(text, n) {
+  const lines = text.split("\n");
+  const fenced = fencedLines(lines);
+  const headingAt = (i) => fenced[i] ? null : TASK_HEADING.exec(lines[i]);
+  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
+  if (start === -1) return void 0;
+  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
+  return lines.slice(start, next === -1 ? lines.length : next).join("\n").trimEnd();
+}
+
+// src/server/plan.ts
+var PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
+function planWriteOf(rec) {
+  const content = rec.message?.content;
+  if (!Array.isArray(content)) return void 0;
+  let found;
+  for (const block of content) {
+    if (block.type !== "tool_use" || block.name !== "Write" && block.name !== "Edit") continue;
+    const file = block.input?.file_path;
+    if (typeof file === "string" && PLAN_PATH.test(file)) found = file;
+  }
+  return found;
+}
+function planPathOf(events, lead) {
+  let found;
+  for (const ev of events) {
+    if (ev.kind !== "transcript") continue;
+    const payload = ev.payload;
+    if (payload.agent !== lead) continue;
+    for (const rec of payload.records) found = planWriteOf(rec) ?? found;
+  }
+  return found;
+}
+function textOf(file) {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+function createPlanReader() {
+  let last;
+  return {
+    read(events, lead) {
+      const file = planPathOf(events, lead);
+      if (!file) return last = void 0;
+      let mtime;
+      try {
+        mtime = statSync(file).mtimeMs;
+      } catch {
+        return last = void 0;
+      }
+      if (last?.path === file && last.mtime === mtime) return last;
+      const text = textOf(file);
+      if (text === void 0) return last = void 0;
+      return last = { path: file, mtime, tasks: parsePlan(text) };
+    },
+    task(n) {
+      if (!last) return void 0;
+      const text = textOf(last.path);
+      return text === void 0 ? void 0 : sectionOf(text, n);
+    }
+  };
+}
+
+// src/server/store.ts
+var KIND_RETENTION = {
+  task: 5e3,
+  mail: 2e3,
+  hook: 2e3,
+  substatus: 500,
+  roster: 200,
+  statusline: 200,
+  // A resolution is a human action (approve/deny/dismiss a card), not a
+  // background event, so 500 is many days of them even on a busy console —
+  // and safe regardless: trim() always drops a resolution's matching
+  // `needsyou` create alongside it, so nothing here is ever left dangling.
+  "needsyou-resolved": 500,
+  // One row per run per re-read, folded last-wins per runId, so this caps
+  // re-reads and not runs. A LIVE run is re-appended on every journal append —
+  // the only kind here whose row count grows with a run's length rather than
+  // with how many there are — and 16 runs was the whole of a heavy week on the
+  // capture machine. Rows are ~9 KB each with the script stripped (leanRun).
+  workflow: 500,
+  // One row per RUN per drain of any of its agent transcripts, folded last-wins
+  // per runId. A live run re-appends as its agents write, so like `workflow`
+  // this caps re-reads rather than runs. Rows are small by construction — the
+  // per-agent totals plus a burn series capped at WORKFLOW_BURN_SAMPLES points,
+  // never the turns behind them.
+  "workflow-usage": 500,
+  // One digest per subagent per drain, folded last-wins per toolUseId — so this
+  // caps re-reads, not subagents. A LIVE subagent re-appends on every drain of
+  // its transcript, and a fan-out runs several at once, which is why the cap is
+  // higher than workflow's: a digest is a few hundred bytes, not nine kilobytes.
+  subagent: 2e3
+};
+var TRANSCRIPT_RECORDS_PER_AGENT = 1e3;
+var TRANSCRIPT_EVENTS_PER_AGENT = 1200;
+var PRUNE_EVERY = 250;
+var TEAM_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+function isTeamName(team) {
+  return TEAM_NAME.test(team);
+}
+function logPathFor(dbPath, team) {
+  const name = isTeamName(team) ? team : "unknown";
+  return path2.join(path2.dirname(dbPath), "logs", `${name}.jsonl`);
+}
+function runsDirFor(dbPath) {
+  return path2.join(path2.dirname(dbPath), "logs", "runs");
+}
+function scratchLogPath(dbPath, runId) {
+  return path2.join(runsDirFor(dbPath), `${runId}.jsonl`);
+}
+var STALE_LOG_MS = 30 * 24 * 60 * 60 * 1e3;
+function encode(event, team) {
+  return `${JSON.stringify({ ...event, team })}
+`;
+}
+function decode(line) {
+  let raw;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof raw?.seq !== "number" || typeof raw.ts !== "number" || typeof raw.kind !== "string") {
+    return null;
+  }
+  return {
+    // A log written before the log was team-scoped has no `team`.
+    team: typeof raw.team === "string" ? raw.team : "",
+    event: {
+      seq: raw.seq,
+      ts: raw.ts,
+      kind: raw.kind,
+      agent: typeof raw.agent === "string" ? raw.agent : void 0,
+      payload: raw.payload ?? null
+    }
+  };
+}
+function needsYouId(payload) {
+  const id = payload && typeof payload === "object" ? payload.id : void 0;
+  return typeof id === "string" ? id : void 0;
+}
+function toolUseIdOf(payload) {
+  const id = payload && typeof payload === "object" ? payload.toolUseId : void 0;
+  return typeof id === "string" ? id : void 0;
+}
+function recordCount(payload) {
+  const recs = payload && typeof payload === "object" ? payload.records : void 0;
+  return Array.isArray(recs) ? recs.length : 0;
+}
+function readsFromStart(payload) {
+  return payload !== null && typeof payload === "object" && payload.fromStart === true;
+}
+function carriesTotals(payload) {
+  return payload !== null && typeof payload === "object" && payload.totals != null;
+}
+function totalsOf(payload) {
+  const totals = payload && typeof payload === "object" ? payload.totals : void 0;
+  return totals != null && typeof totals === "object" ? totals : void 0;
+}
+function recordsOf(payload) {
+  const recs = payload && typeof payload === "object" ? payload.records : void 0;
+  return Array.isArray(recs) ? recs : [];
+}
+function usageFrom(rows) {
+  const recs = [];
+  for (const e of rows) for (const r of recordsOf(e.payload)) if (r != null) recs.push(r);
+  const usage = dedupeUsage(usageRecordsOf(recs));
+  return { costUsd: totalCost(usage), tokens: tokensOf(usage), split: splitTok(usage) };
+}
+function withTotals(e, totals) {
+  return { ...e, payload: { ...e.payload, totals } };
+}
+function withRecords(e, records) {
+  return { ...e, payload: { ...e.payload, records } };
+}
+function readableRows(events, agent) {
+  const rows = [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.kind !== "transcript" || (e.agent ?? "") !== agent) continue;
+    rows.push(e);
+    if (readsFromStart(e.payload)) break;
+  }
+  return rows.reverse();
+}
+function transcriptDrops(events) {
+  const drop = /* @__PURE__ */ new Set();
+  const trimmed = /* @__PURE__ */ new Map();
+  const keptRecords = /* @__PURE__ */ new Map();
+  const keptEvents = /* @__PURE__ */ new Map();
+  const pastReset = /* @__PURE__ */ new Set();
+  const newestKept = /* @__PURE__ */ new Map();
+  const newestTotals = /* @__PURE__ */ new Map();
+  const losing = /* @__PURE__ */ new Set();
+  const dispatches = /* @__PURE__ */ new Set();
+  for (const e of events) {
+    if (e.kind !== "transcript") continue;
+    for (const rec of recordsOf(e.payload)) for (const id of dispatchIdsOf(rec)) dispatches.add(id);
+  }
+  const isAnchor = (rec) => planWriteOf(rec) !== void 0 || dispatchIdsOf(rec).length > 0 || resultIdsOf(rec).some((id) => dispatches.has(id));
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.kind !== "transcript") continue;
+    const agent = e.agent ?? "";
+    if (!newestTotals.has(agent) && carriesTotals(e.payload)) newestTotals.set(agent, e);
+    if (pastReset.has(agent)) {
+      drop.add(e);
+      losing.add(agent);
+      continue;
+    }
+    if (readsFromStart(e.payload)) pastReset.add(agent);
+    const records = keptRecords.get(agent) ?? 0;
+    const count = keptEvents.get(agent) ?? 0;
+    if (records >= TRANSCRIPT_RECORDS_PER_AGENT || count >= TRANSCRIPT_EVENTS_PER_AGENT) {
+      const anchors = recordsOf(e.payload).filter(isAnchor);
+      if (anchors.length > 0) trimmed.set(e, withRecords(e, anchors));
+      else drop.add(e);
+      losing.add(agent);
+      continue;
+    }
+    const held = recordCount(e.payload);
+    const room = TRANSCRIPT_RECORDS_PER_AGENT - records;
+    if (held > room) {
+      const all = recordsOf(e.payload);
+      const cut = all.length - room;
+      trimmed.set(e, withRecords(e, [...all.slice(0, cut).filter(isAnchor), ...all.slice(cut)]));
+      keptRecords.set(agent, TRANSCRIPT_RECORDS_PER_AGENT);
+      losing.add(agent);
+    } else {
+      keptRecords.set(agent, records + held);
+    }
+    keptEvents.set(agent, count + 1);
+    if (!newestKept.has(agent) && e.payload !== null && typeof e.payload === "object") {
+      newestKept.set(agent, e);
+    }
+  }
+  for (const agent of losing) {
+    const survivor = newestKept.get(agent);
+    if (!survivor) continue;
+    const winner = newestTotals.get(agent);
+    if (winner && !drop.has(winner)) continue;
+    const carried = winner && totalsOf(winner.payload) || usageFrom(readableRows(events, agent));
+    trimmed.set(survivor, withTotals(trimmed.get(survivor) ?? survivor, carried));
+  }
+  return { drop, trimmed };
+}
+function trim(events) {
+  const newestDigest = /* @__PURE__ */ new Map();
+  for (const e of events) {
+    if (e.kind !== "subagent") continue;
+    const id = toolUseIdOf(e.payload);
+    if (id) newestDigest.set(id, e);
+  }
+  const pinned = new Set(newestDigest.values());
+  const counts = /* @__PURE__ */ new Map();
+  for (const e of events) if (!pinned.has(e)) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  const excess = /* @__PURE__ */ new Map();
+  for (const [kind, keep] of Object.entries(KIND_RETENTION)) {
+    const over = (counts.get(kind) ?? 0) - keep;
+    if (over > 0) excess.set(kind, over);
+  }
+  const { drop: transcripts, trimmed } = transcriptDrops(events);
+  if (excess.size === 0 && transcripts.size === 0 && trimmed.size === 0) return events;
+  const closedIds = /* @__PURE__ */ new Set();
+  let closedOver = excess.get("needsyou-resolved") ?? 0;
+  for (const e of events) {
+    if (closedOver <= 0) break;
+    if (e.kind !== "needsyou-resolved") continue;
+    const id = needsYouId(e.payload);
+    if (id) closedIds.add(id);
+    closedOver--;
+  }
+  const kept = events.filter((e) => {
+    if (transcripts.has(e)) return false;
+    if (pinned.has(e)) return true;
+    if (e.kind === "needsyou") {
+      const id = needsYouId(e.payload);
+      if (id && closedIds.has(id)) return false;
+    }
+    const over = excess.get(e.kind);
+    if (!over) return true;
+    excess.set(e.kind, over - 1);
+    return false;
+  });
+  return trimmed.size === 0 ? kept : kept.map((e) => trimmed.get(e) ?? e);
+}
+function gcStaleLogs(dir, keep) {
+  const cutoff = Date.now() - STALE_LOG_MS;
+  let names;
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.endsWith(".jsonl") && !name.endsWith(".tmp")) continue;
+    const candidate = path2.join(dir, name);
+    if (candidate === keep) continue;
+    try {
+      if (statSync2(candidate).mtimeMs < cutoff) unlinkSync(candidate);
+    } catch {
+    }
+  }
+}
+function sizeOf(file) {
+  try {
+    return statSync2(file).size;
+  } catch {
+    return 0;
+  }
+}
+function rowKey(e) {
+  return `${e.ts} ${e.kind} ${e.agent ?? ""} ${JSON.stringify(e.payload)}`;
+}
+function migrateLegacyLog(dbPath, runId) {
+  let contents;
+  try {
+    contents = readFileSync2(dbPath, "utf8");
+  } catch {
+    return;
+  }
+  const byTeam = /* @__PURE__ */ new Map();
+  for (const line of contents.split("\n")) {
+    if (!line) continue;
+    const record = decode(line);
+    if (!record || !isTeamName(record.team)) continue;
+    const rows = byTeam.get(record.team) ?? [];
+    rows.push(record.event);
+    byTeam.set(record.team, rows);
+  }
+  let recovered = 0;
+  let touched = 0;
+  let deferred = 0;
+  for (const [team, legacy] of byTeam) {
+    const file = logPathFor(dbPath, team);
+    const before = sizeOf(file);
+    const tmp = `${file}.${runId}.tmp`;
+    try {
+      const existing = [];
+      if (before > 0) {
+        for (const line of readFileSync2(file, "utf8").split("\n")) {
+          if (!line) continue;
+          const record = decode(line);
+          if (record) existing.push(record.event);
+        }
+      }
+      const have = new Set(existing.map(rowKey));
+      const fresh = legacy.filter((e) => !have.has(rowKey(e)));
+      if (fresh.length === 0) continue;
+      const out = [];
+      let l = 0;
+      let n = 0;
+      while (l < fresh.length || n < existing.length) {
+        const takeLegacy = n >= existing.length || l < fresh.length && fresh[l].ts <= existing[n].ts;
+        out.push(takeLegacy ? fresh[l++] : existing[n++]);
+      }
+      writeFileSync(tmp, out.map((e, i) => encode({ ...e, seq: i + 1 }, team)).join(""));
+      if (sizeOf(file) !== before) {
+        unlinkSync(tmp);
+        deferred++;
+        continue;
+      }
+      renameSync(tmp, file);
+      recovered += fresh.length;
+      touched++;
+    } catch (err) {
+      logError(`migrating ${team}`, err);
+      deferred++;
+    }
+  }
+  const base = path2.basename(dbPath);
+  if (deferred > 0) {
+    logInfo(
+      `recovered ${recovered} row(s) from ${base} into ${touched} team log(s); ${deferred} team log(s) are open in another console, so ${base} is left in place and the next start retries`
+    );
+    return;
+  }
+  const aside = `${dbPath}.migrated-${Date.now()}`;
+  try {
+    renameSync(dbPath, aside);
+  } catch (err) {
+    if (err.code !== "ENOENT") logError(`renaming ${base} aside`, err);
+    return;
+  }
+  logInfo(
+    `recovered ${recovered} row(s) from ${base} into ${touched} team log(s); the original is at ${aside}`
+  );
+}
+function ownerPathFor(file) {
+  return `${file}.owner`;
+}
+function stampOwner(file) {
+  const owner = ownerPathFor(file);
+  try {
+    const prev = JSON.parse(readFileSync2(owner, "utf8"));
+    const pid = typeof prev.pid === "number" ? prev.pid : 0;
+    if (pid && pid !== process.pid && isPidAlive(pid)) {
+      logInfo(
+        `${file} is already open in process ${pid} \u2014 two consoles on one team log double every ingested row, and each can only resolve its own permission cards`
+      );
+    }
+  } catch {
+  }
+  try {
+    writeFileSync(owner, `${JSON.stringify({ pid: process.pid, since: Date.now() })}
+`);
+  } catch (err) {
+    logError(`stamping ${owner}`, err);
+  }
+}
+function clearOwner(file) {
+  const owner = ownerPathFor(file);
+  try {
+    const prev = JSON.parse(readFileSync2(owner, "utf8"));
+    if (prev.pid !== process.pid) return;
+    unlinkSync(owner);
+  } catch {
+  }
+}
+function openStore(dbPath, team = "") {
+  const runId = `${process.pid}-${randomUUID().slice(0, 8)}`;
+  let current = isTeamName(team) ? team : "";
+  let file = current === "" ? scratchLogPath(dbPath, runId) : logPathFor(dbPath, current);
+  const logsDir = path2.join(path2.dirname(dbPath), "logs");
+  const runsDir = runsDirFor(dbPath);
+  mkdirSync(runsDir, { recursive: true });
+  migrateLegacyLog(dbPath, runId);
+  gcStaleLogs(logsDir, file);
+  gcStaleLogs(runsDir, file);
+  if (current !== "") stampOwner(file);
+  let sincePrune = 0;
+  let nextSeq = 1;
+  let events = [];
+  let dirty = false;
+  let accounted = 0;
+  let warnedShared = false;
+  const load = () => {
+    events = [];
+    nextSeq = 1;
+    let buf;
+    try {
+      buf = readFileSync2(file);
+    } catch {
+      buf = Buffer.alloc(0);
+    }
+    accounted = buf.length;
+    for (const line of buf.toString("utf8").split("\n")) {
+      if (!line) continue;
+      const record = decode(line);
+      if (!record) {
+        dirty = true;
+        continue;
+      }
+      if (record.event.seq >= nextSeq) nextSeq = record.event.seq + 1;
+      if (record.team === current) events.push(record.event);
+    }
+  };
+  const rewrite = () => {
+    const size = sizeOf(file);
+    if (size !== accounted) {
+      if (!warnedShared) {
+        warnedShared = true;
+        logInfo(
+          `${file} holds ${size - accounted} bytes this run did not write \u2014 another console is writing the same team log, so this one will stop compacting it`
+        );
+      }
+      return false;
+    }
+    const body = events.map((e) => encode(e, current)).join("");
+    const tmp = `${file}.${runId}.tmp`;
+    writeFileSync(tmp, body);
+    renameSync(tmp, file);
+    accounted = Buffer.byteLength(body);
+    return true;
+  };
+  const discardScratch = (scratch) => {
+    try {
+      unlinkSync(scratch);
+    } catch {
+    }
+  };
+  load();
+  const loaded = events;
+  events = trim(events);
+  if (dirty || events !== loaded) {
+    if (rewrite()) dirty = false;
+  }
+  return {
+    append(kind, payload, agent) {
+      const ts = Date.now();
+      const seq2 = nextSeq++;
+      const event = { seq: seq2, ts, kind, agent, payload: payload ?? null };
+      events.push(event);
+      const encoded = encode(event, current);
+      appendFileSync(file, encoded);
+      accounted += Buffer.byteLength(encoded);
+      if (++sincePrune >= PRUNE_EVERY) {
+        sincePrune = 0;
+        const before = events;
+        events = trim(events);
+        if (events !== before) rewrite();
+      }
+      return { seq: seq2, ts, kind, agent, payload };
+    },
+    // The array is a copy; the rows in it are not. project() memoises each
+    // record's derived lines on the record object, so handing back copies here
+    // would leave the console correct and silently 18x slower.
+    replay() {
+      return events.slice();
+    },
+    setTeam(next) {
+      if (next === current || !isTeamName(next)) return;
+      const wasScratch = current === "";
+      const adopted = wasScratch ? events : [];
+      const scratch = file;
+      current = next;
+      file = logPathFor(dbPath, current);
+      stampOwner(file);
+      load();
+      for (const e of adopted) {
+        const moved = { ...e, seq: nextSeq++ };
+        events.push(moved);
+        const encoded = encode(moved, current);
+        appendFileSync(file, encoded);
+        accounted += Buffer.byteLength(encoded);
+      }
+      const before = events;
+      events = trim(events);
+      if (dirty || events !== before) {
+        if (rewrite()) dirty = false;
+      }
+      if (wasScratch) discardScratch(scratch);
+      else clearOwner(scratch);
+    },
+    close() {
+      if (current === "") discardScratch(file);
+      else clearOwner(file);
+    }
+  };
 }
 
 // src/shared/roster.ts
@@ -3471,7 +3596,7 @@ function project(events, readOnly, now = Date.now()) {
 }
 
 // src/server/ingest/files.ts
-import { existsSync as existsSync2, promises as fs3 } from "node:fs";
+import { promises as fs3 } from "node:fs";
 import path6 from "node:path";
 
 // src/server/watch/tail.ts
@@ -4421,22 +4546,23 @@ function startFileIngest(store, config) {
     unresolvedSidecars.delete(file);
     if (acceptSidecar(file, meta)) appendRoster();
   };
+  const taskDir = () => teamName ?? (config.sessionOnly && leadSessionId ? teamNameFromSessionId(leadSessionId) : void 0);
   const handleTaskJson = async (file) => {
-    if (teamName && path6.basename(path6.dirname(file)) !== teamName) return;
+    const dir = taskDir();
+    if (dir && path6.basename(path6.dirname(file)) !== dir) return;
     const task = await readJsonSafe(file);
     if (task && typeof task.id === "string") store.append("task", task, task.owner);
-    else if (!existsSync2(file)) store.append("task-removed", { id: path6.basename(file, ".json") });
   };
   const dropDeletedTasks = async (team) => {
     const known = liveTaskIds(store.replay());
     let names;
     try {
       names = await fs3.readdir(path6.join(paths.tasks, team));
-    } catch (err) {
-      if (err.code !== "ENOENT") return;
-      names = [];
+    } catch {
+      return;
     }
     const onDisk = new Set(names.filter((n) => n.endsWith(".json")).map((n) => path6.basename(n, ".json")));
+    if (onDisk.size === 0) return;
     for (const id of known) if (!onDisk.has(id)) store.append("task-removed", { id });
   };
   const handleSessionJson = async (file) => {
@@ -4590,7 +4716,8 @@ function startFileIngest(store, config) {
         if (file.endsWith(".jsonl")) drains.push({ file, mtimeMs: st.mtimeMs });
         else if (file.endsWith(".json")) await dispatchJson(file, root, bootSweep);
       }
-      if (root === paths.tasks && teamName) await dropDeletedTasks(teamName);
+      const tasksOf = root === paths.tasks ? taskDir() : void 0;
+      if (tasksOf) await dropDeletedTasks(tasksOf);
       drains.sort((a, b) => a.mtimeMs - b.mtimeMs);
       for (const drain2 of drains) {
         if (closed) return;
@@ -4711,7 +4838,7 @@ import { promises as fs4 } from "node:fs";
 var TAIL_BYTES = 256 * 1024;
 var ASK_FLUSH_WAIT_MS = 2e3;
 var ASK_FLUSH_POLL_MS = 100;
-var blocksOf = (rec) => rec.type === "assistant" && Array.isArray(rec.message?.content) ? rec.message.content : [];
+var blocksOf2 = (rec) => rec.type === "assistant" && Array.isArray(rec.message?.content) ? rec.message.content : [];
 var parseRecs = (lines) => lines.map(parseLine).filter((r) => r !== null);
 function pendingAsk(recs) {
   const answered = /* @__PURE__ */ new Set();
@@ -4722,7 +4849,7 @@ function pendingAsk(recs) {
     }
   }
   for (let i = recs.length - 1; i >= 0; i--) {
-    const blocks = blocksOf(recs[i]);
+    const blocks = blocksOf2(recs[i]);
     for (let k = blocks.length - 1; k >= 0; k--) {
       if (blocks[k]?.type === "tool_use" && blocks[k].name === "AskUserQuestion" && !answered.has(blocks[k].id)) {
         return { at: i, blockAt: k };
@@ -4735,10 +4862,10 @@ function contextOf(recs) {
   if (recs.length === 0) return void 0;
   const call = pendingAsk(recs);
   const at = call?.at ?? recs.length - 1;
-  const blockAt = call?.blockAt ?? blocksOf(recs[at]).length;
+  const blockAt = call?.blockAt ?? blocksOf2(recs[at]).length;
   for (let i = at; i >= 0; i--) {
     if (recs[i].type === "user") return void 0;
-    const blocks = blocksOf(recs[i]);
+    const blocks = blocksOf2(recs[i]);
     for (let k = (i === at ? blockAt : blocks.length) - 1; k >= 0; k--) {
       const b = blocks[k];
       if (b?.type === "text" && typeof b.text === "string" && b.text.trim()) return b.text.trim();
@@ -5779,103 +5906,6 @@ function listen(server, port) {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", () => resolve(server.address().port));
   });
-}
-
-// src/server/plan.ts
-import { readFileSync as readFileSync2, statSync as statSync2 } from "node:fs";
-
-// plugin/hooks/team.ts
-var TASK_HEADING = /^### Task (\d+): (.+)$/;
-var STEP = /^- \[[ x]\] \*\*Step/;
-var FENCE = /^\s*(`{3,}|~{3,})/;
-function fencedLines(lines) {
-  let open = null;
-  return lines.map((line) => {
-    const fence = FENCE.exec(line)?.[1];
-    if (open === null) {
-      if (!fence) return false;
-      open = fence;
-      return true;
-    }
-    if (fence && fence[0] === open[0] && fence.length >= open.length && line.trim() === fence) open = null;
-    return true;
-  });
-}
-function parsePlan(text) {
-  const lines = text.split("\n");
-  const fenced = fencedLines(lines);
-  const tasks = [];
-  lines.forEach((line, i) => {
-    if (fenced[i]) return;
-    const heading = TASK_HEADING.exec(line);
-    if (heading) tasks.push({ n: Number(heading[1]), title: heading[2].trim(), written: false });
-    else if (tasks.length > 0 && STEP.test(line)) tasks[tasks.length - 1].written = true;
-  });
-  return tasks;
-}
-function sectionOf(text, n) {
-  const lines = text.split("\n");
-  const fenced = fencedLines(lines);
-  const headingAt = (i) => fenced[i] ? null : TASK_HEADING.exec(lines[i]);
-  const start = lines.findIndex((_, i) => headingAt(i)?.[1] === String(n));
-  if (start === -1) return void 0;
-  const next = lines.findIndex((_, i) => i > start && headingAt(i) !== null);
-  return lines.slice(start, next === -1 ? lines.length : next).join("\n").trimEnd();
-}
-
-// src/server/plan.ts
-var PLAN_PATH = /\/docs\/team8\/plans\/[^/]+\.md$/;
-function planPathOf(events, lead) {
-  let found;
-  for (const ev of events) {
-    if (ev.kind !== "transcript") continue;
-    const payload = ev.payload;
-    if (payload.agent !== lead) continue;
-    for (const rec of payload.records) {
-      const content = rec.message?.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content) {
-        if (block.type !== "tool_use" || block.name !== "Write" && block.name !== "Edit") continue;
-        const file = block.input?.file_path;
-        if (typeof file === "string" && PLAN_PATH.test(file)) found = file;
-      }
-    }
-  }
-  return found;
-}
-function textOf(file) {
-  try {
-    return readFileSync2(file, "utf8");
-  } catch {
-    return void 0;
-  }
-}
-function createPlanReader() {
-  const known = /* @__PURE__ */ new Map();
-  let last;
-  return {
-    read(events, lead, session) {
-      const seen = planPathOf(events, lead);
-      if (seen) known.set(session, seen);
-      const file = known.get(session);
-      if (!file) return last = void 0;
-      let mtime;
-      try {
-        mtime = statSync2(file).mtimeMs;
-      } catch {
-        return last = void 0;
-      }
-      if (last?.path === file && last.mtime === mtime) return last;
-      const text = textOf(file);
-      if (text === void 0) return last = void 0;
-      return last = { path: file, mtime, tasks: parsePlan(text) };
-    },
-    task(n) {
-      if (!last) return void 0;
-      const text = textOf(last.path);
-      return text === void 0 ? void 0 : sectionOf(text, n);
-    }
-  };
 }
 
 // src/server/watch.ts
@@ -7480,7 +7510,7 @@ async function main(argv) {
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
       // session with no team config projects that as '' for every session.
-      plan: lead ? plans.read(events, lead, leadSessionId ?? "") : void 0
+      plan: lead ? plans.read(events, lead) : void 0
     };
   };
   const hub = createStream(publish);
