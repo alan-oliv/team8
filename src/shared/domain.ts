@@ -381,8 +381,9 @@ export interface TeamState {
    * Absent when nobody called `Task`/`Agent` — an empty map and "no subagents"
    * are the same fact, so only one of them travels.
    *
-   * Bounded by the store's per-agent record budget, like `transcript`: a call
-   * whose record has aged out of the log is no longer in the tree.
+   * The dispatch records it is folded from stay outside the store's per-agent
+   * record budget (anchors, store.ts), so the tree outlives a long session, a
+   * restart and the reopening of an old one.
    */
   subagents?: SubagentTree;
   /**

@@ -686,10 +686,10 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
   // but what it put through the model was this session's bill all the same —
   // Claude Code's own /cost counts it, and a total that left it out read $7.11
   // for a session whose transcripts held $7.69. Summed over the digests, not
-  // the tree: the tree needs the lead's dispatch record, which the per-agent
-  // record bound drops first, and a cost that fell with it would be the drop
-  // the store promises never happens. A digest from before it priced itself
-  // counts for nothing, tokens included, so both totals cover the same calls.
+  // the tree: a digest is the subagent's own account of its spend, whether or
+  // not the lead's dispatch record for it is still in the log. A digest from
+  // before it priced itself counts for nothing, tokens included, so both
+  // totals cover the same calls.
   let taskCallTokens = 0;
   let taskCallCostUsd = 0;
   for (const { digest } of subagentFacts.values()) {

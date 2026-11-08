@@ -1286,7 +1286,7 @@ export async function main(argv: string[]): Promise<number> {
       brief: briefs.current(),
       // Keyed on the server's own lead session, not team.leadSessionId: a
       // session with no team config projects that as '' for every session.
-      plan: lead ? plans.read(events, lead, leadSessionId ?? '') : undefined,
+      plan: lead ? plans.read(events, lead) : undefined,
     };
   };
 

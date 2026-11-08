@@ -20,6 +20,8 @@ import {
 } from '../shared/usage';
 import { splitTok, type TokenSplit } from '../shared/cost';
 import type { TranscriptRecord } from '../shared/transcript';
+import { dispatchIdsOf, resultIdsOf } from '../shared/subagents';
+import { planWriteOf } from './plan';
 
 export type EventKind =
   | 'roster'
@@ -161,13 +163,14 @@ export function scratchLogPath(dbPath: string, runId: string): string {
 
 /**
  * A live team's log is capped by its own process; a dead team's is frozen at
- * whatever it held, so only the number of dead teams is unbounded. Seven days
- * is longer than any team lives and short enough that abandoned logs do not
- * accumulate. A team dormant for longer that comes back loses its history —
- * the same outcome as before per-team logs, and the sweep rebuilds the half
- * that came from files.
+ * whatever it held, so only the number of dead teams is unbounded. Thirty days
+ * matches Claude Code's own default for keeping a session's transcript: once
+ * the team ends, this log is the only copy of its task board, and a session
+ * reopened while Claude Code still has its transcript should find its board
+ * too. A session dormant for longer loses its history — the same outcome as
+ * before per-team logs, and the sweep rebuilds the half that came from files.
  */
-export const STALE_LOG_MS = 7 * 24 * 60 * 60 * 1000;
+export const STALE_LOG_MS = 30 * 24 * 60 * 60 * 1000;
 
 function encode(event: StoredEvent, team: string): string {
   return `${JSON.stringify({ ...event, team })}\n`;
@@ -286,10 +289,8 @@ function withTotals(e: StoredEvent, totals: Snapshot): StoredEvent {
  * rides along — `totals` above all, a cumulative snapshot of the whole
  * transcript, so trimming records must never trim cost with them.
  */
-function withNewestRecords(e: StoredEvent, keep: number): StoredEvent {
-  const payload = e.payload as { records: unknown[] };
-  const records = payload.records;
-  return { ...e, payload: { ...payload, records: records.slice(records.length - keep) } };
+function withRecords(e: StoredEvent, records: TranscriptRecord[]): StoredEvent {
+  return { ...e, payload: { ...(e.payload as object), records } };
 }
 
 /**
@@ -354,6 +355,22 @@ function transcriptDrops(events: StoredEvent[]): {
   // Agents this pass takes records or rows away from.
   const losing = new Set<string>();
 
+  // Anchors stay outside the budget: the lead's Write or Edit of its plan, its
+  // `Task`/`Agent` dispatches and the results that answered them. The plan tab
+  // and the trace tree are folded from exactly these, and they are among the
+  // oldest records of any run, so a budget that dropped them emptied both views
+  // in every long session and on every restart. A few dozen records per agent,
+  // one per spawn, against a budget of a thousand.
+  const dispatches = new Set<string>();
+  for (const e of events) {
+    if (e.kind !== 'transcript') continue;
+    for (const rec of recordsOf(e.payload)) for (const id of dispatchIdsOf(rec)) dispatches.add(id);
+  }
+  const isAnchor = (rec: TranscriptRecord) =>
+    planWriteOf(rec) !== undefined ||
+    dispatchIdsOf(rec).length > 0 ||
+    resultIdsOf(rec).some((id) => dispatches.has(id));
+
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i];
     if (e.kind !== 'transcript') continue;
@@ -368,14 +385,18 @@ function transcriptDrops(events: StoredEvent[]): {
     const records = keptRecords.get(agent) ?? 0;
     const count = keptEvents.get(agent) ?? 0;
     if (records >= TRANSCRIPT_RECORDS_PER_AGENT || count >= TRANSCRIPT_EVENTS_PER_AGENT) {
-      drop.add(e);
+      const anchors = recordsOf(e.payload).filter(isAnchor);
+      if (anchors.length > 0) trimmed.set(e, withRecords(e, anchors));
+      else drop.add(e);
       losing.add(agent);
       continue;
     }
     const held = recordCount(e.payload);
     const room = TRANSCRIPT_RECORDS_PER_AGENT - records;
     if (held > room) {
-      trimmed.set(e, withNewestRecords(e, room));
+      const all = recordsOf(e.payload);
+      const cut = all.length - room;
+      trimmed.set(e, withRecords(e, [...all.slice(0, cut).filter(isAnchor), ...all.slice(cut)]));
       keptRecords.set(agent, TRANSCRIPT_RECORDS_PER_AGENT);
       losing.add(agent);
     } else {

@@ -1,4 +1,4 @@
-import { existsSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { watchAppendOnly, type TailState } from '../watch/tail';
 export type { TailState };
@@ -18,6 +18,7 @@ import { splitTok } from '../../shared/cost';
 import type { TeamConfig, Sidecar } from '../../shared/roster';
 import type { InboxEntry } from '../../shared/mailbox';
 import { logError } from '../log';
+import { teamNameFromSessionId } from '../lifecycle';
 import { leanRun, parseWorkflowJournal, parseWorkflowRun } from '../workflow';
 
 export const DEFAULT_SWEEP_MS = 5000;
@@ -997,17 +998,27 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     if (acceptSidecar(file, meta)) appendRoster();
   };
 
+  // The directory this target's tasks live in: a team's under the team's name,
+  // a lone session's under the name Claude Code gives a team of one.
+  const taskDir = () =>
+    teamName ?? (config.sessionOnly && leadSessionId ? teamNameFromSessionId(leadSessionId) : undefined);
+
   const handleTaskJson = async (file: string) => {
-    if (teamName && path.basename(path.dirname(file)) !== teamName) return;
+    const dir = taskDir();
+    if (dir && path.basename(path.dirname(file)) !== dir) return;
     const task = await readJsonSafe<TaskPayload>(file);
     if (task && typeof task.id === 'string') store.append('task', task, task.owner);
-    else if (!existsSync(file)) store.append('task-removed', { id: path.basename(file, '.json') });
+    // A vanished file is the sweep's to judge, against the rest of the directory.
   };
 
-  // Claude Code deletes a team's task files when the team ends. The watcher's
-  // event for that is dropped under load and never fires for a deletion made
-  // while the console was down, and a task the store keeps sits on the board
-  // in its last state for good.
+  // Claude Code deletes a team's task files when the team ends, and this log is
+  // then the only copy of what the run did: a directory that is gone or empty
+  // keeps every task on the board as history. While files remain, a task
+  // missing from them was deleted on purpose; the watcher's event for that is
+  // dropped under load and never fires for a deletion made while the console
+  // was down, so the sweep is what drops it.
+  // shortcut: a sweep landing between two unlinks of a wholesale delete drops
+  // the earlier ones; debounce the empty check if that ever shows.
   const dropDeletedTasks = async (team: string) => {
     // Read before the directory, so a task created after the listing is never
     // mistaken for one that was deleted.
@@ -1015,12 +1026,11 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
     let names: string[];
     try {
       names = await fs.readdir(path.join(paths.tasks, team));
-    } catch (err) {
-      // An unreadable directory says nothing about which tasks are gone.
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return;
-      names = [];
+    } catch {
+      return;
     }
     const onDisk = new Set(names.filter((n) => n.endsWith('.json')).map((n) => path.basename(n, '.json')));
+    if (onDisk.size === 0) return;
     for (const id of known) if (!onDisk.has(id)) store.append('task-removed', { id });
   };
 
@@ -1253,7 +1263,8 @@ export function startFileIngest(store: Store, config: IngestConfig): FileIngest 
         if (file.endsWith('.jsonl')) drains.push({ file, mtimeMs: st.mtimeMs });
         else if (file.endsWith('.json')) await dispatchJson(file, root, bootSweep);
       }
-      if (root === paths.tasks && teamName) await dropDeletedTasks(teamName);
+      const tasksOf = root === paths.tasks ? taskDir() : undefined;
+      if (tasksOf) await dropDeletedTasks(tasksOf);
       drains.sort((a, b) => a.mtimeMs - b.mtimeMs);
       for (const drain of drains) {
         if (closed) return;
