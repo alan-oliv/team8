@@ -4,6 +4,7 @@ import type {
   AgentStatus,
   MailMessage,
   NeedsYouItem,
+  PhaseChange,
   RateLimits,
   Task,
   TaskMetadata,
@@ -206,6 +207,14 @@ const lineMemo = new WeakMap<TranscriptRecord, Map<string, TranscriptLine[]>>();
 
 // The pending half of the handoff's `● AskUserQuestion` row. It lives only as
 // long as the card, so it is projected rather than stored.
+/** The transitions only: a bump per record would otherwise put the whole log on the frame. */
+function timelineOf(changes: PhaseChange[]): PhaseChange[] {
+  changes.sort((a, b) => a.ts - b.ts);
+  const out: PhaseChange[] = [];
+  for (const c of changes) if (c.phase !== out[out.length - 1]?.phase) out.push(c);
+  return out;
+}
+
 function waitingLine(card: NeedsYouItem, ts: number): TranscriptLine {
   const n = card.questions?.length ?? 0;
   return { id: `${card.id}#waiting`, marker: '⎿', text: `waiting on you · ${n} question${n === 1 ? '' : 's'}`, ts };
@@ -360,12 +369,20 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
   const subagentFacts = new Map<string, SubagentFacts>();
   let mail: MailMessage[] = [];
 
+  const phases = new Map<string, PhaseChange[]>();
+  const phase = (agent: string, ts: number, p: PhaseChange['phase']) => {
+    const list = phases.get(agent) ?? [];
+    list.push({ ts, phase: p });
+    phases.set(agent, list);
+  };
   const bump = (agent: string, ts: number) => {
     if (ts > (lastActivity.get(agent) ?? -1)) lastActivity.set(agent, ts);
+    phase(agent, ts, 'working');
   };
   const lastIdle = new Map<string, number>();
   const idleAt = (agent: string, ts: number) => {
     if (ts > (lastIdle.get(agent) ?? -1)) lastIdle.set(agent, ts);
+    phase(agent, ts, 'idle');
   };
 
   for (const ev of events) {
@@ -492,6 +509,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
         const item = ev.payload as NeedsYouItem;
         needsYou.set(item.id, item);
         cardAt.set(item.id, ev.ts);
+        phase(item.agent, ev.ts, 'waiting');
         break;
       }
       case 'needsyou-resolved': {
@@ -636,6 +654,7 @@ export function project(events: StoredEvent[], readOnly: boolean, now = Date.now
       costUsd: carried ? carried.costUsd : totalCost(usage),
       tokenSplit: carried ? carried.split : splitTok(usage),
       startedAt: id.joinedAt,
+      timeline: timelineOf(phases.get(id.name) ?? []),
       transcript: asking
         ? [...lines.slice(-PROJECTED_TRANSCRIPT_LINES), waitingLine(asking, cardAt.get(asking.id) ?? 0)]
         : lines.slice(-PROJECTED_TRANSCRIPT_LINES),

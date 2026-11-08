@@ -49,7 +49,7 @@ const films = MOVIE_THEMES.filter((theme) => theme.palette);
 // one mapping. A view that built its own would drift the moment a spare moved.
 describe('a film reaches every view that renders a cast', () => {
   it('renames the lead identically in every view that shows one', () => {
-    for (const view of ['wall', 'overview', 'rail', 'grid']) {
+    for (const view of ['wall', 'overview', 'trace', 'grid']) {
       mount(view);
       openConfig();
       pickFilm('inception');
@@ -71,7 +71,7 @@ describe('a film reaches every view that renders a cast', () => {
     // Compared as a set, not by index: the views order the roster differently,
     // and only the agents the cast gave a role slot are dressed at all.
     const facesOf = () => screen.getAllByTestId('portrait').map((p) => p.innerHTML).join('|');
-    for (const view of ['wall', 'overview', 'rail', 'grid']) {
+    for (const view of ['wall', 'overview', 'grid']) {
       mount(view);
       const before = facesOf();
       reset();

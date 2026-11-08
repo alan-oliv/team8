@@ -1603,6 +1603,17 @@ describe('the lead turning idle on Stop', () => {
     expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop')])).toBe('idle');
   });
 
+  it('keeps the lane timeline as transitions only: working, idle at Stop, working at the next hook', () => {
+    const lead = project(
+      [{ seq: 0, ts: 0, kind: 'roster', payload: { config: null, sidecars: [] } }, transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), hook(3, T0 + 20_000, 'PreToolUse')],
+      false,
+      T0 + 61_000,
+    ).agents.find((a) => a.name === 'team-lead')!;
+    expect(lead.timeline).toEqual([
+      { ts: T0, phase: 'working' }, { ts: T0 + 8_050, phase: 'idle' }, { ts: T0 + 20_000, phase: 'working' },
+    ]);
+  });
+
   it('stays idle through the records Claude Code writes after the Stop', () => {
     expect(statusOf([transcript(1, turn), hook(2, T0 + 8_050, 'Stop'), transcript(3, afterStop)])).toBe('idle');
   });

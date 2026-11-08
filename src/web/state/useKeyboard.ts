@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { ViewId } from '../../shared/domain';
 
-const VIEW_ORDER: ViewId[] = ['wall', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage'];
+const VIEW_ORDER: ViewId[] = ['wall', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage'];
 
 const STEP: Record<string, number | undefined> = {
   ArrowUp: -1,
@@ -90,9 +90,9 @@ export function useKeyboard(actions: KeyboardActions): void {
       if (!actions.focused) return;
 
       if (e.key === 'Enter') {
-        // "open" the focused agent: the rail is the single-agent detail view.
+        // "open" the focused agent: the trace's detail strip is the single-agent detail.
         e.preventDefault();
-        actions.setView('rail');
+        actions.setView('trace');
       } else if (e.key === 'Escape') {
         actions.interrupt(actions.focused);
       } else if (e.key === 'x') {

@@ -67,7 +67,7 @@ describe('useKeyboard — wall navigation', () => {
   it('⏎ opens the focused agent in the rail, the single-agent detail view', () => {
     mount();
     fireEvent.keyDown(document.body, { key: 'Enter' });
-    expect(actions.setView).toHaveBeenCalledWith('rail');
+    expect(actions.setView).toHaveBeenCalledWith('trace');
   });
 
   it('leaves a key a view already handled alone', () => {
@@ -95,7 +95,7 @@ describe('useKeyboard — view switching', () => {
   it('⌘1-7 select the seven views in switcher order', () => {
     mount();
     for (const [key, view] of [
-      ['1', 'wall'], ['2', 'overview'], ['3', 'comms'], ['4', 'tasks'], ['5', 'rail'], ['6', 'grid'], ['7', 'usage'],
+      ['1', 'wall'], ['2', 'overview'], ['3', 'comms'], ['4', 'tasks'], ['5', 'trace'], ['6', 'grid'], ['7', 'usage'],
     ] as Array<[string, ViewId]>) {
       fireEvent.keyDown(document.body, { key, metaKey: true });
       expect(actions.setView).toHaveBeenCalledWith(view);

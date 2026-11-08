@@ -116,7 +116,7 @@ with 20 and go up to 100 once the run works.
 - [ ] The lead owns only each track's first task, set before the spawn, and the teammate claims the next one itself
 - [ ] `comms`: the `everyone` room, and the lead's messages out — a teammate's report arrives as its idle notification, not as a second message here
 - [ ] `overview`: the brief (NOW, WAITING, NEXT), one row per agent
-- [ ] `rail`: arrow keys move between agents
+- [ ] `trace`: one lane per teammate, lead first; clicking a lane fills the detail strip
 - [ ] `grid`: one pane per agent, up to 6
 - [ ] `usage`: spend by model, cache-hit ratio, cost per task
 - [ ] Permission modal: opens when a teammate runs `npm install` or tests, allowed from the console

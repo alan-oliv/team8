@@ -2,9 +2,10 @@ import type { TokenSplit } from './cost';
 
 export type AgentStatus = 'working' | 'idle' | 'plan_pending' | 'asking' | 'failed' | 'blocked' | 'departed';
 export type TaskState = 'pending' | 'in_progress' | 'completed' | 'plan_pending' | 'failed' | 'blocked';
-// `trace` is offered only on a solo session (decision 24); the id exists for
-// every mode so a URL carrying it survives a reload on any session.
-export type ViewId = 'wall' | 'overview' | 'comms' | 'tasks' | 'rail' | 'grid' | 'usage' | 'trace' | 'plan';
+// `trace` is the subagent lifelines on a solo session (decision 24) and the
+// teammate lifelines on a team; a bare solo session has no pill for it, but the
+// id exists so a URL carrying it survives a reload on any session.
+export type ViewId = 'wall' | 'overview' | 'comms' | 'tasks' | 'grid' | 'usage' | 'trace' | 'plan';
 // `✉` is beyond the design README's own list — sanctioned by the CHANGELOG
 // entry "Received messages carry attribution", which gives a delivered
 // teammate message a marker of its own.
@@ -118,9 +119,18 @@ export interface Agent {
   tokenSplit?: TokenSplit;
   startedAt: number;         // epoch ms
   transcript: TranscriptLine[];
+  /**
+   * Every change of state over the WHOLE log, oldest first — the trace's lane.
+   * Folded from the hook events, the inbox and the cards rather than the
+   * capped transcript, so a long session's early stretches are not guessed.
+   * Absent on a fixture that never set it.
+   */
+  timeline?: PhaseChange[];
   unread: number;
   error?: string;
 }
+
+export interface PhaseChange { ts: number; phase: 'working' | 'idle' | 'waiting' }
 
 /**
  * Set at task creation, by convention rather than a schema the task store

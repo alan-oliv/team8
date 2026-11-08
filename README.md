@@ -81,8 +81,8 @@ An agent team, two or more members.
 </tr>
 <tr>
 <td></td>
-<td><code>rail</code></td>
-<td>a keyboard-navigable agent list with one big transcript</td>
+<td><code>trace</code></td>
+<td>one lifeline per teammate on the session clock: state over time, with spawns, messages and tool errors as marks, and a detail strip for the focused one</td>
 </tr>
 <tr>
 <td></td>

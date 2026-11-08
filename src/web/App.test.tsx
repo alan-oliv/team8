@@ -161,9 +161,9 @@ it('wires each view into the body and never unmounts the chrome switching betwee
   expect(screen.getByRole('tablist')).toBe(tablist);
   expect(screen.getByText('PANEL')).toBe(panel);
 
-  fireEvent.click(screen.getByRole('tab', { name: 'rail' }));
-  expect(screen.getByTestId('rail-left')).toBeTruthy();
-  expect(screen.getByTestId('rail-detail-header')).toBeTruthy();
+  fireEvent.click(screen.getByRole('tab', { name: 'trace' }));
+  expect(screen.getByTestId('team-trace-lanes')).toBeTruthy();
+  expect(screen.getByTestId('team-trace-detail')).toBeTruthy();
   expect(screen.queryByTestId('tasks')).toBeNull();
   expectChromeMounted();
   expect(screen.getByRole('tablist')).toBe(tablist);
@@ -1064,10 +1064,10 @@ it('selects the session from a /s/:sessionId URL and takes its mode from the ros
 
   const tabs = await screen.findAllByRole('tab');
   expect(tabs.map((t) => t.textContent)).toEqual([
-    'wall', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage',
+    'wall', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage',
   ]);
-  // The route defaults the view to `trace`, which a team's switcher does not
-  // offer — it falls back rather than mounting a view with no tab above it.
+  // The route defaults the view to `trace` for a lone session's sake; a team
+  // reached the same way lands on the wall, as it always has.
   expect(screen.getByRole('tab', { name: 'wall' }).getAttribute('aria-selected')).toBe('true');
 });
 
@@ -1091,7 +1091,7 @@ it('keeps the team switcher at seven views on a real team', async () => {
 
   const tabs = await screen.findAllByRole('tab');
   expect(tabs.map((t) => t.textContent)).toEqual([
-    'wall', 'overview', 'comms', 'tasks', 'rail', 'grid', 'usage',
+    'wall', 'overview', 'comms', 'tasks', 'trace', 'grid', 'usage',
   ]);
 });
 
