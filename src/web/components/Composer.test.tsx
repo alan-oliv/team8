@@ -109,14 +109,14 @@ describe('Composer', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('shows the blinking caret and the current tool in the rail variant', () => {
-    render(<Composer agent={alpha} variant="rail" />);
+  it('shows the blinking caret and the wake note in the thread variant', () => {
+    render(<Composer agent={alpha} variant="thread" />);
     const caret = screen.getByTestId('composer-caret');
     expect(caret.style.width).toBe('7px');
     expect(caret.style.height).toBe('15px');
-    expect(screen.getByTestId('composer-tool').textContent).toBe('Bash(sleep 20)');
+    expect(screen.getByTestId('composer-note').textContent).toBe('a message wakes an idle recipient');
     expect(screen.getByTestId('composer-input')).toHaveProperty(
-      'placeholder', 'message probe-alpha directly',
+      'placeholder', 'join as the operator — both agents see it',
     );
   });
 });

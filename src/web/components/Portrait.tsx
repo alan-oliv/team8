@@ -4,9 +4,9 @@ import { portraitFor, portraitSvg, TERMINAL_SPRITE, TERMINAL_SPRITE_SVG } from '
 import { useCast } from '../state/useCast';
 import { useAppearance } from '../state/useSettings';
 
-export type PortraitSlot = 'wall' | 'rail-row' | 'default';
+export type PortraitSlot = 'wall' | 'default';
 
-const SLOT_MARGIN: Record<PortraitSlot, number> = { wall: 3, 'rail-row': 1, default: 0 };
+const SLOT_MARGIN: Record<PortraitSlot, number> = { wall: 3, default: 0 };
 
 export interface PortraitProps {
   agent: { name: string; agentType: string; isLead: boolean };

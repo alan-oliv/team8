@@ -81,7 +81,7 @@ export interface TeamStateStore {
 }
 
 // A diff-bearing row can be clicked from any view the transcript renders in
-// (wall, grid, overview, rail); threading the opener through each one as a
+// (wall, grid, overview); threading the opener through each one as a
 // prop would touch every view for a control none of them own — the same
 // reason SettingsContext exists.
 export const DiffContext = createContext<((diff: Diff) => void) | null>(null);

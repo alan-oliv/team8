@@ -29,7 +29,7 @@ import {
   type JsonTokenKind,
 } from '../../shared/json';
 
-export type FeedSize = 'wall' | 'overview' | 'grid' | 'rail' | 'stream';
+export type FeedSize = 'wall' | 'overview' | 'grid' | 'stream';
 
 interface FeedStyle {
   padding: string;
@@ -65,11 +65,6 @@ const FEED: Record<FeedSize, FeedStyle> = {
     padding: '10px 11px', rowGap: 8, gap: 6,
     markerWidth: '8px', markerSize: '10px',
     textColor: 'var(--color-neutral-400)', textSize: '11px',
-  },
-  rail: {
-    padding: '15px 18px', rowGap: 11, gap: 9,
-    markerWidth: '10px', markerSize: '11px',
-    textColor: 'var(--color-neutral-300)',
   },
   // Canvas `saIsStream`, transcribed. A roster of one takes the whole frame, so
   // it gets the canvas's own stream metrics rather than the wall column's,
@@ -801,12 +796,12 @@ export function TranscriptFeed({
     },
     [open, loadFull],
   );
-  // `default` means each view keeps its OWN tuning — the rail reads at 11px and
-  // a wall column at 10, and flattening both to one number is a regression the
-  // control is not meant to cause. Only a deliberate compact/roomy overrides.
+  // `default` means each view keeps its OWN tuning — the stream reads at 11.5px
+  // and a wall column at 10, and flattening both to one number is a regression
+  // the control is not meant to cause. Only a deliberate compact/roomy overrides.
   // A condensed feed then runs 3px tighter than a full one, floored at 3, so
   // the setting reaches every transcript rather than stopping at two of them.
-  const condensed = size !== 'wall' && size !== 'rail';
+  const condensed = size !== 'wall';
   const density = appearance.density === 'default'
     ? s.rowGap
     : condensed

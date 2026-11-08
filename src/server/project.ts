@@ -51,7 +51,7 @@ import { AGENT_STALE_MS, deriveTaskState, isWallClockLog } from '../shared/statu
  * How many transcript lines PER AGENT survive into the projected `TeamState`
  * that gets serialised into every SSE frame. The store keeps full history —
  * this trims only the projection. The views are bottom-anchored and the
- * largest of them (the rail) shows at most 18 lines, so 60 is generous
+ * largest of them (the rail, since replaced) showed at most 18 lines, so 60 is generous
  * headroom over that, not a real budget — do not raise it "to be safe".
  * Measured live: an untrimmed frame for 11 agents ran 1683 KB, with
  * transcript JSON alone accounting for ~103% of it (one agent alone carried

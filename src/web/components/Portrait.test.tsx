@@ -44,10 +44,6 @@ it('applies the per-slot margin-top', () => {
   expect(screen.getByTestId('portrait').style.marginTop).toBe('3px');
   unmount();
 
-  const rail = render(<Portrait agent={ALPHA} slot="rail-row" />);
-  expect(screen.getByTestId('portrait').style.marginTop).toBe('1px');
-  rail.unmount();
-
   render(<Portrait agent={ALPHA} />);
   expect(screen.getByTestId('portrait').style.marginTop).toBe('0px');
 });

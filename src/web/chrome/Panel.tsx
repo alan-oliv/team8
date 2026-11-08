@@ -19,7 +19,7 @@ const Chip = memo(function Chip({
   onFocus: (name: string) => void;
 }) {
   // Display only — the chip focuses on the real name, which is what the URL
-  // and the rail both key on.
+  // keys on.
   const display = useCast().asChar(agent.name).display;
 
   return (

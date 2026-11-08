@@ -32,11 +32,9 @@ describe('TranscriptFeed', () => {
     expect(feed.className).toBe('tscroll tail');
   });
 
-  it('gives the lines room to read: 10px apart in a wall column, 11 in the rail', () => {
+  it('gives the lines room to read: 10px apart in a wall column, 8 in the overview', () => {
     const { rerender } = render(<TranscriptFeed lines={LINES} size="wall" />);
     expect(screen.getByTestId('transcript-feed').style.gap).toBe('10px');
-    rerender(<TranscriptFeed lines={LINES} size="rail" />);
-    expect(screen.getByTestId('transcript-feed').style.gap).toBe('11px');
     rerender(<TranscriptFeed lines={LINES} size="overview" />);
     expect(screen.getByTestId('transcript-feed').style.gap).toBe('8px');
   });
@@ -145,13 +143,6 @@ describe('TranscriptFeed', () => {
     expect(screen.getAllByTestId('transcript-text')[0].style.fontSize).toBe('11px');
   });
 
-  it('uses the rail marker column of 10px at 11px and inherits the text size', () => {
-    render(<TranscriptFeed lines={LINES} size="rail" />);
-    const marker = screen.getAllByTestId('transcript-marker')[0];
-    expect(marker.style.width).toBe('10px');
-    expect(marker.style.fontSize).toBe('11px');
-    expect(screen.getAllByTestId('transcript-text')[0].style.fontSize).toBe('');
-  });
 });
 
 describe('expanding a row that has more to show', () => {

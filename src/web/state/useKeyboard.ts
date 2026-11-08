@@ -62,8 +62,8 @@ export function useKeyboard(actions: KeyboardActions): void {
 
       if (e.altKey) return;
 
-      // A view that handled the key itself — the rail's own listbox — calls
-      // preventDefault, so selection is not applied twice.
+      // A view that handled the key itself calls preventDefault, so selection
+      // is not applied twice.
       if (e.defaultPrevented) return;
 
       // Above the focused-agent guard below: which team the console is showing is
