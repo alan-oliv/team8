@@ -127,30 +127,18 @@ describe('createPlanReader', () => {
 
   it('reads the progress of the plan the lead wrote', () => {
     const reader = createPlanReader();
-    const plan = reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead', 's1');
+    const plan = reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead');
     expect(plan).toEqual({ path: file, mtime: statSync(file).mtimeMs, tasks: parsePlan(PLAN) });
-  });
-
-  it('keeps the path after the records that named it are gone', () => {
-    const reader = createPlanReader();
-    reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead', 's1');
-    expect(reader.read([], 'team-lead', 's1')?.path).toBe(file);
-  });
-
-  it('does not hand one session another session\'s plan', () => {
-    const reader = createPlanReader();
-    reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead', 's1');
-    expect(reader.read([], 'team-lead', 's2')).toBeUndefined();
   });
 
   it('re-reads the file when it changes', () => {
     const reader = createPlanReader();
     const events = [toolCall('team-lead', 'Write', file, 1)];
-    reader.read(events, 'team-lead', 's1');
+    reader.read(events, 'team-lead');
     writeFileSync(file, PLAN.replace('- Create: `src/b.ts`', '- Create: `src/b.ts`\n\n- [ ] **Step 1: Serve**'));
     const later = new Date(Date.now() + 5_000);
     utimesSync(file, later, later);
-    const plan = reader.read(events, 'team-lead', 's1')!;
+    const plan = reader.read(events, 'team-lead')!;
     expect(plan.tasks[1].written).toBe(true);
     expect(plan.mtime).toBe(statSync(file).mtimeMs);
   });
@@ -158,7 +146,7 @@ describe('createPlanReader', () => {
   it('serves one task\'s section of the plan it last read', () => {
     const reader = createPlanReader();
     expect(reader.task(1)).toBeUndefined();
-    reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead', 's1');
+    reader.read([toolCall('team-lead', 'Write', file, 1)], 'team-lead');
     expect(reader.task(2)).toBe(sectionOf(PLAN, 2));
     expect(reader.task(9)).toBeUndefined();
   });
@@ -166,8 +154,8 @@ describe('createPlanReader', () => {
   it('has no plan once the file is gone', () => {
     const reader = createPlanReader();
     const events = [toolCall('team-lead', 'Write', file, 1)];
-    reader.read(events, 'team-lead', 's1');
+    reader.read(events, 'team-lead');
     rmSync(file);
-    expect(reader.read(events, 'team-lead', 's1')).toBeUndefined();
+    expect(reader.read(events, 'team-lead')).toBeUndefined();
   });
 });

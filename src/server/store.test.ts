@@ -370,6 +370,53 @@ describe('transcript retention', () => {
     }
   });
 
+  it("keeps the lead's plan write, its dispatches and their results past the record budget", () => {
+    const store = openStore(path.join(dir, 'anchors.db'), 'session-anc00000');
+    const ts = '2026-08-27T15:20:00.000Z';
+    const call = (uuid: string, name: string, input: Record<string, unknown>) => ({
+      type: 'assistant',
+      uuid,
+      timestamp: ts,
+      message: { role: 'assistant', content: [{ type: 'tool_use', id: `toolu_${uuid}`, name, input }] },
+    });
+    const answer = (uuid: string, of: string) => ({
+      type: 'user',
+      uuid,
+      timestamp: ts,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${of}`, content: 'ok' }] },
+    });
+    const first = [
+      call('plan', 'Write', { file_path: '/repo/docs/team8/plans/2026-08-27-x.md', content: '# Plan' }),
+      call('dispatch', 'Agent', { name: 'app', subagent_type: 'team8:executor', prompt: 'go' }),
+      answer('result', 'dispatch'),
+      call('other-write', 'Write', { file_path: '/repo/src/x.ts', content: '' }),
+      call('other-call', 'Bash', { command: 'ls' }),
+      answer('other-result', 'other-call'),
+      ...batch('lead', 'b0', 194),
+    ];
+    try {
+      store.append('transcript', { agent: 'lead', records: first, totals: snapshot }, 'lead');
+      for (let i = 1; i < PRUNE_EVERY; i++) {
+        store.append(
+          'transcript',
+          { agent: 'lead', records: batch('lead', `b${i}`, 200), totals: snapshot },
+          'lead',
+        );
+      }
+      const kept = store.replay();
+      const uuids = kept
+        .filter((e) => e.kind === 'transcript')
+        .flatMap((e) => (e.payload as { records: Array<{ uuid: string }> }).records.map((r) => r.uuid));
+      expect(uuids).toEqual(expect.arrayContaining(['plan', 'dispatch', 'result']));
+      expect(uuids).not.toContain('other-write');
+      expect(uuids).not.toContain('other-call');
+      expect(uuids).not.toContain('other-result');
+      expect(recordsIn(kept)).toBeLessThanOrEqual(TRANSCRIPT_RECORDS_PER_AGENT + 3);
+    } finally {
+      store.close();
+    }
+  });
+
   // Records that cost something, so the assertions below are about money and
   // not about zero. One assistant line per record, each its own message id.
   const spend = (agent: string, tag: string, n: number) =>
@@ -794,23 +841,29 @@ describe('multi-team log safety', () => {
     reopened.close();
   });
 
-  it('deletes a team log nothing has touched in a week', async () => {
+  it('deletes a team log nothing has touched in a month, as long as Claude Code keeps a transcript', async () => {
     const dbPath = path.join(dir, 'events.db');
     const dead = logPathFor(dbPath, 'session-dead0000');
     const recent = logPathFor(dbPath, 'session-recent01');
+    const lastMonth = logPathFor(dbPath, 'session-lastmont');
     await fs.mkdir(path.dirname(dead), { recursive: true });
     await fs.writeFile(dead, '');
     await fs.writeFile(recent, '');
+    await fs.writeFile(lastMonth, '');
 
-    const eightDaysAgo = new Date(Date.now() - STALE_LOG_MS - 24 * 60 * 60 * 1000);
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    await fs.utimes(dead, eightDaysAgo, eightDaysAgo);
+    const day = 24 * 60 * 60 * 1000;
+    const dayPastStale = new Date(Date.now() - STALE_LOG_MS - day);
+    const yesterday = new Date(Date.now() - day);
+    const twentyDaysAgo = new Date(Date.now() - 20 * day);
+    await fs.utimes(dead, dayPastStale, dayPastStale);
     await fs.utimes(recent, yesterday, yesterday);
+    await fs.utimes(lastMonth, twentyDaysAgo, twentyDaysAgo);
 
     openStore(dbPath, 'session-live0000').close();
 
     await expect(fs.stat(dead)).rejects.toThrow();
     await expect(fs.stat(recent)).resolves.toBeDefined();
+    await expect(fs.stat(lastMonth)).resolves.toBeDefined();
   });
 });
 

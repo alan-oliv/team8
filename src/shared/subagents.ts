@@ -27,6 +27,28 @@ export const SUBAGENT_SUMMARY_CAP = 400;
 /** The two names this runtime has given the subagent-dispatch tool. */
 const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
 
+type Block = { type?: string; id?: string; name?: string; tool_use_id?: string };
+function blocksOf(rec: TranscriptRecord): Block[] {
+  const content = rec.message?.content;
+  return Array.isArray(content) ? (content.filter((b) => b && typeof b === 'object') as Block[]) : [];
+}
+
+/** The ids of the `Task`/`Agent` calls an assistant record makes. */
+export function dispatchIdsOf(rec: TranscriptRecord): string[] {
+  if (rec.type !== 'assistant') return [];
+  return blocksOf(rec).flatMap((b) =>
+    b.type === 'tool_use' && SUBAGENT_TOOLS.has(b.name ?? '') && typeof b.id === 'string' ? [b.id] : [],
+  );
+}
+
+/** The ids of the calls a user record's tool results answer. */
+export function resultIdsOf(rec: TranscriptRecord): string[] {
+  if (rec.type !== 'user') return [];
+  return blocksOf(rec).flatMap((b) =>
+    b.type === 'tool_result' && typeof b.tool_use_id === 'string' ? [b.tool_use_id] : [],
+  );
+}
+
 /**
  * One `Task`/`Agent` call as its PARENT recorded it. Everything here is
  * readable from the parent alone, which is what makes it the spine of the tree
